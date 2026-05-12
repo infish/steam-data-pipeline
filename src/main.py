@@ -13,8 +13,9 @@ logging.basicConfig(
 )
 
 def run_pipeline():
+    
+    print("Pipeline started")
     connection = get_connection()
-
     cursor = connection.cursor()
     current_time = datetime.now()
 

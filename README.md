@@ -1,37 +1,57 @@
 # Steam Data Pipeline
 
-Simple ETL pipeline project built with Python and MySQL.
+Containerized ETL pipeline project built with Python, Pandas, MySQL, and Docker Compose.
+
+---
 
 ## Project Overview
 
 This project:
 
-- Extracts data from the SteamSpy API
-- Transforms selected game data
+- Extracts game data from the SteamSpy API
+- Transforms and enriches the data using Pandas
 - Loads the data into a MySQL database
+- Runs inside Docker containers using Docker Compose
 
-## Technologies Used:
+---
+
+## Technologies Used
 
 - Python
+- Pandas
 - Requests
 - MySQL
 - MySQL Connector
+- Docker
+- Docker Compose
 - Git & GitHub
 
-## Pipeline Flow:
+---
 
-Steam API → Python → Data Transformation → MySQL
+## Pipeline Flow
 
-## Features:
+SteamSpy API → Python ETL → Pandas Transformation → MySQL
+
+---
+
+## Features
 
 - API data extraction
 - JSON parsing
-- MySQL database integration
-- UPSERT handling
+- Pandas transformations
+- Owners range parsing
+- Estimated owners calculation
+- MySQL UPSERT handling
 - Environment variable configuration
+- Logging system
+- Retry logic for database startup
+- Docker containerization
+- Docker Compose orchestration
 - Modular project structure
 
-## Project Structure:
+---
+
+## Project Structure
 
 ```text
 src/
@@ -39,35 +59,56 @@ src/
 │   └── steam_api.py
 ├── database/
 │   └── mysql_database.py
+├── transform/
+│   └── transform.py
 └── main.py
+
+init/
+└── init.sql
+
+logs/
+
+Dockerfile
+docker-compose.yml
+requirements.txt
 ```
 
-## Setup:
+---
 
-Install dependencies:
+## Setup
 
-```bash
-pip install -r requirements.txt
-```
-
-Create `.env` file:
+### Create `.env`
 
 ```env
-MYSQL_HOST=localhost
+MYSQL_HOST=mysql
 MYSQL_USER=root
-MYSQL_PASSWORD=your_password
+MYSQL_PASSWORD=rootpassword
 MYSQL_DATABASE=steam_pipeline
 ```
 
-Run pipeline:
+---
+
+## Run With Docker Compose
 
 ```bash
-python src/main.py
+docker compose up --build
 ```
 
+---
+
+## Run Pipeline Only
+
+```bash
+docker compose run --rm pipeline
+```
+
+---
 
 ## Future Improvements
 
-- Docker support
-- Scheduling
+- Airflow orchestration
 - Azure deployment
+- Power BI dashboard
+- Automated scheduling
+- Data quality checks
+- CI/CD pipeline
