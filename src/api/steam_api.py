@@ -4,8 +4,18 @@ def get_top_games():
 
     url = "https://steamspy.com/api.php?request=top100in2weeks"
 
-    response = requests.get(url)
+    try:
 
-    data = response.json()
+        response = requests.get(url)
 
-    return data
+        data = response.json()
+
+        return data
+
+    except Exception as error:
+
+        print("API request failed")
+
+        print(error)
+
+        return None

@@ -64,3 +64,10 @@ Run pipeline:
 ```bash
 python src/main.py
 ```
+
+
+## Future Improvements
+
+- Docker support
+- Scheduling
+- Azure deployment
