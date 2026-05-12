@@ -12,9 +12,10 @@ services:
     
     volumes:
       - ./init:/docker-entrypoint-initdb.d
-    
+      - ./mysql_data:/var/lib/mysql
+
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-prootpassword"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-prootpassword"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -27,4 +28,4 @@ services:
         condition: service_healthy
 
     env_file:
-      - .env
+      - .env.docker

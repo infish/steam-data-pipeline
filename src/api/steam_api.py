@@ -6,15 +6,24 @@ def get_top_games():
 
     try:
 
-        response = requests.get(url)
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
 
         data = response.json()
 
         return data
 
-    except Exception as error:
+    except requests.RequestException as error:
 
         print("API request failed")
+
+        print(error)
+
+        return None
+
+    except ValueError as error:
+
+        print("API response was not valid JSON")
 
         print(error)
 

@@ -1,7 +1,9 @@
 venv/
 .env
+.env.*
 logs/
 data/
 __pycache__/
 *.pyc
 .git/
+mysql_data/

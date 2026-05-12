@@ -1,28 +1,28 @@
-import os
 import time
 import mysql.connector
 
-from dotenv import load_dotenv
-
-load_dotenv()
+from config import get_mysql_config
 
 def get_connection():
+    config = get_mysql_config()
 
-    for attempt in range(20):
+    max_attempts = 20
+
+    for attempt in range(1, max_attempts + 1):
 
         try:
             connection = mysql.connector.connect(
-                host=os.getenv("MYSQL_HOST"),
-                user=os.getenv("MYSQL_USER"),
-                password=os.getenv("MYSQL_PASSWORD"),
-                database=os.getenv("MYSQL_DATABASE")
+                host=config["host"],
+                user=config["user"],
+                password=config["password"],
+                database=config["database"]
             )
 
             return connection
 
         except mysql.connector.Error as error:
-            print(f"MySQL connection failed: {error}")
-            print("MySQL not ready yet, waiting...")
+            print(f"MySQL connection failed on attempt {attempt}/{max_attempts}: {error}")
+            print("MySQL not ready yet, waiting 5 seconds...")
 
             time.sleep(5)
 

@@ -1,9 +1,19 @@
 @echo off
+setlocal
 
-cd /d C:\Users\david\Desktop\steam-data-pipeline
+cd /d "%~dp0"
 
-call venv\Scripts\activate
+if exist "venv\Scripts\python.exe" (
+    set "PYTHON_CMD=venv\Scripts\python.exe"
+) else (
+    where py >nul 2>nul
+    if errorlevel 1 (
+        set "PYTHON_CMD=python"
+    ) else (
+        set "PYTHON_CMD=py -3.10"
+    )
+)
 
-python src\main.py
+%PYTHON_CMD% src\main.py
 
 pause

@@ -1,2 +1,9 @@
 .env
+.env.*
+!.env.example
 venv/
+mysql_data/
+logs/
+data/
+__pycache__/
+*.pyc
