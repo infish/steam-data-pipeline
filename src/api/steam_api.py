@@ -1,8 +1,14 @@
 import requests
 
-def get_top_games():
+from config import get_steamspy_config
 
-    url = "https://steamspy.com/api.php?request=top100in2weeks"
+def get_top_games():
+    config = get_steamspy_config()
+
+    if config["mode"] == "all":
+        url = f"https://steamspy.com/api.php?request=all&page={config['page']}"
+    else:
+        url = f"https://steamspy.com/api.php?request={config['mode']}"
 
     try:
 

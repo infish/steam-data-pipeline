@@ -17,10 +17,26 @@ def get_required_env(name):
     return value
 
 
+def get_env(name, default):
+    value = os.getenv(name)
+
+    if value is None or value.strip() == "":
+        return default
+
+    return value
+
+
 def get_mysql_config():
     return {
         "host": get_required_env("MYSQL_HOST"),
         "user": get_required_env("MYSQL_USER"),
         "password": get_required_env("MYSQL_PASSWORD"),
         "database": get_required_env("MYSQL_DATABASE")
+    }
+
+
+def get_steamspy_config():
+    return {
+        "mode": get_env("STEAMSPY_MODE", "all"),
+        "page": int(get_env("STEAMSPY_PAGE", "0"))
     }

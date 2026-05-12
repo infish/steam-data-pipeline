@@ -29,3 +29,18 @@ services:
 
     env_file:
       - .env.docker
+
+  dashboard:
+    build: .
+
+    command: streamlit run src/dashboard.py --server.address=0.0.0.0 --server.port=8501
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+    env_file:
+      - .env.docker
+
+    ports:
+      - "8501:8501"

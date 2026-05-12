@@ -2,7 +2,7 @@
 
 A learning ETL project that extracts top Steam game data from the SteamSpy API, transforms it with pandas, and loads it into MySQL.
 
-The project is designed to run locally on Windows and in Docker Compose, with a structure that can later be extended toward Azure.
+The default dataset loads the first SteamSpy `all` page, which is roughly 1,000 games. The project is designed to run locally on Windows and in Docker Compose, with a structure that can later be extended toward Azure.
 
 ## What It Does
 
@@ -22,6 +22,8 @@ It currently stores:
 - Python 3.10
 - pandas
 - requests
+- Plotly
+- Streamlit
 - MySQL
 - mysql-connector-python
 - Docker
@@ -40,8 +42,10 @@ src/
     data_quality.py
   transform/
     data_transformer.py
+  dashboard.py
   config.py
   main.py
+  visualize.py
 
 init/
   init.sql
@@ -49,8 +53,12 @@ init/
 Dockerfile
 docker-compose.yml
 requirements.txt
+run_dashboard.bat
+run_docker_pipeline.bat
 run_pipeline.bat
+run_reports.bat
 setup_venv.bat
+VISUALS.url
 ```
 
 ## Configuration
@@ -62,6 +70,8 @@ MYSQL_HOST=mysql
 MYSQL_USER=root
 MYSQL_PASSWORD=rootpassword
 MYSQL_DATABASE=steam_pipeline
+STEAMSPY_MODE=all
+STEAMSPY_PAGE=0
 ```
 
 For Docker, create `.env.docker`.
@@ -69,6 +79,12 @@ For Docker, create `.env.docker`.
 For local Windows runs, create `.env.local`.
 
 Both files are ignored by Git. Use `.env.example` as a template.
+
+`STEAMSPY_MODE=all` with `STEAMSPY_PAGE=0` loads the first SteamSpy page, which is roughly 1,000 games. To switch back to the smaller demo dataset, set:
+
+```env
+STEAMSPY_MODE=top100in2weeks
+```
 
 ## Run With Docker Compose
 
@@ -162,7 +178,7 @@ A successful run should show:
 
 ```text
 status       SUCCESS
-rows_loaded  100
+rows_loaded  1000
 error        NULL
 ```
 
@@ -197,6 +213,32 @@ Charts are saved to:
 ```text
 reports/
 ```
+
+## Run Interactive Dashboard
+
+Start the local Streamlit dashboard:
+
+```bat
+run_dashboard.bat
+```
+
+Then open:
+
+```text
+http://localhost:8501
+```
+
+You can also open `VISUALS.url` from the project folder as a shortcut.
+
+The dashboard reads from the SQL analysis views and shows:
+
+- interactive Plotly charts with hover details
+- KPI cards
+- data tables
+- a read-only SQL Explorer
+- available tables, views, and columns for SQL help
+
+The SQL Explorer only allows read queries such as `SELECT`, `WITH`, and `SHOW`.
 
 ## Run Locally On Windows
 
