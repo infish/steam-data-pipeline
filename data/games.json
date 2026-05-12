@@ -1,0 +1,502 @@
+[
+    {
+        "appid": "730",
+        "name": "Counter-Strike: Global Offensive",
+        "owners": "100,000,000 .. 200,000,000"
+    },
+    {
+        "appid": "1172470",
+        "name": "Apex Legends",
+        "owners": "100,000,000 .. 200,000,000"
+    },
+    {
+        "appid": "578080",
+        "name": "PUBG: BATTLEGROUNDS",
+        "owners": "100,000,000 .. 200,000,000"
+    },
+    {
+        "appid": "1623730",
+        "name": "Palworld",
+        "owners": "50,000,000 .. 100,000,000"
+    },
+    {
+        "appid": "440",
+        "name": "Team Fortress 2",
+        "owners": "50,000,000 .. 100,000,000"
+    },
+    {
+        "appid": "1938090",
+        "name": "Call of Duty: Modern Warfare II",
+        "owners": "50,000,000 .. 100,000,000"
+    },
+    {
+        "appid": "1063730",
+        "name": "New World: Aeternum",
+        "owners": "50,000,000 .. 100,000,000"
+    },
+    {
+        "appid": "2358720",
+        "name": "Black Myth: Wukong",
+        "owners": "50,000,000 .. 100,000,000"
+    },
+    {
+        "appid": "271590",
+        "name": "Grand Theft Auto V Legacy",
+        "owners": "50,000,000 .. 100,000,000"
+    },
+    {
+        "appid": "550",
+        "name": "Left 4 Dead 2",
+        "owners": "50,000,000 .. 100,000,000"
+    },
+    {
+        "appid": "304930",
+        "name": "Unturned",
+        "owners": "50,000,000 .. 100,000,000"
+    },
+    {
+        "appid": "1599340",
+        "name": "Lost Ark",
+        "owners": "50,000,000 .. 100,000,000"
+    },
+    {
+        "appid": "236390",
+        "name": "War Thunder",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "2246340",
+        "name": "Monster Hunter Wilds",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "553850",
+        "name": "HELLDIVERS 2",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "230410",
+        "name": "Warframe",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "1245620",
+        "name": "ELDEN RING",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "105600",
+        "name": "Terraria",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "2694490",
+        "name": "Path of Exile 2",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "431960",
+        "name": "Wallpaper Engine",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "1086940",
+        "name": "Baldur's Gate 3",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "291550",
+        "name": "Brawlhalla",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "4000",
+        "name": "Garry's Mod",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "1085660",
+        "name": "Destiny 2",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "359550",
+        "name": "Tom Clancy's Rainbow Six Siege",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "252490",
+        "name": "Rust",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "552990",
+        "name": "World of Warships",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "346110",
+        "name": "ARK: Survival Evolved",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "413150",
+        "name": "Stardew Valley",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "242760",
+        "name": "The Forest",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "1491000",
+        "name": "War Robots: Frontiers",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "238960",
+        "name": "Path of Exile",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "218620",
+        "name": "PAYDAY 2",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "291480",
+        "name": "Warface: Clutch",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "901583",
+        "name": "Grand Theft Auto IV: Complete Edition",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "899770",
+        "name": "Last Epoch",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "340",
+        "name": "Half-Life 2: Lost Coast",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "1091500",
+        "name": "Cyberpunk 2077",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "381210",
+        "name": "Dead by Daylight",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "990080",
+        "name": "Hogwarts Legacy",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "438100",
+        "name": "VRChat",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "292030",
+        "name": "The Witcher 3: Wild Hunt",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "945360",
+        "name": "Among Us",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "1097150",
+        "name": "Fall Guys: Ultimate Knockout",
+        "owners": "20,000,000 .. 50,000,000"
+    },
+    {
+        "appid": "49520",
+        "name": "Borderlands 2",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "227300",
+        "name": "Euro Truck Simulator 2",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "892970",
+        "name": "Valheim",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "739630",
+        "name": "Phasmophobia",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "444090",
+        "name": "Paladins",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "1203220",
+        "name": "NARAKA: BLADEPOINT",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "320",
+        "name": "Half-Life 2: Deathmatch",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "70",
+        "name": "Half-Life",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "582010",
+        "name": "Monster Hunter: World",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "227940",
+        "name": "Heroes & Generals",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "252950",
+        "name": "Rocket League",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "108600",
+        "name": "Project Zomboid",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "1966720",
+        "name": "Lethal Company",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "1174180",
+        "name": "Red Dead Redemption 2",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "1517290",
+        "name": "Battlefield 2042",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "1240440",
+        "name": "Halo Infinite",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "648800",
+        "name": "Raft",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "386360",
+        "name": "SMITE",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "444200",
+        "name": "World of Tanks Blitz",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "10",
+        "name": "Counter-Strike",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "240",
+        "name": "Counter-Strike: Source",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "3164500",
+        "name": "Schedule I",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "755790",
+        "name": "Ring of Elysium",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "400",
+        "name": "Portal",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "1222670",
+        "name": "The Sims 4",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "550650",
+        "name": "Black Squad",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "322330",
+        "name": "Don't Starve Together",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "239140",
+        "name": "Dying Light",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "477160",
+        "name": "Human Fall Flat",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "251570",
+        "name": "7 Days to Die",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "100",
+        "name": "Counter-Strike: Condition Zero",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "1665460",
+        "name": "eFootball",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "417910",
+        "name": "Street Warriors Online",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "433850",
+        "name": "Z1 Battle Royale",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "594650",
+        "name": "Hunt: Showdown 1896",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "814380",
+        "name": "Sekiro: Shadows Die Twice - GOTY Edition",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "1116170",
+        "name": "CyberCorp",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "220",
+        "name": "Half-Life 2",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "107410",
+        "name": "Arma 3",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "1326470",
+        "name": "Sons Of The Forest",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "219990",
+        "name": "Grim Dawn",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "255710",
+        "name": "Cities: Skylines",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "261550",
+        "name": "Mount & Blade II: Bannerlord",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "8930",
+        "name": "Sid Meier's Civilization V",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "304050",
+        "name": "Trove",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "289070",
+        "name": "Sid Meier\u2019s Civilization VI",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "377160",
+        "name": "Fallout 4",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "532210",
+        "name": "Life is Strange 2",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "2186680",
+        "name": "Warhammer 40,000: Rogue Trader",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "1238810",
+        "name": "Battlefield V",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "3241660",
+        "name": "R.E.P.O.",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "221100",
+        "name": "DayZ",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "526870",
+        "name": "Satisfactory",
+        "owners": "10,000,000 .. 20,000,000"
+    },
+    {
+        "appid": "1089350",
+        "name": "NBA 2K20",
+        "owners": "5,000,000 .. 10,000,000"
+    },
+    {
+        "appid": "632360",
+        "name": "Risk of Rain 2",
+        "owners": "5,000,000 .. 10,000,000"
+    },
+    {
+        "appid": "1811260",
+        "name": "EA SPORTS FIFA 23",
+        "owners": "5,000,000 .. 10,000,000"
+    }
+]
