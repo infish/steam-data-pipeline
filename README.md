@@ -14,7 +14,7 @@ SteamSpy API -> Python extract -> pandas transform -> data quality checks -> MyS
 
 It currently stores:
 
-- transformed game data in `games`
+- transformed game profile and metric data in `games`
 - pipeline execution history in `pipeline_runs`
 
 ## Tech Stack
@@ -111,9 +111,32 @@ Check loaded games:
 ```sql
 SELECT COUNT(*) FROM games;
 
-SELECT appid, name, owners, owners_low, owners_high, estimated_owners, ingestion_time
+SELECT
+    appid,
+    name,
+    developer,
+    publisher,
+    owners,
+    estimated_owners,
+    positive_reviews,
+    negative_reviews,
+    review_score_percent,
+    ccu,
+    price_cents,
+    discount_percent,
+    ingestion_time
 FROM games
 ORDER BY estimated_owners DESC
+LIMIT 10;
+```
+
+Find highly rated games with a meaningful review count:
+
+```sql
+SELECT name, total_reviews, review_score_percent, estimated_owners
+FROM games
+WHERE total_reviews >= 10000
+ORDER BY review_score_percent DESC
 LIMIT 10;
 ```
 
@@ -160,6 +183,8 @@ Before loading to MySQL, the pipeline validates that:
 - owner fields are present
 - `owners_low <= owners_high`
 - `estimated_owners` is not negative
+- review, playtime, CCU, price, and discount fields are not negative when present
+- `review_score_percent` is between 0 and 100 when present
 
 If validation fails, the pipeline writes a `FAILED` row to `pipeline_runs`.
 
@@ -175,6 +200,7 @@ That separation is important in real ETL systems because it gives you observabil
 
 - Add automated tests
 - Add data quality result details per rule
+- Split changing metrics into a separate snapshot fact table
 - Add GitHub Actions CI
 - Add scheduled execution
 - Add Azure deployment
