@@ -27,6 +27,86 @@ def ensure_pipeline_runs_table(cursor):
     cursor.execute(query)
 
 
+def ensure_analysis_views(cursor):
+    queries = [
+        """
+        CREATE OR REPLACE VIEW top_games_by_owners AS
+        SELECT
+            appid,
+            name,
+            developer,
+            publisher,
+            owners,
+            estimated_owners,
+            review_score_percent,
+            ccu,
+            price_cents
+        FROM games
+        ORDER BY estimated_owners DESC
+        """,
+        """
+        CREATE OR REPLACE VIEW top_games_by_review_score AS
+        SELECT
+            appid,
+            name,
+            developer,
+            publisher,
+            total_reviews,
+            review_score_percent,
+            estimated_owners,
+            ccu
+        FROM games
+        WHERE total_reviews >= 10000
+        ORDER BY review_score_percent DESC
+        """,
+        """
+        CREATE OR REPLACE VIEW most_active_games_by_ccu AS
+        SELECT
+            appid,
+            name,
+            developer,
+            publisher,
+            ccu,
+            estimated_owners,
+            review_score_percent
+        FROM games
+        WHERE ccu IS NOT NULL
+        ORDER BY ccu DESC
+        """,
+        """
+        CREATE OR REPLACE VIEW free_vs_paid_summary AS
+        SELECT
+            CASE
+                WHEN price_cents = 0 THEN 'Free'
+                ELSE 'Paid'
+            END AS price_type,
+            COUNT(*) AS game_count,
+            ROUND(AVG(estimated_owners), 0) AS avg_estimated_owners,
+            ROUND(AVG(review_score_percent), 2) AS avg_review_score_percent,
+            ROUND(AVG(ccu), 0) AS avg_ccu
+        FROM games
+        GROUP BY price_type
+        """,
+        """
+        CREATE OR REPLACE VIEW publisher_summary AS
+        SELECT
+            publisher,
+            COUNT(*) AS game_count,
+            ROUND(AVG(estimated_owners), 0) AS avg_estimated_owners,
+            SUM(estimated_owners) AS total_estimated_owners,
+            ROUND(AVG(review_score_percent), 2) AS avg_review_score_percent,
+            SUM(ccu) AS total_ccu
+        FROM games
+        WHERE publisher IS NOT NULL
+        GROUP BY publisher
+        ORDER BY total_estimated_owners DESC
+        """
+    ]
+
+    for query in queries:
+        cursor.execute(query)
+
+
 def ensure_games_table(cursor):
     query = """
         CREATE TABLE IF NOT EXISTS games (
@@ -234,6 +314,7 @@ def run_pipeline():
 
         ensure_games_table(cursor)
         ensure_pipeline_runs_table(cursor)
+        ensure_analysis_views(cursor)
         run_id = start_pipeline_run(cursor, datetime.now())
         connection.commit()
 
@@ -270,6 +351,7 @@ def run_pipeline():
         validate_games_data(df)
 
         rows_loaded = load_games(cursor, df, datetime.now())
+        ensure_analysis_views(cursor)
 
         finish_pipeline_run(cursor, run_id, "SUCCESS", rows_loaded)
         connection.commit()

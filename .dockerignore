@@ -3,6 +3,7 @@ venv/
 .env.*
 logs/
 data/
+reports/
 __pycache__/
 *.pyc
 .git/

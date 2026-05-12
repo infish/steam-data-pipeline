@@ -98,6 +98,16 @@ To run only the pipeline again while MySQL is already running:
 docker compose run --rm pipeline
 ```
 
+## Run With Windows Task Scheduler
+
+Use this script when scheduling the Docker-based pipeline:
+
+```text
+run_docker_pipeline.bat
+```
+
+It starts the MySQL container if needed, then runs the one-time pipeline container.
+
 ## Verify The Load
 
 Open a MySQL shell:
@@ -154,6 +164,38 @@ A successful run should show:
 status       SUCCESS
 rows_loaded  100
 error        NULL
+```
+
+## Analysis Views
+
+The pipeline creates these MySQL views for analysis:
+
+- `top_games_by_owners`
+- `top_games_by_review_score`
+- `most_active_games_by_ccu`
+- `free_vs_paid_summary`
+- `publisher_summary`
+
+Example:
+
+```sql
+SELECT *
+FROM publisher_summary
+LIMIT 10;
+```
+
+## Generate Local Charts
+
+After MySQL is running and the pipeline has loaded data, generate PNG charts:
+
+```bat
+run_reports.bat
+```
+
+Charts are saved to:
+
+```text
+reports/
 ```
 
 ## Run Locally On Windows
