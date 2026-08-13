@@ -27,6 +27,33 @@ def ensure_pipeline_runs_table(cursor):
     cursor.execute(query)
 
 
+def ensure_game_metric_snapshots_table(cursor):
+    query = """
+        CREATE TABLE IF NOT EXISTS game_metric_snapshots (
+            run_id INT NOT NULL,
+            appid INT NOT NULL,
+            snapshot_time DATETIME NOT NULL,
+            name VARCHAR(255),
+            estimated_owners BIGINT,
+            positive_reviews INT,
+            negative_reviews INT,
+            total_reviews INT,
+            review_score_percent DECIMAL(5,2),
+            average_playtime_2weeks_minutes INT,
+            median_playtime_2weeks_minutes INT,
+            ccu INT,
+            price_cents INT,
+            discount_percent INT,
+            PRIMARY KEY (run_id, appid),
+            INDEX idx_game_metric_snapshots_appid_time (appid, snapshot_time),
+            CONSTRAINT fk_game_metric_snapshots_run
+                FOREIGN KEY (run_id)
+                REFERENCES pipeline_runs(run_id)
+        )
+    """
+    cursor.execute(query)
+
+
 def ensure_analysis_views(cursor):
     queries = [
         """
@@ -100,6 +127,40 @@ def ensure_analysis_views(cursor):
         WHERE publisher IS NOT NULL
         GROUP BY publisher
         ORDER BY total_estimated_owners DESC
+        """,
+        """
+        CREATE OR REPLACE VIEW game_metric_trends AS
+        SELECT
+            snapshots.run_id,
+            snapshots.appid,
+            snapshots.snapshot_time,
+            snapshots.name,
+            games.developer,
+            games.publisher,
+            snapshots.estimated_owners,
+            snapshots.positive_reviews,
+            snapshots.negative_reviews,
+            snapshots.total_reviews,
+            snapshots.review_score_percent,
+            snapshots.average_playtime_2weeks_minutes,
+            snapshots.median_playtime_2weeks_minutes,
+            snapshots.ccu,
+            snapshots.price_cents,
+            snapshots.discount_percent
+        FROM game_metric_snapshots AS snapshots
+        LEFT JOIN games
+            ON snapshots.appid = games.appid
+        """,
+        """
+        CREATE OR REPLACE VIEW daily_pipeline_summary AS
+        SELECT
+            DATE(finished_at) AS run_date,
+            COUNT(*) AS successful_runs,
+            SUM(rows_loaded) AS rows_loaded
+        FROM pipeline_runs
+        WHERE status = 'SUCCESS'
+        GROUP BY DATE(finished_at)
+        ORDER BY run_date
         """
     ]
 
@@ -303,6 +364,65 @@ def load_games(cursor, df, ingestion_time):
     return len(values)
 
 
+def load_game_metric_snapshots(cursor, df, run_id, snapshot_time):
+    query = """
+        INSERT INTO game_metric_snapshots (
+            run_id,
+            appid,
+            snapshot_time,
+            name,
+            estimated_owners,
+            positive_reviews,
+            negative_reviews,
+            total_reviews,
+            review_score_percent,
+            average_playtime_2weeks_minutes,
+            median_playtime_2weeks_minutes,
+            ccu,
+            price_cents,
+            discount_percent
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+
+        ON DUPLICATE KEY UPDATE
+            snapshot_time = VALUES(snapshot_time),
+            name = VALUES(name),
+            estimated_owners = VALUES(estimated_owners),
+            positive_reviews = VALUES(positive_reviews),
+            negative_reviews = VALUES(negative_reviews),
+            total_reviews = VALUES(total_reviews),
+            review_score_percent = VALUES(review_score_percent),
+            average_playtime_2weeks_minutes = VALUES(average_playtime_2weeks_minutes),
+            median_playtime_2weeks_minutes = VALUES(median_playtime_2weeks_minutes),
+            ccu = VALUES(ccu),
+            price_cents = VALUES(price_cents),
+            discount_percent = VALUES(discount_percent)
+    """
+
+    values = [
+        (
+            run_id,
+            int(row.appid),
+            snapshot_time,
+            row.name,
+            int(row.estimated_owners),
+            clean_int(row.positive_reviews),
+            clean_int(row.negative_reviews),
+            clean_int(row.total_reviews),
+            clean_float(row.review_score_percent),
+            clean_int(row.average_playtime_2weeks_minutes),
+            clean_int(row.median_playtime_2weeks_minutes),
+            clean_int(row.ccu),
+            clean_int(row.price_cents),
+            clean_int(row.discount_percent)
+        )
+        for row in df.itertuples(index=False)
+    ]
+
+    cursor.executemany(query, values)
+    return len(values)
+
+
 def run_pipeline():
     connection = None
     cursor = None
@@ -314,6 +434,7 @@ def run_pipeline():
 
         ensure_games_table(cursor)
         ensure_pipeline_runs_table(cursor)
+        ensure_game_metric_snapshots_table(cursor)
         ensure_analysis_views(cursor)
         run_id = start_pipeline_run(cursor, datetime.now())
         connection.commit()
@@ -350,7 +471,9 @@ def run_pipeline():
         df = transform_games_data(games_list)
         validate_games_data(df)
 
-        rows_loaded = load_games(cursor, df, datetime.now())
+        ingestion_time = datetime.now()
+        rows_loaded = load_games(cursor, df, ingestion_time)
+        load_game_metric_snapshots(cursor, df, run_id, ingestion_time)
         ensure_analysis_views(cursor)
 
         finish_pipeline_run(cursor, run_id, "SUCCESS", rows_loaded)

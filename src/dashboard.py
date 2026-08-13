@@ -151,6 +151,14 @@ def get_latest_run():
     """).iloc[0]
 
 
+def get_snapshot_games():
+    return read_sql("""
+        SELECT DISTINCT appid, name
+        FROM game_metric_trends
+        ORDER BY name
+    """)
+
+
 st.title("Steam Data Pipeline Dashboard")
 
 kpis = get_kpis()
@@ -203,6 +211,74 @@ st.dataframe(
 
 st.divider()
 
+st.subheader("Metric Trends Over Time")
+
+snapshot_games = get_snapshot_games()
+
+if snapshot_games.empty:
+    st.info("No metric snapshots yet. Run the pipeline once to start collecting trend data.")
+else:
+    trend_col_1, trend_col_2 = st.columns([2, 1])
+
+    with trend_col_1:
+        selected_game_name = st.selectbox(
+            "Game",
+            snapshot_games["name"].tolist()
+        )
+
+    with trend_col_2:
+        selected_metric = st.selectbox(
+            "Metric",
+            [
+                "ccu",
+                "estimated_owners",
+                "total_reviews",
+                "positive_reviews",
+                "negative_reviews",
+                "review_score_percent",
+                "price_cents",
+                "discount_percent"
+            ]
+        )
+
+    selected_appid = int(
+        snapshot_games.loc[
+            snapshot_games["name"] == selected_game_name,
+            "appid"
+        ].iloc[0]
+    )
+
+    trend_df = read_sql(f"""
+        SELECT snapshot_time, name, {selected_metric}
+        FROM game_metric_trends
+        WHERE appid = {selected_appid}
+        ORDER BY snapshot_time
+    """)
+
+    trend_fig = px.line(
+        trend_df,
+        x="snapshot_time",
+        y=selected_metric,
+        markers=True,
+        title=f"{selected_game_name}: {selected_metric.replace('_', ' ').title()} Over Time"
+    )
+
+    trend_fig.update_layout(
+        height=450,
+        xaxis_title="Snapshot Time",
+        yaxis_title=selected_metric.replace("_", " ").title()
+    )
+
+    st.plotly_chart(trend_fig, use_container_width=True)
+
+    st.dataframe(
+        trend_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+st.divider()
+
 st.subheader("SQL Explorer")
 
 with st.expander("Available tables, views, and columns", expanded=False):
@@ -247,6 +323,17 @@ LIMIT 10;
     "Free vs paid": """
 SELECT *
 FROM free_vs_paid_summary;
+""",
+    "Pipeline runs by day": """
+SELECT run_date, successful_runs, rows_loaded
+FROM daily_pipeline_summary
+ORDER BY run_date;
+""",
+    "Game metric trend": """
+SELECT snapshot_time, name, ccu, review_score_percent, total_reviews
+FROM game_metric_trends
+WHERE name LIKE '%Factorio%'
+ORDER BY snapshot_time;
 """
 }
 

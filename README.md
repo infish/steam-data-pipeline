@@ -15,6 +15,7 @@ SteamSpy API -> Python extract -> pandas transform -> data quality checks -> MyS
 It currently stores:
 
 - transformed game profile and metric data in `games`
+- historical metric snapshots in `game_metric_snapshots`
 - pipeline execution history in `pipeline_runs`
 
 ## Tech Stack
@@ -174,6 +175,15 @@ FROM pipeline_runs
 ORDER BY run_id DESC;
 ```
 
+Check game metrics over time:
+
+```sql
+SELECT snapshot_time, name, ccu, review_score_percent, total_reviews
+FROM game_metric_trends
+WHERE name LIKE '%Factorio%'
+ORDER BY snapshot_time;
+```
+
 A successful run should show:
 
 ```text
@@ -191,6 +201,8 @@ The pipeline creates these MySQL views for analysis:
 - `most_active_games_by_ccu`
 - `free_vs_paid_summary`
 - `publisher_summary`
+- `game_metric_trends`
+- `daily_pipeline_summary`
 
 Example:
 
@@ -233,6 +245,7 @@ You can also open `VISUALS.url` from the project folder as a shortcut.
 The dashboard reads from the SQL analysis views and shows:
 
 - interactive Plotly charts with hover details
+- a trend chart for game metrics over time
 - KPI cards
 - data tables
 - a read-only SQL Explorer
@@ -275,6 +288,8 @@ If validation fails, the pipeline writes a `FAILED` row to `pipeline_runs`.
 ## Notes For Learning
 
 `games` answers: what data did we load?
+
+`game_metric_snapshots` answers: how did selected game metrics change between pipeline runs?
 
 `pipeline_runs` answers: what happened when the pipeline ran?
 

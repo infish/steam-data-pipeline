@@ -30,6 +30,9 @@ services:
     env_file:
       - .env.docker
 
+    volumes:
+      - ./logs:/app/logs
+
   dashboard:
     build: .
 

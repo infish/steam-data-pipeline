@@ -31,6 +31,28 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     error_message TEXT
 );
 
+CREATE TABLE IF NOT EXISTS game_metric_snapshots (
+    run_id INT NOT NULL,
+    appid INT NOT NULL,
+    snapshot_time DATETIME NOT NULL,
+    name VARCHAR(255),
+    estimated_owners BIGINT,
+    positive_reviews INT,
+    negative_reviews INT,
+    total_reviews INT,
+    review_score_percent DECIMAL(5,2),
+    average_playtime_2weeks_minutes INT,
+    median_playtime_2weeks_minutes INT,
+    ccu INT,
+    price_cents INT,
+    discount_percent INT,
+    PRIMARY KEY (run_id, appid),
+    INDEX idx_game_metric_snapshots_appid_time (appid, snapshot_time),
+    CONSTRAINT fk_game_metric_snapshots_run
+        FOREIGN KEY (run_id)
+        REFERENCES pipeline_runs(run_id)
+);
+
 CREATE OR REPLACE VIEW top_games_by_owners AS
 SELECT
     appid,
@@ -97,3 +119,35 @@ FROM games
 WHERE publisher IS NOT NULL
 GROUP BY publisher
 ORDER BY total_estimated_owners DESC;
+
+CREATE OR REPLACE VIEW game_metric_trends AS
+SELECT
+    snapshots.run_id,
+    snapshots.appid,
+    snapshots.snapshot_time,
+    snapshots.name,
+    games.developer,
+    games.publisher,
+    snapshots.estimated_owners,
+    snapshots.positive_reviews,
+    snapshots.negative_reviews,
+    snapshots.total_reviews,
+    snapshots.review_score_percent,
+    snapshots.average_playtime_2weeks_minutes,
+    snapshots.median_playtime_2weeks_minutes,
+    snapshots.ccu,
+    snapshots.price_cents,
+    snapshots.discount_percent
+FROM game_metric_snapshots AS snapshots
+LEFT JOIN games
+    ON snapshots.appid = games.appid;
+
+CREATE OR REPLACE VIEW daily_pipeline_summary AS
+SELECT
+    DATE(finished_at) AS run_date,
+    COUNT(*) AS successful_runs,
+    SUM(rows_loaded) AS rows_loaded
+FROM pipeline_runs
+WHERE status = 'SUCCESS'
+GROUP BY DATE(finished_at)
+ORDER BY run_date;
