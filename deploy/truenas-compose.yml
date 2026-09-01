@@ -4,15 +4,15 @@ services:
     restart: unless-stopped
 
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${PIPELINE_DB_USER}
-      MYSQL_PASSWORD: ${PIPELINE_DB_PASSWORD}
-      DASHBOARD_DB_USER: ${DASHBOARD_DB_USER}
-      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: CHANGE_ME_ROOT
+      MYSQL_DATABASE: steam_pipeline
+      MYSQL_USER: pipeline
+      MYSQL_PASSWORD: CHANGE_ME_PIPELINE
+      DASHBOARD_DB_USER: dashboard
+      DASHBOARD_DB_PASSWORD: CHANGE_ME_DASHBOARD
 
     volumes:
-      - mysql_data:/var/lib/mysql
+      - /mnt/Apps/steam-data-pipeline/mysql:/var/lib/mysql
 
     healthcheck:
       test:
@@ -32,10 +32,10 @@ services:
         condition: service_healthy
 
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      DASHBOARD_DB_USER: ${DASHBOARD_DB_USER}
-      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: CHANGE_ME_ROOT
+      MYSQL_DATABASE: steam_pipeline
+      DASHBOARD_DB_USER: dashboard
+      DASHBOARD_DB_PASSWORD: CHANGE_ME_DASHBOARD
 
     entrypoint:
       - /bin/bash
@@ -51,8 +51,7 @@ services:
         SQL
 
   migration-assets:
-    build: .
-    image: steam-data-pipeline-app:local
+    image: ghcr.io/infish/steam-data-pipeline:latest
     user: "0:0"
 
     command:
@@ -78,34 +77,16 @@ services:
         condition: service_completed_successfully
 
     environment:
-      FLYWAY_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?allowPublicKeyRetrieval=true&useSSL=false
-      FLYWAY_USER: ${PIPELINE_DB_USER}
-      FLYWAY_PASSWORD: ${PIPELINE_DB_PASSWORD}
+      FLYWAY_URL: jdbc:mysql://mysql:3306/steam_pipeline?allowPublicKeyRetrieval=true&useSSL=false
+      FLYWAY_USER: pipeline
+      FLYWAY_PASSWORD: CHANGE_ME_PIPELINE
       FLYWAY_LOCATIONS: filesystem:/flyway/sql
 
     volumes:
       - flyway_migrations:/flyway/sql:ro
 
-  pipeline:
-    profiles: ["manual"]
-    build: .
-    image: steam-data-pipeline-app:local
-
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-    environment:
-      MYSQL_HOST: mysql
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${PIPELINE_DB_USER}
-      MYSQL_PASSWORD: ${PIPELINE_DB_PASSWORD}
-      STEAMSPY_MODE: ${STEAMSPY_MODE:-all}
-      STEAMSPY_PAGE: ${STEAMSPY_PAGE:-0}
-
   scheduler:
-    build: .
-    image: steam-data-pipeline-app:local
+    image: ghcr.io/infish/steam-data-pipeline:latest
     restart: unless-stopped
     command: python src/scheduler.py
 
@@ -115,19 +96,35 @@ services:
 
     environment:
       MYSQL_HOST: mysql
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${PIPELINE_DB_USER}
-      MYSQL_PASSWORD: ${PIPELINE_DB_PASSWORD}
-      STEAMSPY_MODE: ${STEAMSPY_MODE:-all}
-      STEAMSPY_PAGE: ${STEAMSPY_PAGE:-0}
-      PIPELINE_TIMEZONE: ${PIPELINE_TIMEZONE:-Europe/Prague}
-      PIPELINE_RUN_HOUR: ${PIPELINE_RUN_HOUR:-20}
-      PIPELINE_RUN_MINUTE: ${PIPELINE_RUN_MINUTE:-0}
-      PIPELINE_RUN_ON_STARTUP: ${PIPELINE_RUN_ON_STARTUP:-true}
+      MYSQL_DATABASE: steam_pipeline
+      MYSQL_USER: pipeline
+      MYSQL_PASSWORD: CHANGE_ME_PIPELINE
+      STEAMSPY_MODE: all
+      STEAMSPY_PAGE: "0"
+
+      PIPELINE_TIMEZONE: Europe/Prague
+      PIPELINE_RUN_HOUR: "20"
+      PIPELINE_RUN_MINUTE: "0"
+      PIPELINE_RUN_ON_STARTUP: "true"
+
+  pipeline:
+    profiles: ["manual"]
+    image: ghcr.io/infish/steam-data-pipeline:latest
+
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_DATABASE: steam_pipeline
+      MYSQL_USER: pipeline
+      MYSQL_PASSWORD: CHANGE_ME_PIPELINE
+      STEAMSPY_MODE: all
+      STEAMSPY_PAGE: "0"
 
   dashboard:
-    build: .
-    image: steam-data-pipeline-app:local
+    image: ghcr.io/infish/steam-data-pipeline:latest
     restart: unless-stopped
 
     command: >
@@ -144,9 +141,9 @@ services:
 
     environment:
       MYSQL_HOST: mysql
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${DASHBOARD_DB_USER}
-      MYSQL_PASSWORD: ${DASHBOARD_DB_PASSWORD}
+      MYSQL_DATABASE: steam_pipeline
+      MYSQL_USER: dashboard
+      MYSQL_PASSWORD: CHANGE_ME_DASHBOARD
 
     ports:
       - "8501:8501"
@@ -165,5 +162,5 @@ services:
       start_period: 10s
 
 volumes:
-  mysql_data:
   flyway_migrations:
+
