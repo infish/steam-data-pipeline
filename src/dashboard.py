@@ -23,6 +23,7 @@ VIEW_OPTIONS = {
                 ccu,
                 price_cents
             FROM top_games_by_owners
+            ORDER BY estimated_owners DESC
             LIMIT 25
         """,
         "x": "estimated_owners",
@@ -40,6 +41,7 @@ VIEW_OPTIONS = {
                 estimated_owners,
                 ccu
             FROM top_games_by_review_score
+            ORDER BY review_score_percent DESC, total_reviews DESC
             LIMIT 25
         """,
         "x": "review_score_percent",
@@ -56,11 +58,12 @@ VIEW_OPTIONS = {
                 estimated_owners,
                 review_score_percent
             FROM most_active_games_by_ccu
+            ORDER BY ccu DESC
             LIMIT 25
         """,
         "x": "ccu",
         "y": "name",
-        "title": "Most Active Games By Current Players"
+        "title": "Most Active Games By Yesterday's Peak CCU"
     },
     "Top publishers by estimated owners": {
         "query": """
@@ -72,6 +75,7 @@ VIEW_OPTIONS = {
                 avg_review_score_percent,
                 total_ccu
             FROM publisher_summary
+            ORDER BY total_estimated_owners DESC
             LIMIT 25
         """,
         "x": "total_estimated_owners",
@@ -115,16 +119,6 @@ def get_columns(object_name):
         SHOW COLUMNS FROM `{object_name}`
     """)
 
-
-def is_safe_read_query(query):
-    normalized_query = query.strip().lower()
-    return (
-        normalized_query.startswith("select")
-        or normalized_query.startswith("with")
-        or normalized_query.startswith("show")
-    )
-
-
 def format_number(value):
     if pd.isna(value):
         return "N/A"
@@ -138,7 +132,8 @@ def get_kpis():
             COUNT(*) AS total_games,
             ROUND(AVG(review_score_percent), 2) AS avg_review_score_percent,
             SUM(ccu) AS total_current_players
-        FROM games
+        FROM current_game_metrics
+
     """).iloc[0]
 
 
@@ -168,7 +163,7 @@ metric_1, metric_2, metric_3, metric_4 = st.columns(4)
 
 metric_1.metric("Games Loaded", format_number(kpis["total_games"]))
 metric_2.metric("Avg Review Score", f"{kpis['avg_review_score_percent']:.2f}%")
-metric_3.metric("Current Players", format_number(kpis["total_current_players"]))
+metric_3.metric("Peak CCU Yesterday", format_number(kpis["total_current_players"]))
 metric_4.metric("Latest Run", f"{latest_run['status']} ({latest_run['rows_loaded']})")
 
 selected_view = st.selectbox(
@@ -342,19 +337,15 @@ selected_example = st.selectbox(
     list(example_queries.keys())
 )
 
-sql_query = st.text_area(
-    "SQL query",
-    value=example_queries[selected_example],
-    height=180
-)
+selected_query = example_queries[selected_example].strip()
 
-if st.button("Run SQL"):
-    if not is_safe_read_query(sql_query):
-        st.error("Only SELECT, WITH, and SHOW queries are allowed in this dashboard.")
-    else:
-        result_df = read_sql(sql_query)
-        st.dataframe(
-            result_df,
-            use_container_width=True,
-            hide_index=True
-        )
+st.code(selected_query, language="sql")
+
+if st.button("Run example"):
+    result_df = read_sql(selected_query)
+
+    st.dataframe(
+        result_df,
+        use_container_width=True,
+        hide_index=True
+    )

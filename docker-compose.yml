@@ -1,49 +1,86 @@
 services:
-
   mysql:
     image: mysql:8.0
+    restart: unless-stopped
 
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: steam_pipeline
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${PIPELINE_DB_USER}
+      MYSQL_PASSWORD: ${PIPELINE_DB_PASSWORD}
+      DASHBOARD_DB_USER: ${DASHBOARD_DB_USER}
+      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD}
 
-    ports:
-      - "3307:3306"
-    
     volumes:
-      - ./init:/docker-entrypoint-initdb.d
-      - ./mysql_data:/var/lib/mysql
+      - mysql_data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
 
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-prootpassword"]
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent",
+        ]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+      start_period: 10s
+
+  migrate:
+    image: flyway/flyway:13.4.0-alpine
+    command: migrate
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+    environment:
+      FLYWAY_URL: "jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?allowPublicKeyRetrieval=true&useSSL=false"
+      FLYWAY_USER: ${PIPELINE_DB_USER}
+      FLYWAY_PASSWORD: ${PIPELINE_DB_PASSWORD}
+      FLYWAY_CONNECT_RETRIES: 10
+      FLYWAY_LOCATIONS: filesystem:/flyway/migrations
+
+    volumes:
+      - ./db/migrations:/flyway/migrations:ro
 
   pipeline:
     build: .
 
     depends_on:
-      mysql:
-        condition: service_healthy
-
-    env_file:
-      - .env.docker
-
-    volumes:
-      - ./logs:/app/logs
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${PIPELINE_DB_USER}
+      MYSQL_PASSWORD: ${PIPELINE_DB_PASSWORD}
+      STEAMSPY_MODE: ${STEAMSPY_MODE:-all}
+      STEAMSPY_PAGE: ${STEAMSPY_PAGE:-0}
 
   dashboard:
     build: .
+    restart: unless-stopped
 
-    command: streamlit run src/dashboard.py --server.address=0.0.0.0 --server.port=8501
+    command: >
+      streamlit run src/dashboard.py
+      --server.address=0.0.0.0
+      --server.port=8501
 
     depends_on:
       mysql:
         condition: service_healthy
+      pipeline:
+        condition: service_completed_successfully
 
-    env_file:
-      - .env.docker
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${DASHBOARD_DB_USER}
+      MYSQL_PASSWORD: ${DASHBOARD_DB_PASSWORD}
 
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
+
+volumes:
+  mysql_data:
