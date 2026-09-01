@@ -346,3 +346,25 @@ These limitations should be considered when interpreting charts and derived metr
 - Separate migration and runtime writer permissions
 - Scheduled Linux pipeline execution
 - Integration tests for migrations and permissions
+## TrueNAS SCALE deployment
+
+The project can be deployed on TrueNAS SCALE as a single Custom App using the
+**Install via YAML** interface.
+
+### Architecture
+
+The TrueNAS deployment runs:
+
+- MySQL 8 with persistent storage
+- a one-shot database bootstrap service
+- Flyway migrations
+- a persistent Python scheduler
+- the Streamlit dashboard
+- an optional manual one-shot pipeline service
+
+The application image is pulled from:
+
+```text
+ghcr.io/infish/steam-data-pipeline:latest
+
+eof
