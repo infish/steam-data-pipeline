@@ -2,6 +2,5 @@ mysql-connector-python==9.7.0
 pandas==2.3.3
 python-dotenv==1.2.2
 requests==2.33.1
-matplotlib==3.10.8
 plotly==6.5.0
 streamlit==1.52.2

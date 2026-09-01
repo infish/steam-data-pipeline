@@ -46,6 +46,7 @@ services:
 
   pipeline:
     build: .
+    image: steam-data-pipeline-app:local
 
     depends_on:
       migrate:
@@ -60,6 +61,7 @@ services:
 
   dashboard:
     build: .
+    image: steam-data-pipeline-app:local
     restart: unless-stopped
 
     command: >
