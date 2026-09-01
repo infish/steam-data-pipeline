@@ -1,14 +1,21 @@
-FROM python:3.10
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
-ENV PYTHONUNBUFFERED=1
+
+RUN addgroup --system app \
+    && adduser --system --ingroup app app
 
 COPY requirements.txt .
 
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY --chown=app:app . .
 
-RUN mkdir -p logs
+USER app
 
 CMD ["python", "src/main.py"]

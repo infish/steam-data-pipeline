@@ -1,306 +1,348 @@
 # Steam Data Pipeline
 
-A learning ETL project that extracts top Steam game data from the SteamSpy API, transforms it with pandas, and loads it into MySQL.
+A Dockerized data pipeline that extracts Steam game statistics from the SteamSpy API, validates and transforms them with Python, stores historical snapshots in MySQL, and presents SQL-driven analytics in a Streamlit dashboard.
 
-The default dataset loads the first SteamSpy `all` page, which is roughly 1,000 games. The project is designed to run locally on Windows and in Docker Compose, with a structure that can later be extended toward Azure.
+The project is designed as a practical data-engineering portfolio project, with reproducible deployment, database migrations, audit history, data-quality checks, automated tests, and separate database permissions.
 
-## What It Does
+## Architecture
 
-The pipeline performs this flow:
-
-```text
-SteamSpy API -> Python extract -> pandas transform -> data quality checks -> MySQL load -> run audit
+```mermaid
+flowchart TD
+    API["SteamSpy API"] --> Pipeline["Python pipeline"]
+    Flyway["Flyway SQL migrations"] --> MySQL[("MySQL")]
+    Pipeline --> MySQL
+    MySQL --> Views["SQL analytics views"]
+    Views --> Dashboard["Read-only Streamlit dashboard"]
 ```
 
-It currently stores:
+Docker Compose manages four services:
 
-- transformed game profile and metric data in `games`
-- historical metric snapshots in `game_metric_snapshots`
-- pipeline execution history in `pipeline_runs`
+- `mysql` — persistent database.
+- `migrate` — applies pending Flyway migrations and exits.
+- `pipeline` — extracts and loads one snapshot, then exits.
+- `dashboard` — provides the interactive analytics interface.
 
-## Tech Stack
+Startup order is enforced:
 
-- Python 3.10
-- pandas
-- requests
-- Plotly
+```text
+MySQL healthy → migrations complete → pipeline complete → dashboard starts
+```
+
+## Features
+
+- SteamSpy API extraction with retry and exponential backoff.
+- Validation and transformation of 1,000 games per configured API page.
+- Append-only historical metric snapshots.
+- Audited pipeline runs with success/failure status.
+- SQL window functions for changes between snapshots.
+- Versioned and repeatable Flyway migrations.
+- Read-only dashboard database account.
+- Docker-managed persistent storage.
+- Non-root Python containers.
+- Automated unit tests without live API requests.
+- Linux, macOS and Windows-compatible Docker Compose workflow.
+
+## Technology
+
+- Python 3.12
+- Pandas
+- Requests
+- MySQL 8.0
+- Flyway
 - Streamlit
-- MySQL
-- mysql-connector-python
+- Plotly
+- Docker Compose
+- `unittest`
+
+## Data model
+
+### `games`
+
+Relatively stable game metadata:
+
+- App ID and name
+- Developer and publisher
+- Languages and genre
+- First and most recent appearance in the extraction
+
+### `game_metric_snapshots`
+
+Append-only measurements for each pipeline run:
+
+- Owner estimate range and midpoint
+- Positive and negative reviews
+- Review score
+- Lifetime and recent playtime
+- Yesterday’s peak concurrent users
+- Current and original price
+- Discount percentage
+
+### `pipeline_runs`
+
+Operational audit information:
+
+- Start and finish timestamps
+- Status
+- Rows extracted and loaded
+- Failure message
+
+All database timestamps are stored in UTC. The dashboard converts displayed run times to `Europe/Prague`.
+
+## SQL analytics
+
+The project includes views for:
+
+- Latest successful pipeline run
+- Current metrics from that run
+- Top games by estimated owners
+- Best-reviewed games
+- Games with the highest yesterday-peak CCU
+- Free, paid and unknown-price comparisons
+- Publisher summaries
+- Historical game trends
+- Changes between consecutive snapshots using `LAG()`
+- Daily pipeline reliability
+
+Views contain reusable analytical logic. Final dashboard queries control sorting and row limits explicitly.
+
+## Project structure
+
+```text
+.
+├── db
+│   ├── init
+│   │   └── 01_create_dashboard_user.sh
+│   └── migrations
+│       ├── R__analytics_views.sql
+│       └── V1__initial_schema.sql
+├── src
+│   ├── api
+│   │   └── steam_api.py
+│   ├── database
+│   │   └── mysql_database.py
+│   ├── quality
+│   │   └── data_quality.py
+│   ├── transform
+│   │   └── data_transformer.py
+│   ├── config.py
+│   ├── dashboard.py
+│   └── main.py
+├── tests
+│   ├── test_steam_api.py
+│   └── test_transform.py
+├── .env.example
+├── docker-compose.yml
+├── Dockerfile
+├── requirements.txt
+└── README.md
+```
+
+## Prerequisites
+
+Install:
+
+- Git
 - Docker
 - Docker Compose
-- Windows batch scripts
 
-## Project Structure
+No local Python installation, MySQL server, or MySQL Workbench is required.
 
-```text
-src/
-  api/
-    steam_api.py
-  database/
-    mysql_database.py
-  quality/
-    data_quality.py
-  transform/
-    data_transformer.py
-  dashboard.py
-  config.py
-  main.py
-  visualize.py
+Verify:
 
-init/
-  init.sql
-
-Dockerfile
-docker-compose.yml
-requirements.txt
-run_dashboard.bat
-run_docker_pipeline.bat
-run_pipeline.bat
-run_reports.bat
-setup_venv.bat
-VISUALS.url
+```bash
+git --version
+docker --version
+docker compose version
 ```
 
-## Configuration
+## Linux setup
 
-The app reads MySQL settings from environment variables:
+Clone the repository:
 
-```env
-MYSQL_HOST=mysql
-MYSQL_USER=root
-MYSQL_PASSWORD=rootpassword
-MYSQL_DATABASE=steam_pipeline
-STEAMSPY_MODE=all
-STEAMSPY_PAGE=0
+```bash
+git clone https://github.com/infish/steam-data-pipeline.git
+cd steam-data-pipeline
 ```
 
-For Docker, create `.env.docker`.
+Create the private configuration file:
 
-For local Windows runs, create `.env.local`.
-
-Both files are ignored by Git. Use `.env.example` as a template.
-
-`STEAMSPY_MODE=all` with `STEAMSPY_PAGE=0` loads the first SteamSpy page, which is roughly 1,000 games. To switch back to the smaller demo dataset, set:
-
-```env
-STEAMSPY_MODE=top100in2weeks
+```bash
+cp .env.example .env
 ```
 
-## Run With Docker Compose
+Generate three separate passwords:
 
-From the project root:
-
-```powershell
-docker compose up --build
+```bash
+openssl rand -hex 24
+openssl rand -hex 24
+openssl rand -hex 24
 ```
 
-Expected behavior:
+Open `.env` and assign them to:
 
-1. MySQL starts.
-2. MySQL becomes healthy.
-3. The pipeline container runs once.
-4. The pipeline exits with code `0` after loading data.
-5. MySQL keeps running.
+- `MYSQL_ROOT_PASSWORD`
+- `PIPELINE_DB_PASSWORD`
+- `DASHBOARD_DB_PASSWORD`
 
-To stop the containers:
+Never commit `.env`. It is excluded by both Git and Docker.
 
-```powershell
-docker compose down
+## Start the complete project
+
+```bash
+docker compose up --build -d
 ```
 
-To run only the pipeline again while MySQL is already running:
+Check service states:
 
-```powershell
+```bash
+docker compose ps -a
+```
+
+Expected lifecycle:
+
+- MySQL: running and healthy.
+- Flyway: exited with code `0`.
+- Pipeline: exited with code `0`.
+- Dashboard: running and healthy.
+
+Open the dashboard:
+
+[http://localhost:8501](http://localhost:8501)
+
+The dashboard binds only to the local computer by default.
+
+## Run another snapshot
+
+```bash
 docker compose run --rm pipeline
 ```
 
-## Run With Windows Task Scheduler
+This applies any pending migrations, requests the configured SteamSpy page, and appends another historical snapshot.
 
-Use this script when scheduling the Docker-based pipeline:
+SteamSpy data is refreshed roughly daily, so frequent repeated runs provide little additional value.
 
-```text
-run_docker_pipeline.bat
+## View logs
+
+```bash
+docker compose logs pipeline
+docker compose logs dashboard
+docker compose logs mysql
 ```
 
-It starts the MySQL container if needed, then runs the one-time pipeline container.
+Follow dashboard logs continuously:
 
-## Verify The Load
-
-Open a MySQL shell:
-
-```powershell
-docker compose exec mysql mysql -uroot -prootpassword steam_pipeline
+```bash
+docker compose logs -f dashboard
 ```
 
-Check loaded games:
+## Stop the project
+
+```bash
+docker compose down
+```
+
+The MySQL named volume remains intact.
+
+To intentionally delete the development database and recreate it from scratch:
+
+```bash
+docker compose down -v
+```
+
+Warning: `-v` permanently deletes all snapshots stored in the Docker volume.
+
+## Query MySQL without Workbench
+
+Open the MySQL command-line client as the pipeline account:
+
+```bash
+docker compose exec mysql sh -c \
+  'MYSQL_PWD="$MYSQL_PASSWORD" mysql -u"$MYSQL_USER" "$MYSQL_DATABASE"'
+```
+
+Example SQL:
 
 ```sql
-SELECT COUNT(*) FROM games;
+SELECT COUNT(*)
+FROM current_game_metrics;
 
 SELECT
-    appid,
     name,
-    developer,
-    publisher,
-    owners,
-    estimated_owners,
-    positive_reviews,
-    negative_reviews,
-    review_score_percent,
-    ccu,
-    price_cents,
-    discount_percent,
-    ingestion_time
-FROM games
-ORDER BY estimated_owners DESC
-LIMIT 10;
+    total_reviews_change,
+    ccu_change
+FROM game_metric_changes
+WHERE previous_snapshot_time IS NOT NULL
+ORDER BY total_reviews_change DESC
+LIMIT 20;
 ```
 
-Find highly rated games with a meaningful review count:
-
-```sql
-SELECT name, total_reviews, review_score_percent, estimated_owners
-FROM games
-WHERE total_reviews >= 10000
-ORDER BY review_score_percent DESC
-LIMIT 10;
-```
-
-Check pipeline run history:
-
-```sql
-SELECT run_id, started_at, finished_at, status, rows_loaded, error_message
-FROM pipeline_runs
-ORDER BY run_id DESC;
-```
-
-Check game metrics over time:
-
-```sql
-SELECT snapshot_time, name, ccu, review_score_percent, total_reviews
-FROM game_metric_trends
-WHERE name LIKE '%Factorio%'
-ORDER BY snapshot_time;
-```
-
-A successful run should show:
+Exit the MySQL client with:
 
 ```text
-status       SUCCESS
-rows_loaded  1000
-error        NULL
+exit
 ```
 
-## Analysis Views
+## Database migrations
 
-The pipeline creates these MySQL views for analysis:
-
-- `top_games_by_owners`
-- `top_games_by_review_score`
-- `most_active_games_by_ccu`
-- `free_vs_paid_summary`
-- `publisher_summary`
-- `game_metric_trends`
-- `daily_pipeline_summary`
-
-Example:
-
-```sql
-SELECT *
-FROM publisher_summary
-LIMIT 10;
-```
-
-## Generate Local Charts
-
-After MySQL is running and the pipeline has loaded data, generate PNG charts:
-
-```bat
-run_reports.bat
-```
-
-Charts are saved to:
+Flyway reads SQL from:
 
 ```text
-reports/
+db/migrations/
 ```
 
-## Run Interactive Dashboard
+Migration types:
 
-Start the local Streamlit dashboard:
+- `V1__description.sql` — versioned migration, executed once.
+- `V2__description.sql` — next schema change.
+- `R__description.sql` — repeatable migration, rerun when its contents change.
 
-```bat
-run_dashboard.bat
+Do not edit an already-applied versioned migration. Create the next numbered migration instead.
+
+## Run automated tests
+
+Tests run inside the application image and do not require local Python packages:
+
+```bash
+docker compose run --build --rm --no-deps \
+  -e PYTHONPATH=/app/src \
+  pipeline \
+  python -m unittest discover -s tests -v
 ```
 
-Then open:
+The API tests use mocks and never contact SteamSpy.
 
-```text
-http://localhost:8501
-```
+## Security
 
-You can also open `VISUALS.url` from the project folder as a shortcut.
+- MySQL is not published to the host network.
+- Database files live in a Docker named volume.
+- Credentials are stored in an ignored `.env` file.
+- The dashboard uses an account restricted to `SELECT` and `SHOW VIEW`.
+- Arbitrary SQL input is not accepted by the dashboard.
+- The dashboard listens only on `127.0.0.1`.
+- Python services run as an unprivileged container user.
 
-The dashboard reads from the SQL analysis views and shows:
+Do not expose the Streamlit port directly to the public internet. Use an authenticated reverse proxy or a private network such as Tailscale if remote access is required.
 
-- interactive Plotly charts with hover details
-- a trend chart for game metrics over time
-- KPI cards
-- data tables
-- a read-only SQL Explorer
-- available tables, views, and columns for SQL help
+## Data limitations
 
-The SQL Explorer only allows read queries such as `SELECT`, `WITH`, and `SHOW`.
+SteamSpy provides estimates, not exact sales or ownership figures.
 
-## Run Locally On Windows
+Important limitations:
 
-Install Python 3.10 or newer, then create a virtual environment:
+- `owners` is an estimated range.
+- The midpoint is useful for comparisons but is not an exact count.
+- Owned copies are not equivalent to sales.
+- `ccu` represents yesterday’s peak concurrent users.
+- Recently released and low-ownership games may have unreliable estimates.
+- `request=all` returns 1,000 games per page and is rate-limited.
 
-```bat
-setup_venv.bat
-```
+These limitations should be considered when interpreting charts and derived metrics.
 
-Run the pipeline:
+## Planned improvements
 
-```bat
-run_pipeline.bat
-```
-
-The local run expects `.env.local` to point to a reachable MySQL instance.
-
-## Data Quality Checks
-
-Before loading to MySQL, the pipeline validates that:
-
-- the transformed DataFrame is not empty
-- required columns exist
-- `appid` is present and unique
-- `name` is not empty
-- owner fields are present
-- `owners_low <= owners_high`
-- `estimated_owners` is not negative
-- review, playtime, CCU, price, and discount fields are not negative when present
-- `review_score_percent` is between 0 and 100 when present
-
-If validation fails, the pipeline writes a `FAILED` row to `pipeline_runs`.
-
-## Notes For Learning
-
-`games` answers: what data did we load?
-
-`game_metric_snapshots` answers: how did selected game metrics change between pipeline runs?
-
-`pipeline_runs` answers: what happened when the pipeline ran?
-
-That separation is important in real ETL systems because it gives you observability and makes failures easier to debug.
-
-## Future Improvements
-
-- Add automated tests
-- Add data quality result details per rule
-- Split changing metrics into a separate snapshot fact table
-- Add GitHub Actions CI
-- Add scheduled execution
-- Add Azure deployment
-- Add Power BI dashboard
+- GitHub Actions test automation
+- Normalized genres and tags
+- Dashboard momentum analysis
+- Separate migration and runtime writer permissions
+- Scheduled Linux pipeline execution
+- Integration tests for migrations and permissions
