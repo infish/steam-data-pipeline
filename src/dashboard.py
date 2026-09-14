@@ -63,7 +63,7 @@ VIEW_OPTIONS = {
         """,
         "x": "ccu",
         "y": "name",
-        "title": "Most Active Games By Yesterday's Peak CCU"
+        "title": "Most Active Games By SteamSpy-Reported CCU"
     },
     "Top publishers by estimated owners": {
         "query": """
@@ -144,7 +144,7 @@ def get_kpis():
         SELECT
             COUNT(*) AS total_games,
             ROUND(AVG(review_score_percent), 2) AS avg_review_score_percent,
-            SUM(ccu) AS total_peak_ccu_yesterday
+            SUM(ccu) AS total_steamspy_ccu
         FROM current_game_metrics
 
     """).iloc[0]
@@ -172,6 +172,15 @@ def get_snapshot_games():
     """)
 
 
+def get_steam_measurement_games():
+    return read_sql("""
+        SELECT DISTINCT measurements.appid, games.name
+        FROM steam_game_measurements AS measurements
+        JOIN games ON measurements.appid = games.appid
+        ORDER BY games.name
+    """)
+
+
 st.title("Steam Data Pipeline Dashboard")
 
 latest_run = get_latest_run()
@@ -186,7 +195,7 @@ metric_1, metric_2, metric_3, metric_4 = st.columns(4)
 
 metric_1.metric("Games Loaded", format_number(kpis["total_games"]))
 metric_2.metric("Avg Review Score", f"{kpis['avg_review_score_percent']:.2f}%")
-metric_3.metric("Peak CCU Yesterday", format_number(kpis["total_peak_ccu_yesterday"]))
+metric_3.metric("SteamSpy-Reported CCU", format_number(kpis["total_steamspy_ccu"]))
 metric_4.metric("Latest Run", f"{latest_run['status']} ({latest_run['rows_loaded']})")
 
 st.caption(
@@ -232,74 +241,176 @@ st.dataframe(
 
 st.divider()
 
-st.subheader("Metric Trends Over Time")
+st.subheader("Valve Steam Measurements Over Time")
 
-snapshot_games = get_snapshot_games()
+st.caption(
+    "Current players come from Steam's Web API. Review totals come from "
+    "Steam Store reviews for all languages and purchase types, including "
+    "off-topic activity. These endpoints do not return a source measurement "
+    "timestamp, so points use and are explicitly labeled by collection time."
+)
 
-if snapshot_games.empty:
-    st.info("No metric snapshots yet. Run the pipeline once to start collecting trend data.")
+measurement_games = get_steam_measurement_games()
+
+if measurement_games.empty:
+    st.info(
+        "No Valve Steam measurements yet. Run the updated pipeline once to "
+        "start collecting them."
+    )
 else:
-    trend_col_1, trend_col_2 = st.columns([2, 1])
+    measurement_col_1, measurement_col_2 = st.columns([2, 1])
 
-    with trend_col_1:
-        selected_game_name = st.selectbox(
+    with measurement_col_1:
+        selected_measurement_game = st.selectbox(
             "Game",
-            snapshot_games["name"].tolist()
+            measurement_games["name"].tolist(),
+            key="steam_measurement_game"
         )
 
-    with trend_col_2:
-        selected_metric = st.selectbox(
+    measurement_labels = {
+        "current_players": "Current Players",
+        "total_reviews": "Steam User Reviews",
+        "positive_reviews": "Positive Steam User Reviews",
+        "negative_reviews": "Negative Steam User Reviews",
+        "review_score_percent": "Positive Steam Review Share"
+    }
+
+    with measurement_col_2:
+        selected_measurement = st.selectbox(
             "Metric",
-            [
-                "ccu",
-                "estimated_owners",
-                "total_reviews",
-                "positive_reviews",
-                "negative_reviews",
-                "review_score_percent",
-                "price_cents",
-                "discount_percent"
-            ]
+            list(measurement_labels),
+            format_func=measurement_labels.get,
+            key="steam_measurement_metric"
         )
 
-    selected_appid = int(
-        snapshot_games.loc[
-            snapshot_games["name"] == selected_game_name,
+    selected_measurement_appid = int(
+        measurement_games.loc[
+            measurement_games["name"] == selected_measurement_game,
             "appid"
         ].iloc[0]
     )
 
-    trend_df = read_sql(
-    f"""
-        SELECT snapshot_time, name, {selected_metric}
-        FROM game_metric_trends
-        WHERE appid = %s
-        ORDER BY snapshot_time
-    """,
-    params=(selected_appid,)
+    measurement_df = read_sql(
+        f"""
+            SELECT
+                collected_at,
+                source_measured_at,
+                {selected_measurement}
+            FROM steam_game_measurements
+            WHERE appid = %s
+            ORDER BY collected_at
+        """,
+        params=(selected_measurement_appid,)
     )
 
-    trend_fig = px.line(
-        trend_df,
-        x="snapshot_time",
-        y=selected_metric,
+    measurement_fig = px.line(
+        measurement_df,
+        x="collected_at",
+        y=selected_measurement,
         markers=True,
-        title=f"{selected_game_name}: {selected_metric.replace('_', ' ').title()} Over Time"
+        title=(
+            f"{selected_measurement_game}: "
+            f"{measurement_labels[selected_measurement]} by collection time"
+        )
     )
-
-    trend_fig.update_layout(
+    measurement_fig.update_layout(
         height=450,
-        xaxis_title="Snapshot Time",
-        yaxis_title=selected_metric.replace("_", " ").title()
+        xaxis_title="Collected At (UTC)",
+        yaxis_title=measurement_labels[selected_measurement]
+    )
+    st.plotly_chart(measurement_fig, use_container_width=True)
+
+    if len(measurement_df) >= 3:
+        recent_values = measurement_df[selected_measurement].tail(3)
+        if recent_values.nunique(dropna=False) == 1:
+            st.warning(
+                "The latest three collected values are identical. The source "
+                "may be unchanged or cached; verify it before treating the "
+                "latest collection as a new measurement."
+            )
+
+    st.dataframe(measurement_df, use_container_width=True, hide_index=True)
+
+st.divider()
+
+with st.expander("Legacy SteamSpy snapshots", expanded=False):
+    st.caption(
+        "These historical fields are SteamSpy values collected by the old "
+        "pipeline. SteamSpy provides no source measurement timestamp, and the "
+        "stored collection time does not prove the underlying value was fresh."
     )
 
-    st.plotly_chart(trend_fig, use_container_width=True)
+    snapshot_games = get_snapshot_games()
 
-    st.dataframe(
-        trend_df,
-        use_container_width=True,
-        hide_index=True
-    )
+    if snapshot_games.empty:
+        st.info("No SteamSpy snapshots are available.")
+    else:
+        trend_col_1, trend_col_2 = st.columns([2, 1])
+
+        with trend_col_1:
+            selected_game_name = st.selectbox(
+                "Game",
+                snapshot_games["name"].tolist(),
+                key="steamspy_snapshot_game"
+            )
+
+        with trend_col_2:
+            selected_metric = st.selectbox(
+                "SteamSpy field",
+                [
+                    "ccu",
+                    "estimated_owners",
+                    "total_reviews",
+                    "positive_reviews",
+                    "negative_reviews",
+                    "review_score_percent",
+                    "price_cents",
+                    "discount_percent"
+                ],
+                key="steamspy_snapshot_metric"
+            )
+
+        selected_appid = int(
+            snapshot_games.loc[
+                snapshot_games["name"] == selected_game_name,
+                "appid"
+            ].iloc[0]
+        )
+
+        trend_df = read_sql(
+            f"""
+                SELECT snapshot_time AS collected_at, name, {selected_metric}
+                FROM game_metric_trends
+                WHERE appid = %s
+                ORDER BY snapshot_time
+            """,
+            params=(selected_appid,)
+        )
+
+        trend_fig = px.line(
+            trend_df,
+            x="collected_at",
+            y=selected_metric,
+            markers=True,
+            title=(
+                f"{selected_game_name}: SteamSpy "
+                f"{selected_metric.replace('_', ' ').title()} by collection time"
+            )
+        )
+
+        trend_fig.update_layout(
+            height=450,
+            xaxis_title="Collected At (UTC)",
+            yaxis_title=f"SteamSpy {selected_metric.replace('_', ' ').title()}"
+        )
+
+        st.plotly_chart(trend_fig, use_container_width=True)
+
+        st.dataframe(
+            trend_df,
+            use_container_width=True,
+            hide_index=True
+        )
 
 st.divider()
 

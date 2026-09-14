@@ -101,11 +101,12 @@ services:
       MYSQL_PASSWORD: CHANGE_ME_PIPELINE
       STEAMSPY_MODE: all
       STEAMSPY_PAGE: "0"
+      STEAM_TRACKED_APPIDS: "730,427520,620"
 
       PIPELINE_TIMEZONE: Europe/Prague
       PIPELINE_RUN_HOUR: "20"
       PIPELINE_RUN_MINUTE: "0"
-      PIPELINE_RUN_ON_STARTUP: "true"
+      PIPELINE_RUN_ON_STARTUP: "false"
 
   pipeline:
     profiles: ["manual"]
@@ -122,6 +123,7 @@ services:
       MYSQL_PASSWORD: CHANGE_ME_PIPELINE
       STEAMSPY_MODE: all
       STEAMSPY_PAGE: "0"
+      STEAM_TRACKED_APPIDS: "730,427520,620"
 
   dashboard:
     image: ghcr.io/infish/steam-data-pipeline:latest
@@ -163,4 +165,3 @@ services:
 
 volumes:
   flyway_migrations:
-

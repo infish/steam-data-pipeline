@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from scheduler import get_next_run
+from scheduler import get_next_run, wait_until
 
 
 class SchedulerTests(unittest.TestCase):
@@ -56,6 +56,26 @@ class SchedulerTests(unittest.TestCase):
                 tzinfo=self.timezone
             )
         )
+
+    def test_wait_until_rechecks_after_early_wakeup(self):
+        target = datetime(
+            2026, 9, 1, 20, 0,
+            tzinfo=self.timezone
+        )
+        observed_times = iter([
+            datetime(2026, 9, 1, 19, 59, 59, tzinfo=self.timezone),
+            datetime(2026, 9, 1, 19, 59, 59, 500000, tzinfo=self.timezone),
+            target
+        ])
+        sleeps = []
+
+        wait_until(
+            target,
+            now_fn=lambda: next(observed_times),
+            sleep_fn=sleeps.append
+        )
+
+        self.assertEqual(sleeps, [1.0, 0.5])
 
 
 if __name__ == "__main__":

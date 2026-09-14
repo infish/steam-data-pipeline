@@ -40,3 +40,26 @@ def get_steamspy_config():
         "mode": get_env("STEAMSPY_MODE", "all"),
         "page": int(get_env("STEAMSPY_PAGE", "0"))
     }
+
+
+def get_tracked_appids():
+    raw_appids = get_env(
+        "STEAM_TRACKED_APPIDS",
+        "730,427520,620"
+    )
+
+    try:
+        appids = [
+            int(value.strip())
+            for value in raw_appids.split(",")
+            if value.strip()
+        ]
+    except ValueError as error:
+        raise ValueError(
+            "STEAM_TRACKED_APPIDS must be a comma-separated list of integers"
+        ) from error
+
+    if not appids:
+        raise ValueError("STEAM_TRACKED_APPIDS must contain at least one app ID")
+
+    return list(dict.fromkeys(appids))

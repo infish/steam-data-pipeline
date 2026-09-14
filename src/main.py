@@ -1,6 +1,6 @@
 import logging
 import math
-from api.steam_api import get_top_games
+from api.steam_api import get_steam_measurements, get_top_games
 from database.mysql_database import get_connection
 from quality.data_quality import validate_games_data
 from transform.data_transformer import transform_games_data
@@ -125,9 +125,6 @@ def load_games(cursor, df, observed_at):
     cursor.executemany(query, values)
     return len(values)
 
-    cursor.executemany(query, values)
-    return len(values)
-
 
 def load_game_metric_snapshots(cursor, df, run_id, snapshot_time):
     query = """
@@ -186,6 +183,37 @@ def load_game_metric_snapshots(cursor, df, run_id, snapshot_time):
     cursor.executemany(query, values)
     return len(values)
 
+
+def load_steam_measurements(cursor, measurements, run_id, collected_at):
+    query = """
+        INSERT INTO steam_game_measurements (
+            run_id,
+            appid,
+            collected_at,
+            source_measured_at,
+            current_players,
+            positive_reviews,
+            negative_reviews,
+            total_reviews,
+            review_score_percent
+        )
+        VALUES (%s, %s, %s, NULL, %s, %s, %s, %s, %s)
+    """
+
+    values = [
+        (
+            run_id,
+            measurement["appid"],
+            collected_at,
+            measurement["current_players"],
+            measurement["positive_reviews"],
+            measurement["negative_reviews"],
+            measurement["total_reviews"],
+            measurement["review_score_percent"]
+        )
+        for measurement in measurements
+    ]
+
     cursor.executemany(query, values)
     return len(values)
 
@@ -203,6 +231,7 @@ def run_pipeline():
         connection.commit()
 
         data = get_top_games()
+        steam_measurements = get_steam_measurements()
 
         if data is None:
             raise RuntimeError("No API data received")
@@ -239,6 +268,30 @@ def run_pipeline():
         ingestion_time = utc_now()
         rows_loaded = load_games(cursor, df, ingestion_time)
         load_game_metric_snapshots(cursor, df, run_id, ingestion_time)
+        known_appids = set(df["appid"].astype(int))
+        loadable_measurements = [
+            measurement
+            for measurement in steam_measurements
+            if measurement["appid"] in known_appids
+        ]
+        missing_appids = sorted(
+            measurement["appid"]
+            for measurement in steam_measurements
+            if measurement["appid"] not in known_appids
+        )
+
+        if missing_appids:
+            logging.warning(
+                "Tracked Steam app IDs absent from the SteamSpy page: %s",
+                missing_appids
+            )
+
+        measurements_loaded = load_steam_measurements(
+            cursor,
+            loadable_measurements,
+            run_id,
+            ingestion_time
+        )
 
         finish_pipeline_run(
             cursor,
@@ -249,7 +302,11 @@ def run_pipeline():
         )
         connection.commit()
 
-        logging.info("Pipeline completed: %s games loaded", rows_loaded)
+        logging.info(
+            "Pipeline completed: %s games and %s Steam measurements loaded",
+            rows_loaded,
+            measurements_loaded
+        )
 
     except Exception as error:
         logging.exception("Pipeline failed")

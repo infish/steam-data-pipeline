@@ -71,6 +71,19 @@ def execute_pipeline():
         )
 
 
+def wait_until(target, now_fn=None, sleep_fn=time.sleep):
+    if now_fn is None:
+        now_fn = lambda: datetime.now(target.tzinfo)
+
+    while True:
+        remaining_seconds = (target - now_fn()).total_seconds()
+
+        if remaining_seconds <= 0:
+            return
+
+        sleep_fn(remaining_seconds)
+
+
 def run_scheduler():
     timezone, run_hour, run_minute = get_schedule_config()
 
@@ -83,21 +96,19 @@ def run_scheduler():
 
     if os.getenv(
         "PIPELINE_RUN_ON_STARTUP",
-        "true"
+        "false"
     ).lower() in {"1", "true", "yes"}:
         execute_pipeline()
 
     while True:
         now = datetime.now(timezone)
         next_run = get_next_run(now, run_hour, run_minute)
-        wait_seconds = (next_run - now).total_seconds()
-
         logging.info(
             "Next pipeline run scheduled for %s",
             next_run.isoformat()
         )
 
-        time.sleep(wait_seconds)
+        wait_until(next_run)
         execute_pipeline()
 
 
