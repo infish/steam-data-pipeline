@@ -18,10 +18,7 @@ VIEW_OPTIONS = {
                 name,
                 developer,
                 publisher,
-                estimated_owners,
-                review_score_percent,
-                ccu AS steamspy_reported_ccu,
-                price_cents
+                estimated_owners
             FROM top_games_by_owners
             ORDER BY estimated_owners DESC
             LIMIT 25
@@ -29,24 +26,6 @@ VIEW_OPTIONS = {
         "x": "estimated_owners",
         "y": "name",
         "title": "Top Games By Estimated Owners"
-    },
-    "Top games by review score": {
-        "query": """
-            SELECT
-                name,
-                developer,
-                publisher,
-                total_reviews,
-                review_score_percent,
-                estimated_owners,
-                ccu AS steamspy_reported_ccu
-            FROM top_games_by_review_score
-            ORDER BY review_score_percent DESC, total_reviews DESC
-            LIMIT 25
-        """,
-        "x": "review_score_percent",
-        "y": "name",
-        "title": "Top Games By Review Score"
     },
     "Most active games by Valve current players": {
         "query": """
@@ -74,9 +53,7 @@ VIEW_OPTIONS = {
                 publisher,
                 game_count,
                 avg_estimated_owners,
-                total_estimated_owners,
-                avg_review_score_percent,
-                total_ccu AS total_steamspy_reported_ccu
+                total_estimated_owners
             FROM publisher_summary
             ORDER BY total_estimated_owners DESC
             LIMIT 25
@@ -84,21 +61,17 @@ VIEW_OPTIONS = {
         "x": "total_estimated_owners",
         "y": "publisher",
         "title": "Top Publishers By Estimated Owners"
-    },
-    "Free vs paid summary": {
-        "query": """
-            SELECT
-                price_type,
-                game_count,
-                avg_estimated_owners,
-                avg_review_score_percent,
-                avg_ccu AS avg_steamspy_reported_ccu
-            FROM free_vs_paid_summary
-        """,
-        "x": "game_count",
-        "y": "price_type",
-        "title": "Free vs Paid Games"
     }
+}
+
+
+EXPLORER_OBJECTS = {
+    "daily_pipeline_summary",
+    "flyway_schema_history",
+    "games",
+    "latest_successful_run",
+    "pipeline_runs",
+    "steam_game_measurements"
 }
 
 
@@ -112,9 +85,13 @@ def read_sql(query, params=None):
 
 
 def get_database_objects():
-    return read_sql("""
+    objects = read_sql("""
         SHOW FULL TABLES
     """)
+    object_name_column = objects.columns[0]
+    return objects[
+        objects[object_name_column].isin(EXPLORER_OBJECTS)
+    ].reset_index(drop=True)
 
 
 def get_columns(object_name):
@@ -146,7 +123,13 @@ def get_kpis():
     return read_sql("""
         SELECT
             COUNT(*) AS total_games,
-            ROUND(AVG(review_score_percent), 2) AS avg_review_score_percent,
+            (
+                SELECT COUNT(*)
+                FROM steam_game_measurements
+                WHERE run_id = (
+                    SELECT MAX(run_id) FROM steam_game_measurements
+                )
+            ) AS valve_measured_games,
             (
                 SELECT SUM(current_players)
                 FROM steam_game_measurements
@@ -195,7 +178,7 @@ kpis = get_kpis()
 metric_1, metric_2, metric_3, metric_4 = st.columns(4)
 
 metric_1.metric("Games Loaded", format_number(kpis["total_games"]))
-metric_2.metric("Avg Review Score", f"{kpis['avg_review_score_percent']:.2f}%")
+metric_2.metric("Valve-Measured Games", format_number(kpis["valve_measured_games"]))
 metric_3.metric("Valve Current Players", format_number(kpis["valve_current_players"]))
 metric_4.metric("Latest Run", f"{latest_run['status']} ({latest_run['rows_loaded']})")
 
@@ -393,18 +376,20 @@ ORDER BY run_id DESC
 LIMIT 10;
 """,
     "Publisher summary": """
-SELECT publisher, game_count, total_estimated_owners, avg_review_score_percent, total_ccu
+SELECT publisher, game_count, total_estimated_owners, avg_estimated_owners
 FROM publisher_summary
 LIMIT 10;
 """,
-    "Best reviewed games": """
-SELECT name, total_reviews, review_score_percent, estimated_owners
-FROM top_games_by_review_score
-LIMIT 10;
-""",
-    "Free vs paid": """
-SELECT *
-FROM free_vs_paid_summary;
+    "Latest Valve player ranking": """
+SELECT games.name, measurements.player_rank,
+       measurements.current_players, measurements.source_measured_at
+FROM steam_game_measurements AS measurements
+JOIN games ON games.appid = measurements.appid
+WHERE measurements.run_id = (
+    SELECT MAX(run_id) FROM steam_game_measurements
+)
+ORDER BY measurements.current_players DESC
+LIMIT 25;
 """,
     "Pipeline runs by day": """
 SELECT run_date, successful_runs, rows_loaded

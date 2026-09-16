@@ -412,6 +412,8 @@ same misleading flat series. The completed correction:
 - records Valve's source timestamp when the feed supplies one;
 - keeps collection time separate and uses it only as an explicit fallback;
 - charts only Valve measurements while retaining SteamSpy snapshots for audit;
+- excludes stale SteamSpy player, review, and price fields from regular
+  dashboard analyses and the in-dashboard SQL Explorer;
 - avoids fabricating or backfilling historical Valve values.
 
 Duplicate observations had two scheduling causes. The scheduler originally ran

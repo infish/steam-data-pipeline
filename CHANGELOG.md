@@ -14,6 +14,11 @@ This file records user-visible changes to the Steam data pipeline.
   from pipeline collection time.
 - Removed legacy SteamSpy snapshots from dashboard charts. They remain stored
   and queryable for audit purposes without being presented as fresh data.
+- Removed SteamSpy `ccu` fields from the dashboard's regular analysis tables
+  and SQL examples; the raw historical column remains available for audit.
+- Removed stale SteamSpy review and price summaries from regular dashboard
+  analyses and limited the in-dashboard SQL Explorer to current operational,
+  catalog, and Valve measurement objects.
 - Expanded current-player coverage to catalog games present in Valve's top-100
   response; 7 Days to Die now uses Valve data rather than the frozen SteamSpy
   value.
