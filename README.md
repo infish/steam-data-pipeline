@@ -174,6 +174,7 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 │   ├── test_steam_api.py
 │   └── test_transform.py
 ├── .env.example
+├── CHANGELOG.md
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
@@ -389,6 +390,37 @@ The API tests use mocks and never contact SteamSpy or Valve endpoints.
 - Python services run as an unprivileged container user.
 
 Do not expose the Streamlit port directly to the public internet. Use an authenticated reverse proxy or a private network such as Tailscale if remote access is required.
+
+## Stale-data incident: September 2026
+
+The original pipeline treated every successful SteamSpy response as a fresh
+measurement. That was incorrect. Both SteamSpy's bulk and per-app endpoints
+returned unchanged values across repeated collections, while the database gave
+each response a new `snapshot_time`. The timestamp represented collection time,
+not the time SteamSpy measured the underlying value. As a result, the dashboard
+plotted flat series that looked current even though the source values were
+stale. For example, 7 Days to Die repeatedly displayed SteamSpy `ccu` of
+`17,045` while Valve reported roughly `29,000` current players during diagnosis.
+
+The first correction added authoritative Valve measurements for three test
+games, but the dashboard still exposed the legacy SteamSpy chart for every
+catalog game. Games outside that initial set therefore continued to show the
+same misleading flat series. The completed correction:
+
+- collects Valve's top-100 concurrent-player feed once per run;
+- uses direct Valve player lookups for configured games outside that feed;
+- records Valve's source timestamp when the feed supplies one;
+- keeps collection time separate and uses it only as an explicit fallback;
+- charts only Valve measurements while retaining SteamSpy snapshots for audit;
+- avoids fabricating or backfilling historical Valve values.
+
+Duplicate observations had two scheduling causes. The scheduler originally ran
+on container startup, and its single long sleep could wake fractionally before
+the intended deadline and run twice. A separate user-level systemd timer was
+also invoking the manual pipeline alongside the Compose scheduler. Startup
+collection is now disabled, the scheduler rechecks its deadline after waking,
+and the duplicate local systemd timer was disabled. Persistent deployments
+should run exactly one scheduling mechanism.
 
 ## Data limitations
 
