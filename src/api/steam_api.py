@@ -1,4 +1,5 @@
 import requests
+from datetime import datetime, timezone
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -9,6 +10,10 @@ STEAMSPY_URL = "https://steamspy.com/api.php"
 STEAM_CURRENT_PLAYERS_URL = (
     "https://api.steampowered.com/"
     "ISteamUserStats/GetNumberOfCurrentPlayers/v1/"
+)
+STEAM_TOP_PLAYERS_URL = (
+    "https://api.steampowered.com/"
+    "ISteamChartsService/GetGamesByConcurrentPlayers/v1/"
 )
 STEAM_REVIEWS_URL = "https://store.steampowered.com/appreviews/{appid}"
 
@@ -60,22 +65,63 @@ def get_top_games():
 
 
 def get_steam_measurements():
-    measurements = []
-
     with create_session() as session:
-        for appid in get_tracked_appids():
-            players_response = session.get(
-                STEAM_CURRENT_PLAYERS_URL,
-                params={"appid": appid},
-                timeout=(5, 45)
-            )
-            players_response.raise_for_status()
-            players_data = players_response.json().get("response", {})
+        charts_response = session.get(
+            STEAM_TOP_PLAYERS_URL,
+            timeout=(5, 45)
+        )
+        charts_response.raise_for_status()
+        charts_data = charts_response.json().get("response", {})
+        chart_rows = charts_data.get("ranks", [])
+        last_update = charts_data.get("last_update")
 
-            if players_data.get("result") != 1:
-                raise ValueError(
-                    f"Steam current-player request failed for app {appid}"
+        if not chart_rows or not isinstance(last_update, int):
+            raise ValueError("Steam concurrent-player chart is incomplete")
+
+        source_measured_at = datetime.fromtimestamp(
+            last_update,
+            timezone.utc
+        ).replace(tzinfo=None)
+
+        measurements = {
+            int(row["appid"]): {
+                "appid": int(row["appid"]),
+                "current_players": int(row["concurrent_in_game"]),
+                "player_rank": int(row["rank"]),
+                "source_measured_at": source_measured_at,
+                "positive_reviews": None,
+                "negative_reviews": None,
+                "total_reviews": None,
+                "review_score_percent": None
+            }
+            for row in chart_rows
+        }
+
+        for appid in get_tracked_appids():
+            if appid not in measurements:
+                players_response = session.get(
+                    STEAM_CURRENT_PLAYERS_URL,
+                    params={"appid": appid},
+                    timeout=(5, 45)
                 )
+                players_response.raise_for_status()
+                players_data = players_response.json().get("response", {})
+
+                if players_data.get("result") != 1:
+                    raise ValueError(
+                        f"Steam current-player request failed for app {appid}"
+                    )
+
+                measurements[appid] = {
+                    "appid": appid,
+                    "current_players": int(players_data["player_count"]),
+                    "player_rank": None,
+                    "source_measured_at": None,
+                    "positive_reviews": None,
+                    "negative_reviews": None,
+                    "total_reviews": None,
+                    "review_score_percent": None
+                }
 
             reviews_response = session.get(
                 STEAM_REVIEWS_URL.format(appid=appid),
@@ -113,9 +159,7 @@ def get_steam_measurements():
                     f"Steam review summary is inconsistent for app {appid}"
                 )
 
-            measurements.append({
-                "appid": appid,
-                "current_players": players_data["player_count"],
+            measurements[appid].update({
                 "positive_reviews": positive,
                 "negative_reviews": negative,
                 "total_reviews": total,
@@ -125,4 +169,4 @@ def get_steam_measurements():
                 )
             })
 
-    return measurements
+    return list(measurements.values())

@@ -192,12 +192,13 @@ def load_steam_measurements(cursor, measurements, run_id, collected_at):
             collected_at,
             source_measured_at,
             current_players,
+            player_rank,
             positive_reviews,
             negative_reviews,
             total_reviews,
             review_score_percent
         )
-        VALUES (%s, %s, %s, NULL, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
 
     values = [
@@ -205,11 +206,13 @@ def load_steam_measurements(cursor, measurements, run_id, collected_at):
             run_id,
             measurement["appid"],
             collected_at,
+            measurement["source_measured_at"],
             measurement["current_players"],
-            measurement["positive_reviews"],
-            measurement["negative_reviews"],
-            measurement["total_reviews"],
-            measurement["review_score_percent"]
+            clean_int(measurement["player_rank"]),
+            clean_int(measurement["positive_reviews"]),
+            clean_int(measurement["negative_reviews"]),
+            clean_int(measurement["total_reviews"]),
+            clean_float(measurement["review_score_percent"])
         )
         for measurement in measurements
     ]
@@ -282,7 +285,7 @@ def run_pipeline():
 
         if missing_appids:
             logging.warning(
-                "Tracked Steam app IDs absent from the SteamSpy page: %s",
+                "Valve-measured app IDs absent from the SteamSpy page: %s",
                 missing_appids
             )
 

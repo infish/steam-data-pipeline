@@ -20,7 +20,7 @@ VIEW_OPTIONS = {
                 publisher,
                 estimated_owners,
                 review_score_percent,
-                ccu,
+                ccu AS steamspy_reported_ccu,
                 price_cents
             FROM top_games_by_owners
             ORDER BY estimated_owners DESC
@@ -39,7 +39,7 @@ VIEW_OPTIONS = {
                 total_reviews,
                 review_score_percent,
                 estimated_owners,
-                ccu
+                ccu AS steamspy_reported_ccu
             FROM top_games_by_review_score
             ORDER BY review_score_percent DESC, total_reviews DESC
             LIMIT 25
@@ -48,22 +48,25 @@ VIEW_OPTIONS = {
         "y": "name",
         "title": "Top Games By Review Score"
     },
-    "Most active games by current players": {
+    "Most active games by Valve current players": {
         "query": """
             SELECT
-                name,
-                developer,
-                publisher,
-                ccu,
-                estimated_owners,
-                review_score_percent
-            FROM most_active_games_by_ccu
-            ORDER BY ccu DESC
+                games.name,
+                measurements.current_players,
+                measurements.player_rank,
+                measurements.collected_at,
+                measurements.source_measured_at
+            FROM steam_game_measurements AS measurements
+            JOIN games ON games.appid = measurements.appid
+            WHERE measurements.run_id = (
+                SELECT MAX(run_id) FROM steam_game_measurements
+            )
+            ORDER BY measurements.current_players DESC
             LIMIT 25
         """,
-        "x": "ccu",
+        "x": "current_players",
         "y": "name",
-        "title": "Most Active Games By SteamSpy-Reported CCU"
+        "title": "Most Active Games By Valve Current Players"
     },
     "Top publishers by estimated owners": {
         "query": """
@@ -73,7 +76,7 @@ VIEW_OPTIONS = {
                 avg_estimated_owners,
                 total_estimated_owners,
                 avg_review_score_percent,
-                total_ccu
+                total_ccu AS total_steamspy_reported_ccu
             FROM publisher_summary
             ORDER BY total_estimated_owners DESC
             LIMIT 25
@@ -89,7 +92,7 @@ VIEW_OPTIONS = {
                 game_count,
                 avg_estimated_owners,
                 avg_review_score_percent,
-                avg_ccu
+                avg_ccu AS avg_steamspy_reported_ccu
             FROM free_vs_paid_summary
         """,
         "x": "game_count",
@@ -144,7 +147,13 @@ def get_kpis():
         SELECT
             COUNT(*) AS total_games,
             ROUND(AVG(review_score_percent), 2) AS avg_review_score_percent,
-            SUM(ccu) AS total_steamspy_ccu
+            (
+                SELECT SUM(current_players)
+                FROM steam_game_measurements
+                WHERE run_id = (
+                    SELECT MAX(run_id) FROM steam_game_measurements
+                )
+            ) AS valve_current_players
         FROM current_game_metrics
 
     """).iloc[0]
@@ -162,14 +171,6 @@ def get_latest_run():
         return None
 
     return runs.iloc[0]
-
-
-def get_snapshot_games():
-    return read_sql("""
-        SELECT DISTINCT appid, name
-        FROM game_metric_trends
-        ORDER BY name
-    """)
 
 
 def get_steam_measurement_games():
@@ -195,7 +196,7 @@ metric_1, metric_2, metric_3, metric_4 = st.columns(4)
 
 metric_1.metric("Games Loaded", format_number(kpis["total_games"]))
 metric_2.metric("Avg Review Score", f"{kpis['avg_review_score_percent']:.2f}%")
-metric_3.metric("SteamSpy-Reported CCU", format_number(kpis["total_steamspy_ccu"]))
+metric_3.metric("Valve Current Players", format_number(kpis["valve_current_players"]))
 metric_4.metric("Latest Run", f"{latest_run['status']} ({latest_run['rows_loaded']})")
 
 st.caption(
@@ -244,10 +245,11 @@ st.divider()
 st.subheader("Valve Steam Measurements Over Time")
 
 st.caption(
-    "Current players come from Steam's Web API. Review totals come from "
-    "Steam Store reviews for all languages and purchase types, including "
-    "off-topic activity. These endpoints do not return a source measurement "
-    "timestamp, so points use and are explicitly labeled by collection time."
+    "Current players come from Valve's top-100 concurrent-player feed, with "
+    "direct Valve lookups for configured games outside that list. Review "
+    "totals are collected only for configured tracked games. Charts use the "
+    "source measurement time when Valve provides it and otherwise show the "
+    "collection time."
 )
 
 measurement_games = get_steam_measurement_games()
@@ -258,14 +260,11 @@ if measurement_games.empty:
         "start collecting them."
     )
 else:
-    measurement_col_1, measurement_col_2 = st.columns([2, 1])
-
-    with measurement_col_1:
-        selected_measurement_game = st.selectbox(
-            "Game",
-            measurement_games["name"].tolist(),
-            key="steam_measurement_game"
-        )
+    selected_measurement_game = st.selectbox(
+        "Game",
+        measurement_games["name"].tolist(),
+        key="steam_measurement_game"
+    )
 
     measurement_labels = {
         "current_players": "Current Players",
@@ -275,14 +274,6 @@ else:
         "review_score_percent": "Positive Steam Review Share"
     }
 
-    with measurement_col_2:
-        selected_measurement = st.selectbox(
-            "Metric",
-            list(measurement_labels),
-            format_func=measurement_labels.get,
-            key="steam_measurement_metric"
-        )
-
     selected_measurement_appid = int(
         measurement_games.loc[
             measurement_games["name"] == selected_measurement_game,
@@ -291,11 +282,15 @@ else:
     )
 
     measurement_df = read_sql(
-        f"""
+        """
             SELECT
                 collected_at,
                 source_measured_at,
-                {selected_measurement}
+                current_players,
+                total_reviews,
+                positive_reviews,
+                negative_reviews,
+                review_score_percent
             FROM steam_game_measurements
             WHERE appid = %s
             ORDER BY collected_at
@@ -303,19 +298,34 @@ else:
         params=(selected_measurement_appid,)
     )
 
+    available_metrics = [
+        metric
+        for metric in measurement_labels
+        if measurement_df[metric].notna().any()
+    ]
+    selected_measurement = st.selectbox(
+        "Metric",
+        available_metrics,
+        format_func=measurement_labels.get,
+        key="steam_measurement_metric"
+    )
+    measurement_df["measurement_time"] = measurement_df[
+        "source_measured_at"
+    ].fillna(measurement_df["collected_at"])
+
     measurement_fig = px.line(
         measurement_df,
-        x="collected_at",
+        x="measurement_time",
         y=selected_measurement,
         markers=True,
         title=(
             f"{selected_measurement_game}: "
-            f"{measurement_labels[selected_measurement]} by collection time"
+            f"{measurement_labels[selected_measurement]} over time"
         )
     )
     measurement_fig.update_layout(
         height=450,
-        xaxis_title="Collected At (UTC)",
+        xaxis_title="Measurement Time (UTC; collection fallback)",
         yaxis_title=measurement_labels[selected_measurement]
     )
     st.plotly_chart(measurement_fig, use_container_width=True)
@@ -329,88 +339,25 @@ else:
                 "latest collection as a new measurement."
             )
 
-    st.dataframe(measurement_df, use_container_width=True, hide_index=True)
+    st.dataframe(
+        measurement_df[[
+            "measurement_time",
+            "collected_at",
+            "source_measured_at",
+            selected_measurement
+        ]],
+        use_container_width=True,
+        hide_index=True
+    )
 
 st.divider()
 
 with st.expander("Legacy SteamSpy snapshots", expanded=False):
-    st.caption(
-        "These historical fields are SteamSpy values collected by the old "
-        "pipeline. SteamSpy provides no source measurement timestamp, and the "
-        "stored collection time does not prove the underlying value was fresh."
+    st.warning(
+        "Legacy SteamSpy snapshots are retained for audit and SQL access, but "
+        "they are not charted because repeated collection times disguised "
+        "unchanged upstream values as a time series."
     )
-
-    snapshot_games = get_snapshot_games()
-
-    if snapshot_games.empty:
-        st.info("No SteamSpy snapshots are available.")
-    else:
-        trend_col_1, trend_col_2 = st.columns([2, 1])
-
-        with trend_col_1:
-            selected_game_name = st.selectbox(
-                "Game",
-                snapshot_games["name"].tolist(),
-                key="steamspy_snapshot_game"
-            )
-
-        with trend_col_2:
-            selected_metric = st.selectbox(
-                "SteamSpy field",
-                [
-                    "ccu",
-                    "estimated_owners",
-                    "total_reviews",
-                    "positive_reviews",
-                    "negative_reviews",
-                    "review_score_percent",
-                    "price_cents",
-                    "discount_percent"
-                ],
-                key="steamspy_snapshot_metric"
-            )
-
-        selected_appid = int(
-            snapshot_games.loc[
-                snapshot_games["name"] == selected_game_name,
-                "appid"
-            ].iloc[0]
-        )
-
-        trend_df = read_sql(
-            f"""
-                SELECT snapshot_time AS collected_at, name, {selected_metric}
-                FROM game_metric_trends
-                WHERE appid = %s
-                ORDER BY snapshot_time
-            """,
-            params=(selected_appid,)
-        )
-
-        trend_fig = px.line(
-            trend_df,
-            x="collected_at",
-            y=selected_metric,
-            markers=True,
-            title=(
-                f"{selected_game_name}: SteamSpy "
-                f"{selected_metric.replace('_', ' ').title()} by collection time"
-            )
-        )
-
-        trend_fig.update_layout(
-            height=450,
-            xaxis_title="Collected At (UTC)",
-            yaxis_title=f"SteamSpy {selected_metric.replace('_', ' ').title()}"
-        )
-
-        st.plotly_chart(trend_fig, use_container_width=True)
-
-        st.dataframe(
-            trend_df,
-            use_container_width=True,
-            hide_index=True
-        )
 
 st.divider()
 
@@ -465,10 +412,12 @@ FROM daily_pipeline_summary
 ORDER BY run_date;
 """,
     "Game metric trend": """
-SELECT snapshot_time, name, ccu, review_score_percent, total_reviews
-FROM game_metric_trends
-WHERE name LIKE '%Factorio%'
-ORDER BY snapshot_time;
+SELECT games.name, measurements.source_measured_at,
+       measurements.collected_at, measurements.current_players
+FROM steam_game_measurements AS measurements
+JOIN games ON games.appid = measurements.appid
+WHERE games.name LIKE '%Factorio%'
+ORDER BY measurements.collected_at;
 """
 }
 

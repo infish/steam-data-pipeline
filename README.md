@@ -37,7 +37,8 @@ MySQL healthy → bootstrap and migrations complete → scheduler and dashboard 
 - SteamSpy API extraction with retry and exponential backoff.
 - Validation and transformation of 1,000 games per configured API page.
 - Append-only historical metric snapshots.
-- Current-player and Steam review measurements for configured app IDs.
+- Valve current-player measurements for top-100 games present on the configured
+  catalog page, plus Steam review measurements for configured app IDs.
 - Audited pipeline runs with success/failure status.
 - SQL window functions for changes between snapshots.
 - Versioned and repeatable Flyway migrations.
@@ -86,24 +87,31 @@ time:
 
 ### `steam_game_measurements`
 
-Focused observations from Valve endpoints for `STEAM_TRACKED_APPIDS`:
+Focused observations from Valve endpoints:
 
-- Current players from the Steam Web API
-- Steam Store review totals for all languages and purchase types, including
-  off-topic activity
+- Current players and rank for Valve's top 100 concurrent games that are also
+  present on the configured SteamSpy catalog page
+- Direct current-player measurements for configured tracked games outside the
+  top 100
+- Steam Store review totals for tracked games, across all languages and
+  purchase types and including off-topic activity
 - Explicit collection time
-- Nullable source measurement time (Valve does not provide one for these calls)
+- Valve's source measurement time for the top-100 feed; direct calls retain a
+  null source time and use collection time as the chart fallback
 
 The Valve calls are intentionally limited to `STEAM_TRACKED_APPIDS`. The
 default is Counter-Strike (`730`), Factorio (`427520`), and Portal 2 (`620`),
-which adds six small requests to each daily run.
+which adds review requests only for those games. The top-100 player coverage is
+one bulk request per daily run.
 
 The source contract is:
 
 - Catalog and owner estimates:
   `https://steamspy.com/api.php?request=all&page=<page>`
 - Current players:
+  `ISteamChartsService/GetGamesByConcurrentPlayers/v1/` for the top 100, then
   `ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=<appid>`
+  for configured games outside the top 100
 - Review summary:
   `https://store.steampowered.com/appreviews/<appid>` with `filter=recent`,
   `language=all`, `review_type=all`, `purchase_type=all`,
@@ -227,7 +235,7 @@ Collection settings use these defaults:
 | --- | --- | --- |
 | `STEAMSPY_MODE` | `all` | SteamSpy catalog request |
 | `STEAMSPY_PAGE` | `0` | SteamSpy catalog page |
-| `STEAM_TRACKED_APPIDS` | `730,427520,620` | App IDs measured through Valve endpoints |
+| `STEAM_TRACKED_APPIDS` | `730,427520,620` | App IDs enriched with reviews and direct player fallback |
 | `PIPELINE_TIMEZONE` | `Europe/Prague` | Daily scheduler timezone |
 | `PIPELINE_RUN_HOUR` | `20` | Daily local run hour |
 | `PIPELINE_RUN_MINUTE` | `0` | Daily local run minute |
@@ -396,9 +404,9 @@ Important limitations:
   only when this pipeline collected the response, and a successful response
   does not establish freshness.
 - Valve's current-player endpoint may be cached upstream for a short interval.
-- Valve does not return a source measurement timestamp for current-player or
-  review-summary calls, so `source_measured_at` remains `NULL` and charts use
-  the explicitly labeled `collected_at` value.
+- Valve supplies `source_measured_at` for its top-100 player feed. Direct player
+  and review-summary calls do not include a source timestamp, so charts fall
+  back to the explicitly labeled `collected_at` value for those observations.
 - Steam review totals use `language=all`, `purchase_type=all`, and
   `filter_offtopic_activity=0`. Moderation or classification changes can make
   totals decrease as well as increase.
@@ -406,8 +414,13 @@ Important limitations:
 - `request=all` returns 1,000 games per page and is rate-limited.
 
 The dashboard warns when the latest three values of a selected Valve metric are
-identical. That warning is evidence to investigate caching or an unchanged
-source; it does not relabel the values as fresh.
+identical. Legacy SteamSpy snapshots remain queryable for audit purposes but
+are no longer charted because their collection timestamps do not establish
+freshness.
+
+Run exactly one scheduler. The Compose `scheduler` is the supported default;
+disable any older cron or systemd timer that also invokes the manual `pipeline`
+service.
 
 These limitations should be considered when interpreting charts and derived metrics.
 
