@@ -102,3 +102,16 @@ Stop only the benchmark worker/app through current TrueNAS middleware methods;
 retain `/mnt/Apps/steam-data-pipeline-bench`. Resume by re-running the same
 scenario command after the gates pass. Conflicting seed/game/schema settings
 require a new scenario and are never resolved by truncation.
+
+## 2026-09-22 retained deployment state
+
+The isolated app is deployed as `steam-data-pipeline-bench` with image digest
+`sha256:c9428e3c002a026297e7dca5ccd97a5e3734540cd64249f0d58c737c6b6a4c2d`.
+Its worker was returned to `sleep infinity` after the completed 100k, 1m, and
+10m stages, query workload, recovery check, and bounded catalog smoke test.
+All benchmark data is retained beneath `Apps/steam-data-pipeline-bench`.
+
+Do not rerun app creation or recreate the dataset. Inspect the existing app and
+stored artifacts first. The exact sanitized results are recorded in
+`docs/capacity-report.md` and
+`docs/evidence/remote-20260922-summary.json`.

@@ -1,0 +1,42 @@
+{
+  "recorded_date": "2026-09-22",
+  "synthetic_data_label": "deterministic synthetic benchmark; not Valve or SteamSpy observations",
+  "deployment": {
+    "app": "steam-data-pipeline-bench",
+    "creation_job": 176577,
+    "creation_job_result": "SUCCESS",
+    "dataset": "Apps/steam-data-pipeline-bench",
+    "dataset_quota_bytes": 32212254720,
+    "image": "ghcr.io/infish/steam-data-pipeline@sha256:c9428e3c002a026297e7dca5ccd97a5e3734540cd64249f0d58c737c6b6a4c2d",
+    "worker_memory_limit_bytes": 402653184,
+    "worker_cpu_max": "100000 100000",
+    "mysql_memory_limit_bytes": 1073741824,
+    "mysql_cpu_max": "100000 100000"
+  },
+  "isolation": {
+    "benchmark_flyway_rows": 5,
+    "catalog_flyway_rows": 5,
+    "marker": "steam-data-pipeline-isolated-benchmark",
+    "production_database_access_allowed": false,
+    "production_database_access_errno": 1044,
+    "artifact_storage_writable": true,
+    "cache_storage_writable": true
+  },
+  "stages": {
+    "100k": {"facts": 100000, "distinct_keys": 100000, "days": 1, "elapsed_seconds": 12, "generation_ms": 2355.338, "insert_ms": 7258.382, "worker_peak_bytes": 23527424, "mysql_peak_bytes": 441655296, "status": "PASS"},
+    "1m": {"facts": 1000000, "distinct_keys": 1000000, "days": 10, "elapsed_seconds": 117, "generation_ms": 25211.12, "insert_ms": 84932.524, "dataset_used_bytes": 212959232, "worker_peak_bytes": 23322624, "mysql_peak_bytes": 671100928, "idempotent_noop_seconds": 2, "status": "PASS"},
+    "10m": {"facts": 10000000, "distinct_keys": 10000000, "days": 100, "elapsed_seconds": 1436, "generation_ms": 275903.417, "insert_ms": 1047913.727, "dataset_used_bytes": 1726124032, "snapshot_data_bytes": 1330642944, "snapshot_index_bytes": 633307136, "worker_peak_bytes": 23633920, "mysql_peak_bytes": 675139584, "status": "PASS"}
+  },
+  "queries_10m": {
+    "history_one_game": {"median_ms": 1.2949923984706402, "p95_ms": 2.5992728769779205, "rows": 100},
+    "latest_top_25": {"median_ms": 66.48045498877764, "p95_ms": 84.14727356284857, "rows": 25},
+    "latest_publisher_totals": {"median_ms": 259.50499484315515, "p95_ms": 282.37483743578196, "rows": 50},
+    "daily_loaded_rows": {"median_ms": 0.7626991719007492, "p95_ms": 0.9920280426740646, "rows": 100},
+    "one_game_deltas": {"median_ms": 2.090883906930685, "p95_ms": 5.854343064129353, "rows": 100},
+    "exact_fact_count": {"elapsed_ms": 6896.033560857177, "rows": 1}
+  },
+  "recovery": {"interrupted_completion_marker_written": false, "resumed_facts": 200000, "resumed_distinct_keys": 200000, "resumed_batches": 200, "resumed_days": 2, "status": "PASS"},
+  "catalog_smoke": {"source": "SteamSpy live bounded sample", "pages": 10, "raw_rows": 10000, "unique_games": 9956, "duplicates": 44, "rejected": 0, "elapsed_seconds": 587, "status": "PASS"},
+  "production": {"state": "RUNNING", "http_status_during_samples": 200, "containers_unchanged": true, "storage_unchanged": true, "schedule_unchanged": true, "image_references_unchanged": true},
+  "not_run": ["optional 40-million synthetic extension", "production rollout or production migrations"]
+}
