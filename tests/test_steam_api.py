@@ -8,12 +8,33 @@ from api.steam_api import (
     STEAM_REVIEWS_URL,
     STEAM_TOP_PLAYERS_URL,
     create_session,
+    create_bulk_session,
+    get_steamspy_page,
     get_steam_measurements,
     get_top_games,
 )
 
 
 class SteamApiTests(unittest.TestCase):
+    def test_bulk_session_has_no_hidden_retries(self):
+        session = create_bulk_session()
+        try:
+            self.assertEqual(session.get_adapter("https://").max_retries.total, 0)
+        finally:
+            session.close()
+
+    def test_bulk_page_allows_empty_for_caller_confirmation(self):
+        session = MagicMock()
+        response = MagicMock()
+        response.json.return_value = {}
+        session.get.return_value = response
+        self.assertEqual(get_steamspy_page(7, session=session), {})
+        session.get.assert_called_once_with(
+            STEAMSPY_URL,
+            params={"request": "all", "page": 7},
+            timeout=(5, 45),
+        )
+
     def test_all_mode_sends_page_and_returns_data(self):
         config = {
             "mode": "all",

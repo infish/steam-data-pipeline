@@ -1,0 +1,61 @@
+{
+  "evidence_scope": "local isolated MySQL validation, not TrueNAS capacity",
+  "date": "2026-09-22",
+  "synthetic": true,
+  "generator_version": "scale-v1.0",
+  "seed": 20260922,
+  "start_date": "2025-01-01",
+  "pilot": {
+    "scenario": "local-pilot-v1",
+    "games": 100000,
+    "days": 1,
+    "exact_fact_rows": 100000,
+    "batches": 100,
+    "wall_seconds_including_compose_exec": 6.95,
+    "rows_per_second": 14388.49,
+    "summed_database_insert_ms": 3087.402
+  },
+  "crash_recovery": {
+    "scenario": "recovery-kill-v1",
+    "committed_rows_at_sigkill": 69000,
+    "committed_batches_at_sigkill": 69,
+    "rows_after_resume": 100000,
+    "distinct_run_appid_after_resume": 100000,
+    "batches_after_resume": 100,
+    "result": "pass"
+  },
+  "idempotency": {
+    "scenario": "integration-v1",
+    "rows_before_rerun": 2000,
+    "rows_after_rerun": 2000,
+    "distinct_run_appid_after_rerun": 2000,
+    "result": "pass"
+  },
+  "writer_contention": {
+    "scenario": "lock-v2",
+    "second_writer_result": "failed fast: another writer owns the scenario lock",
+    "result": "pass"
+  },
+  "query_workload": {
+    "scenario": "recovery-kill-v1",
+    "facts": 100000,
+    "warm_repetitions": 30,
+    "timings_ms": {
+      "history_one_game": {"first": 0.144, "median": 0.446, "p95": 0.678},
+      "latest_top_25": {"first": 21.778, "median": 21.862, "p95": 23.578},
+      "latest_publisher_totals": {"first": 100.619, "median": 98.006, "p95": 100.252},
+      "daily_loaded_rows": {"first": 0.112, "median": 0.293, "p95": 0.406},
+      "one_game_deltas": {"first": 0.231, "median": 0.499, "p95": 0.689},
+      "exact_fact_count": {"elapsed": 10.898}
+    }
+  },
+  "tests": {
+    "unit_and_mysql_integration": 26,
+    "failures": 0
+  },
+  "remote_gate": {
+    "available_memory_mib": 3044,
+    "required_memory_mib": 3072,
+    "result": "blocked before deployment"
+  }
+}

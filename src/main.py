@@ -1,7 +1,11 @@
 import logging
-import math
 from api.steam_api import get_steam_measurements, get_top_games
 from database.mysql_database import get_connection
+from database.loaders import (
+    load_games,
+    load_game_metric_snapshots,
+    load_steam_measurements,
+)
 from quality.data_quality import validate_games_data
 from transform.data_transformer import transform_games_data
 from datetime import datetime, timezone
@@ -58,167 +62,6 @@ def finish_pipeline_run(
     )
 
 
-def clean_value(value):
-    if value is None:
-        return None
-
-    if isinstance(value, float) and math.isnan(value):
-        return None
-
-    return value
-
-
-def clean_int(value):
-    value = clean_value(value)
-
-    if value is None:
-        return None
-
-    return int(value)
-
-
-def clean_float(value):
-    value = clean_value(value)
-
-    if value is None:
-        return None
-
-    return float(value)
-
-def load_games(cursor, df, observed_at):
-    query = """
-        INSERT INTO games (
-            appid,
-            name,
-            developer,
-            publisher,
-            languages,
-            genre,
-            first_seen_at,
-            last_seen_at
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-
-        ON DUPLICATE KEY UPDATE
-            name = VALUES(name),
-            developer = VALUES(developer),
-            publisher = VALUES(publisher),
-            languages = VALUES(languages),
-            genre = VALUES(genre),
-            last_seen_at = VALUES(last_seen_at)
-    """
-
-    values = [
-        (
-            int(row.appid),
-            row.name,
-            clean_value(row.developer),
-            clean_value(row.publisher),
-            clean_value(row.languages),
-            clean_value(row.genre),
-            observed_at,
-            observed_at
-        )
-        for row in df.itertuples(index=False)
-    ]
-
-    cursor.executemany(query, values)
-    return len(values)
-
-
-def load_game_metric_snapshots(cursor, df, run_id, snapshot_time):
-    query = """
-        INSERT INTO game_metric_snapshots (
-            run_id,
-            appid,
-            snapshot_time,
-            owners,
-            owners_low,
-            owners_high,
-            estimated_owners,
-            positive_reviews,
-            negative_reviews,
-            total_reviews,
-            review_score_percent,
-            average_playtime_forever_minutes,
-            average_playtime_2weeks_minutes,
-            median_playtime_forever_minutes,
-            median_playtime_2weeks_minutes,
-            ccu,
-            price_cents,
-            initial_price_cents,
-            discount_percent
-        )
-        VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s, %s, %s, %s, %s
-        )
-    """
-
-    values = [
-        (
-            run_id,
-            int(row.appid),
-            snapshot_time,
-            row.owners,
-            clean_int(row.owners_low),
-            clean_int(row.owners_high),
-            clean_int(row.estimated_owners),
-            clean_int(row.positive_reviews),
-            clean_int(row.negative_reviews),
-            clean_int(row.total_reviews),
-            clean_float(row.review_score_percent),
-            clean_int(row.average_playtime_forever_minutes),
-            clean_int(row.average_playtime_2weeks_minutes),
-            clean_int(row.median_playtime_forever_minutes),
-            clean_int(row.median_playtime_2weeks_minutes),
-            clean_int(row.ccu),
-            clean_int(row.price_cents),
-            clean_int(row.initial_price_cents),
-            clean_int(row.discount_percent)
-        )
-        for row in df.itertuples(index=False)
-    ]
-
-    cursor.executemany(query, values)
-    return len(values)
-
-
-def load_steam_measurements(cursor, measurements, run_id, collected_at):
-    query = """
-        INSERT INTO steam_game_measurements (
-            run_id,
-            appid,
-            collected_at,
-            source_measured_at,
-            current_players,
-            player_rank,
-            positive_reviews,
-            negative_reviews,
-            total_reviews,
-            review_score_percent
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """
-
-    values = [
-        (
-            run_id,
-            measurement["appid"],
-            collected_at,
-            measurement["source_measured_at"],
-            measurement["current_players"],
-            clean_int(measurement["player_rank"]),
-            clean_int(measurement["positive_reviews"]),
-            clean_int(measurement["negative_reviews"]),
-            clean_int(measurement["total_reviews"]),
-            clean_float(measurement["review_score_percent"])
-        )
-        for measurement in measurements
-    ]
-
-    cursor.executemany(query, values)
-    return len(values)
 
 
 def run_pipeline():

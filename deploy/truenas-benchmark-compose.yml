@@ -1,0 +1,81 @@
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    cpus: 1.0
+    mem_limit: 1g
+    command: ["--innodb-buffer-pool-size=268435456", "--max-connections=20"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${BENCH_ROOT_PASSWORD}
+    volumes: ["/mnt/Apps/steam-data-pipeline-bench/mysql:/var/lib/mysql"]
+    logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  bootstrap:
+    image: mysql:8.0
+    depends_on: {mysql: {condition: service_healthy}}
+    environment:
+      MYSQL_ROOT_PASSWORD: ${BENCH_ROOT_PASSWORD}
+      BENCH_DB_PASSWORD: ${BENCH_DB_PASSWORD}
+      CATALOG_DB_PASSWORD: ${CATALOG_DB_PASSWORD}
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        mysql -h mysql -uroot -p"$${MYSQL_ROOT_PASSWORD}" <<SQL
+        CREATE DATABASE IF NOT EXISTS steam_pipeline_bench;
+        CREATE DATABASE IF NOT EXISTS steam_catalog_stage;
+        CREATE USER IF NOT EXISTS 'bench_writer'@'%' IDENTIFIED BY '$${BENCH_DB_PASSWORD}';
+        CREATE USER IF NOT EXISTS 'catalog_writer'@'%' IDENTIFIED BY '$${CATALOG_DB_PASSWORD}';
+        GRANT ALL ON steam_pipeline_bench.* TO 'bench_writer'@'%';
+        GRANT ALL ON steam_catalog_stage.* TO 'catalog_writer'@'%';
+        SQL
+  migration-assets:
+    image: ghcr.io/infish/steam-data-pipeline:benchmark-REPLACE_COMMIT
+    user: "0:0"
+    command: ["sh", "-c", "cp -a /app/db/migrations/. /base/ && cp -a /app/benchmarks/db/migrations/. /bench/"]
+    volumes: ["base_migrations:/base", "benchmark_migrations:/bench"]
+  migrate-bench:
+    image: flyway/flyway:13.4.0-alpine
+    depends_on: {bootstrap: {condition: service_completed_successfully}, migration-assets: {condition: service_completed_successfully}}
+    command: migrate
+    environment:
+      FLYWAY_URL: jdbc:mysql://mysql:3306/steam_pipeline_bench?allowPublicKeyRetrieval=true&useSSL=false
+      FLYWAY_USER: bench_writer
+      FLYWAY_PASSWORD: ${BENCH_DB_PASSWORD}
+      FLYWAY_LOCATIONS: filesystem:/flyway/base,filesystem:/flyway/bench
+    volumes: ["base_migrations:/flyway/base:ro", "benchmark_migrations:/flyway/bench:ro"]
+  migrate-catalog:
+    image: flyway/flyway:13.4.0-alpine
+    depends_on: {bootstrap: {condition: service_completed_successfully}, migration-assets: {condition: service_completed_successfully}}
+    command: migrate
+    environment:
+      FLYWAY_URL: jdbc:mysql://mysql:3306/steam_catalog_stage?allowPublicKeyRetrieval=true&useSSL=false
+      FLYWAY_USER: catalog_writer
+      FLYWAY_PASSWORD: ${CATALOG_DB_PASSWORD}
+      FLYWAY_LOCATIONS: filesystem:/flyway/base,filesystem:/flyway/bench
+    volumes: ["base_migrations:/flyway/base:ro", "benchmark_migrations:/flyway/bench:ro"]
+  worker:
+    image: ghcr.io/infish/steam-data-pipeline:benchmark-REPLACE_COMMIT
+    restart: "no"
+    cpus: 1.0
+    mem_limit: 384m
+    command: ["sleep", "infinity"]
+    depends_on: {migrate-bench: {condition: service_completed_successfully}, migrate-catalog: {condition: service_completed_successfully}}
+    environment:
+      PYTHONPATH: /app/src:/app
+      MYSQL_HOST: mysql
+      MYSQL_DATABASE: steam_pipeline_bench
+      MYSQL_USER: bench_writer
+      MYSQL_PASSWORD: ${BENCH_DB_PASSWORD}
+      CATALOG_DB_PASSWORD: ${CATALOG_DB_PASSWORD}
+      BENCHMARK_DATABASE_ALLOWLIST: steam_pipeline_bench
+    volumes:
+      - /mnt/Apps/steam-data-pipeline-bench/artifacts:/artifacts
+      - /mnt/Apps/steam-data-pipeline-bench/cache:/cache
+    logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}
+volumes:
+  base_migrations:
+  benchmark_migrations:

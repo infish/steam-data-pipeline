@@ -39,6 +39,35 @@ def create_session():
     return session
 
 
+def create_bulk_session():
+    """Session without hidden retries; the catalog importer owns retry pacing."""
+    session = requests.Session()
+    session.mount("https://", HTTPAdapter(max_retries=0))
+    return session
+
+
+def get_steamspy_page(page, session=None):
+    """Fetch one bulk catalog page. Empty dict is returned for caller confirmation."""
+    if page < 0:
+        raise ValueError("page must be non-negative")
+    owns_session = session is None
+    session = session or create_bulk_session()
+    try:
+        response = session.get(
+            STEAMSPY_URL,
+            params={"request": "all", "page": page},
+            timeout=(5, 45),
+        )
+        response.raise_for_status()
+        data = response.json()
+    finally:
+        if owns_session:
+            session.close()
+    if not isinstance(data, dict):
+        raise ValueError("SteamSpy bulk response is not an object")
+    return data
+
+
 def get_top_games():
     config = get_steamspy_config()
 
