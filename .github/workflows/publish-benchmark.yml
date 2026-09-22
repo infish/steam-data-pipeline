@@ -2,6 +2,9 @@ name: Publish benchmark image
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "benchmark-*"
 
 permissions:
   contents: read
