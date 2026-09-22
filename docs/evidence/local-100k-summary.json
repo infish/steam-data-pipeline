@@ -54,8 +54,9 @@
     "failures": 0
   },
   "remote_gate": {
-    "available_memory_mib": 3044,
+    "initial_available_memory_mib": 3044,
+    "final_available_memory_mib": 3538,
     "required_memory_mib": 3072,
-    "result": "blocked before deployment"
+    "result": "memory recovered; private GitHub branch/tag push requires explicit user confirmation before deployment"
   }
 }

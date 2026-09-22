@@ -2,12 +2,15 @@
 
 ## Verdict
 
-Remote capacity is **not yet demonstrated**. On 2026-09-22 the required
+Remote capacity is **not yet demonstrated**. On 2026-09-22 the first required
 preflight found 3,044 MiB available memory on the TrueNAS host, below the
-3,072 MiB starting threshold. The production app was `RUNNING`, its scheduler,
-dashboard and MySQL containers were running, and `/mnt/Apps` reported 131 GiB
-available. In accordance with the gate, no benchmark dataset/app was created,
-no image was published, and no remote rows were loaded.
+3,072 MiB starting threshold. A later final check found 3,538 MiB available,
+so the memory gate had recovered and production remained healthy. The next
+required step—pushing the private repository's feature branch and benchmark tag
+to its GitHub origin to publish the isolated GHCR image—was rejected by the
+execution environment pending explicit user confirmation for that external
+private-repository mutation. No benchmark dataset/app was created, no image was
+published, and no remote rows were loaded.
 
 ## Implementation status
 
@@ -39,6 +42,7 @@ no image was published, and no remote rows were loaded.
 | Recovery at target scale | Not demonstrated remotely |
 | Host CPU / RAM | 4 logical CPUs / 32,012 MiB total |
 | Host available RAM at gate | 3,044 MiB; minimum is 3,072 MiB |
+| Host available RAM at final recheck | 3,538 MiB; memory gate then passed |
 | Host swap | 0 |
 | `/mnt/Apps` available | 131 GiB reported |
 
@@ -67,9 +71,12 @@ No generated measurement is presented as a Valve or SteamSpy observation.
 
 ## Remaining acceptance work
 
-When the memory gate passes naturally, create the supported 30 GiB-quota
-benchmark dataset/app through current TrueNAS middleware schemas, publish the
-immutable benchmark image, and run the 100k → 1m → 10m sequence. At 1m, apply
+After explicit approval to push `feature/capacity-benchmark` and its
+`benchmark-*` tag to the configured private GitHub origin, publish the immutable
+benchmark image, establish the supported 30 GiB-quota benchmark dataset/app
+through current TrueNAS middleware schemas, and run the 100k → 1m → 10m
+sequence. Recheck memory immediately before creation because the observed
+headroom fluctuated across the threshold. At 1m, apply
 the measured storage/RSS projection gate before 10m. Capture container and host
 samples every 30 seconds, recovery/no-op evidence, logical and physical bytes,
 binlogs, plans, query samples, production health and exact counts. Run 40m only
