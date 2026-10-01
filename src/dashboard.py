@@ -188,8 +188,8 @@ st.caption(
 
 if pd.notna(latest_run["warning_message"]) and latest_run["warning_message"]:
     st.warning(
-        "The latest run completed with warnings. Some Valve player or "
-        "review measurements may be missing from this run."
+        "The latest run completed with warnings. Some Valve measurements "
+        "or SteamSpy rows may be missing from this run."
     )
 
     with st.expander("Run warnings"):

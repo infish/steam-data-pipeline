@@ -137,12 +137,23 @@ Operational audit information:
 
 - Start and finish timestamps
 - Status
-- Rows extracted and loaded
+- Rows extracted from SteamSpy (`rows_extracted`) and loaded (`rows_loaded`)
 - Valve measurements loaded (`measurements_loaded`; historical runs were
   backfilled from `steam_game_measurements`)
-- Rows rejected by validation (`rows_rejected`)
+- Rows rejected by validation (`rows_rejected`); before this column existed,
+  any invalid row failed the whole run, so historical runs show 0
 - Failure message, and a separate `warning_message` for runs that succeeded
   with degraded input
+
+SteamSpy rows are validated before loading. Problems with the whole response
+fail the run: an empty response, missing columns, or duplicate app IDs.
+Problems with a single row reject only that row: a missing or empty name, a
+missing or malformed `owners` range, negative counts, a review score outside
+0-100, or review totals that do not add up. Rejected rows are not loaded. The
+run logs the first 20 rejected app IDs with their reasons, stores the count in
+`rows_rejected`, and adds a short summary to `warning_message`. If more than
+`PIPELINE_MAX_REJECTED_PERCENT` of rows are rejected, the run fails instead,
+because that usually means the source format changed.
 
 Only one pipeline run can be active at a time. Each run takes the MySQL named
 lock `steam_pipeline_run` before it creates a run row; if another run holds the
@@ -209,6 +220,7 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 │   │   ├── base.py
 │   │   ├── test_run_lifecycle.py
 │   │   └── test_run_pipeline.py
+│   ├── test_data_quality.py
 │   ├── test_main.py
 │   ├── test_scheduler.py
 │   ├── test_steam_api.py
@@ -277,6 +289,7 @@ Collection settings use these defaults:
 | `STEAMSPY_MODE` | `all` | SteamSpy catalog request |
 | `STEAMSPY_PAGE` | `0` | SteamSpy catalog page |
 | `STEAM_TRACKED_APPIDS` | `730,427520,620` | App IDs enriched with reviews and direct player fallback |
+| `PIPELINE_MAX_REJECTED_PERCENT` | `5` | Fail the run if more than this % of SteamSpy rows fail validation |
 | `PIPELINE_TIMEZONE` | `Europe/Prague` | Daily scheduler timezone |
 | `PIPELINE_RUN_HOUR` | `20` | Daily local run hour |
 | `PIPELINE_RUN_MINUTE` | `0` | Daily local run minute |

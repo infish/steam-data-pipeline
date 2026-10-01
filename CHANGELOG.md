@@ -21,6 +21,8 @@ This file records user-visible changes to the Steam data pipeline.
   abandoned at the start of the next run.
 - The dashboard shows a warning, with the details in an expander, when the
   latest run completed with warnings.
+- `PIPELINE_MAX_REJECTED_PERCENT` (default `5`) caps the share of SteamSpy
+  rows that may fail validation before the run fails.
 
 ### Changed
 
@@ -29,12 +31,20 @@ This file records user-visible changes to the Steam data pipeline.
   skips that app's measurement, and a failed or inconsistent review lookup
   keeps the row with empty review fields. Each case is recorded in
   `pipeline_runs.warning_message`. SteamSpy failures still fail the run.
+- SteamSpy rows with row-level problems (missing name, missing or malformed
+  owners, negative values, review score out of range, totals mismatch) are
+  rejected individually instead of failing the run. The count is stored in
+  `pipeline_runs.rows_rejected` and summarized in `warning_message`.
+  `rows_extracted` now counts every row received and `rows_loaded` only the
+  valid ones.
 - Aligned both GitHub workflows on `actions/checkout@v7` and removed the
   leftover `refactor/production-ready` branch trigger from the test workflow.
 - Corrected the README project tree.
 
 ### Fixed
 
+- A null or malformed SteamSpy `owners` value no longer crashes the
+  transform with a `TypeError`; it becomes a rejected row.
 - A failure while recording a failed run (for example, a failed rollback) no
   longer replaces the original pipeline error; it is logged and the original
   error is re-raised.

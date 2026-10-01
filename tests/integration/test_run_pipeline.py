@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import patch
 
@@ -5,8 +6,10 @@ import main
 
 from .base import (
     CANNED_MEASUREMENTS,
+    CANNED_TOP_GAMES,
     CHART_MEASURED_AT,
     IntegrationTestCase,
+    steamspy_game,
 )
 
 
@@ -136,6 +139,56 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
         (run,) = self.query("SELECT * FROM pipeline_runs")
         self.assertEqual(run["status"], "FAILED")
         self.assertEqual(run["error_message"], "SteamSpy down")
+
+
+    def with_bad_rows(self):
+        top_games = dict(CANNED_TOP_GAMES)
+        top_games["111"] = steamspy_game(111, "", "1 .. 2", 1, 1)
+        top_games["222"] = steamspy_game(222, "No Owners", None, 1, 1)
+        return top_games
+
+    def test_rejected_rows_are_quarantined_and_recorded(self):
+        with (
+            patch.dict(os.environ, {"PIPELINE_MAX_REJECTED_PERCENT": "50"}),
+            self.assertLogs(level="WARNING") as logs
+        ):
+            self.run_pipeline(top_games=self.with_bad_rows())
+
+        logged = "\n".join(logs.output)
+        self.assertIn("Rejected 2 of 5 SteamSpy rows", logged)
+        self.assertIn("111: name is missing or empty", logged)
+        self.assertIn("222: owners is missing", logged)
+
+        (run,) = self.query("SELECT * FROM pipeline_runs")
+        self.assertEqual(run["status"], "SUCCESS")
+        self.assertEqual(run["rows_extracted"], 5)
+        self.assertEqual(run["rows_loaded"], 3)
+        self.assertEqual(run["rows_rejected"], 2)
+        self.assertIn(
+            "Rejected 2 of 5 SteamSpy rows that failed validation "
+            "(app IDs: 111, 222)",
+            run["warning_message"]
+        )
+        self.assertEqual(
+            [row["appid"] for row in self.query(
+                "SELECT appid FROM games ORDER BY appid"
+            )],
+            [570, 620, 730]
+        )
+        self.assertEqual(self.count("game_metric_snapshots"), 3)
+
+    def test_rejections_over_the_limit_fail_the_run(self):
+        with (
+            patch.dict(os.environ, {"PIPELINE_MAX_REJECTED_PERCENT": "5"}),
+            self.assertLogs(level="ERROR"),
+            self.assertRaisesRegex(ValueError, "above the 5% limit")
+        ):
+            self.run_pipeline(top_games=self.with_bad_rows())
+
+        (run,) = self.query("SELECT * FROM pipeline_runs")
+        self.assertEqual(run["status"], "FAILED")
+        self.assertIn("2 of 5 rows (40.0%)", run["error_message"])
+        self.assertEqual(self.count("games"), 0)
 
 
 if __name__ == "__main__":

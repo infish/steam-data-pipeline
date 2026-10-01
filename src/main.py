@@ -1,8 +1,9 @@
 import logging
 import math
 from api.steam_api import get_steam_measurements, get_top_games
+from config import get_max_rejected_percent
 from database.mysql_database import get_connection
-from quality.data_quality import validate_games_data
+from quality.data_quality import format_rejections, validate_games_data
 from transform.data_transformer import transform_games_data
 from datetime import datetime, timezone
 
@@ -15,6 +16,7 @@ logging.basicConfig(
 RUN_LOCK_NAME = "steam_pipeline_run"
 ABANDONED_RUN_MESSAGE = "Abandoned: process ended before completion"
 WARNING_MESSAGE_LIMIT = 2000
+LOGGED_REJECTIONS_LIMIT = 20
 
 def utc_now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -335,7 +337,24 @@ def run_pipeline():
             games_list.append(game_info)
 
         df = transform_games_data(games_list)
-        validate_games_data(df)
+        rows_extracted = len(df)
+        df, rejected = validate_games_data(df, get_max_rejected_percent())
+
+        if rejected:
+            logging.warning(
+                "Rejected %s of %s SteamSpy rows; first %s: %s",
+                len(rejected),
+                rows_extracted,
+                min(len(rejected), LOGGED_REJECTIONS_LIMIT),
+                format_rejections(rejected, LOGGED_REJECTIONS_LIMIT)
+            )
+            run_warnings.append(
+                f"Rejected {len(rejected)} of {rows_extracted} SteamSpy "
+                "rows that failed validation (app IDs: "
+                + ", ".join(str(appid) for appid, _ in rejected[:10])
+                + (", ..." if len(rejected) > 10 else "")
+                + ")"
+            )
 
         ingestion_time = utc_now()
         rows_loaded = load_games(cursor, df, ingestion_time)
@@ -354,7 +373,8 @@ def run_pipeline():
 
         if missing_appids:
             logging.warning(
-                "Valve-measured app IDs absent from the SteamSpy page: %s",
+                "Valve-measured app IDs absent from the loaded SteamSpy"
+                " rows: %s",
                 missing_appids
             )
 
@@ -369,9 +389,10 @@ def run_pipeline():
             cursor,
             run_id,
             "SUCCESS",
-            rows_extracted=len(df),
+            rows_extracted=rows_extracted,
             rows_loaded=rows_loaded,
             measurements_loaded=measurements_loaded,
+            rows_rejected=len(rejected),
             warning_message=summarize_warnings(run_warnings)
         )
         connection.commit()

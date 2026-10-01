@@ -63,3 +63,21 @@ def get_tracked_appids():
         raise ValueError("STEAM_TRACKED_APPIDS must contain at least one app ID")
 
     return list(dict.fromkeys(appids))
+
+
+def get_max_rejected_percent():
+    raw_value = get_env("PIPELINE_MAX_REJECTED_PERCENT", "5")
+
+    try:
+        value = float(raw_value)
+    except ValueError as error:
+        raise ValueError(
+            "PIPELINE_MAX_REJECTED_PERCENT must be a number"
+        ) from error
+
+    if not 0 <= value <= 100:
+        raise ValueError(
+            "PIPELINE_MAX_REJECTED_PERCENT must be between 0 and 100"
+        )
+
+    return value
