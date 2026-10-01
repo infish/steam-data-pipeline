@@ -12,9 +12,19 @@ This file records user-visible changes to the Steam data pipeline.
   insert. They run only with `INTEGRATION_DB=1` and a `_test` database.
 - A CI `integration-tests` job with a MySQL 8.0 service container and Flyway
   migrations.
+- Migration `V4__run_audit_columns` adds `measurements_loaded`,
+  `rows_rejected` and `warning_message` to `pipeline_runs`, and backfills
+  `measurements_loaded` for historical runs.
+- A MySQL named lock (`steam_pipeline_run`) so a second concurrent run exits
+  cleanly without creating a run row.
+- Leftover `RUNNING` rows from interrupted runs are marked `FAILED` as
+  abandoned at the start of the next run.
 
 ### Fixed
 
+- A failure while recording a failed run (for example, a failed rollback) no
+  longer replaces the original pipeline error; it is logged and the original
+  error is re-raised.
 - The scheduler now waits for the configured run time in absolute time, so
   the daily run no longer fires an hour late after the spring DST change or an
   hour early after the autumn change.

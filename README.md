@@ -125,7 +125,22 @@ Operational audit information:
 - Start and finish timestamps
 - Status
 - Rows extracted and loaded
-- Failure message
+- Valve measurements loaded (`measurements_loaded`; historical runs were
+  backfilled from `steam_game_measurements`)
+- Rows rejected by validation (`rows_rejected`)
+- Failure message, and a separate `warning_message` for runs that succeeded
+  with degraded input
+
+Only one pipeline run can be active at a time. Each run takes the MySQL named
+lock `steam_pipeline_run` before it creates a run row; if another run holds the
+lock, the new run logs a warning and exits without creating a row. While
+holding the lock, a run marks any leftover `RUNNING` rows as `FAILED` with
+`error_message = 'Abandoned: process ended before completion'`. Their
+`finished_at` stays empty because the process never finished. This covers runs
+interrupted by a crash or container restart.
+
+If recording a failure itself fails (for example, the database connection is
+lost), the pipeline logs that secondary error and re-raises the original one.
 
 All database timestamps are stored in UTC. The dashboard converts displayed run times to `Europe/Prague`.
 
@@ -159,7 +174,8 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 │       ├── R__analytics_views.sql
 │       ├── V1__initial_schema.sql
 │       ├── V2__steam_measurements.sql
-│       └── V3__expand_valve_player_measurements.sql
+│       ├── V3__expand_valve_player_measurements.sql
+│       └── V4__run_audit_columns.sql
 ├── deploy
 │   └── truenas-compose.yml
 ├── src
@@ -178,7 +194,9 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 ├── tests
 │   ├── integration
 │   │   ├── base.py
+│   │   ├── test_run_lifecycle.py
 │   │   └── test_run_pipeline.py
+│   ├── test_main.py
 │   ├── test_scheduler.py
 │   ├── test_steam_api.py
 │   └── test_transform.py

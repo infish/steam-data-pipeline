@@ -116,6 +116,12 @@ class IntegrationTestCase(unittest.TestCase):
     def count(self, table):
         return self.query(f"SELECT COUNT(*) AS n FROM {table}")[0]["n"]
 
+    def run_lock_is_free(self):
+        return self.query(
+            "SELECT IS_FREE_LOCK(%s) AS free",
+            (main.RUN_LOCK_NAME,)
+        )[0]["free"] == 1
+
     def reset_tables(self):
         connection = get_connection()
 

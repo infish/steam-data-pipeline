@@ -12,8 +12,34 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+RUN_LOCK_NAME = "steam_pipeline_run"
+ABANDONED_RUN_MESSAGE = "Abandoned: process ended before completion"
+
 def utc_now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+def acquire_run_lock(cursor):
+    cursor.execute("SELECT GET_LOCK(%s, 0)", (RUN_LOCK_NAME,))
+    return cursor.fetchall()[0][0] == 1
+
+
+def release_run_lock(cursor):
+    cursor.execute("SELECT RELEASE_LOCK(%s)", (RUN_LOCK_NAME,))
+    cursor.fetchall()
+
+
+def reap_abandoned_runs(cursor):
+    # Only safe while holding the run lock: no other run can be live.
+    cursor.execute(
+        """
+        UPDATE pipeline_runs
+        SET status = 'FAILED', error_message = %s
+        WHERE status = 'RUNNING'
+        """,
+        (ABANDONED_RUN_MESSAGE,)
+    )
+    return cursor.rowcount
+
 
 def start_pipeline_run(cursor, started_at):
     query = """
@@ -33,7 +59,10 @@ def finish_pipeline_run(
     status,
     rows_extracted=0,
     rows_loaded=0,
-    error_message=None
+    measurements_loaded=0,
+    rows_rejected=0,
+    error_message=None,
+    warning_message=None
 ):
     query = """
         UPDATE pipeline_runs
@@ -42,7 +71,10 @@ def finish_pipeline_run(
             status = %s,
             rows_extracted = %s,
             rows_loaded = %s,
-            error_message = %s
+            measurements_loaded = %s,
+            rows_rejected = %s,
+            error_message = %s,
+            warning_message = %s
         WHERE run_id = %s
     """
     cursor.execute(
@@ -52,7 +84,10 @@ def finish_pipeline_run(
             status,
             rows_extracted,
             rows_loaded,
+            measurements_loaded,
+            rows_rejected,
             error_message,
+            warning_message,
             run_id
         )
     )
@@ -225,10 +260,28 @@ def run_pipeline():
     connection = None
     cursor = None
     run_id = None
+    lock_acquired = False
 
     try:
         connection = get_connection()
         cursor = connection.cursor()
+
+        if not acquire_run_lock(cursor):
+            logging.warning(
+                "Another pipeline run is active; skipping this run"
+            )
+            return
+
+        lock_acquired = True
+
+        abandoned_runs = reap_abandoned_runs(cursor)
+        connection.commit()
+
+        if abandoned_runs:
+            logging.warning(
+                "Marked %s abandoned RUNNING pipeline run(s) as FAILED",
+                abandoned_runs
+            )
 
         run_id = start_pipeline_run(cursor, utc_now())
         connection.commit()
@@ -301,7 +354,8 @@ def run_pipeline():
             run_id,
             "SUCCESS",
             rows_extracted=len(df),
-            rows_loaded=rows_loaded
+            rows_loaded=rows_loaded,
+            measurements_loaded=measurements_loaded
         )
         connection.commit()
 
@@ -315,18 +369,30 @@ def run_pipeline():
         logging.exception("Pipeline failed")
 
         if connection is not None and cursor is not None and run_id is not None:
-            connection.rollback()
-            finish_pipeline_run(
-                cursor,
-                run_id,
-                "FAILED",
-                error_message=str(error)[:1000]
-            )
-            connection.commit()
+            try:
+                connection.rollback()
+                finish_pipeline_run(
+                    cursor,
+                    run_id,
+                    "FAILED",
+                    error_message=str(error)[:1000]
+                )
+                connection.commit()
+            except Exception:
+                logging.exception(
+                    "Could not record pipeline run %s as FAILED",
+                    run_id
+                )
 
-        raise
+        raise error
 
     finally:
+        if lock_acquired:
+            try:
+                release_run_lock(cursor)
+            except Exception:
+                logging.exception("Could not release the pipeline run lock")
+
         if cursor is not None:
             cursor.close()
 

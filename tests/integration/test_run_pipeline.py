@@ -19,8 +19,12 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
         self.assertEqual(run["status"], "SUCCESS")
         self.assertEqual(run["rows_extracted"], 3)
         self.assertEqual(run["rows_loaded"], 3)
+        self.assertEqual(run["measurements_loaded"], 2)
+        self.assertEqual(run["rows_rejected"], 0)
         self.assertIsNotNone(run["finished_at"])
         self.assertIsNone(run["error_message"])
+        self.assertIsNone(run["warning_message"])
+        self.assertTrue(self.run_lock_is_free())
 
         self.assertEqual(
             [row["appid"] for row in self.query(
@@ -87,6 +91,7 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             "forced failure after load"
         )
         self.assertIsNotNone(runs[0]["finished_at"])
+        self.assertTrue(self.run_lock_is_free())
 
 
 if __name__ == "__main__":
