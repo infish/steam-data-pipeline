@@ -51,6 +51,15 @@ CANNED_TOP_GAMES = {
     "570": steamspy_game(570, "Dota 2", "100,000,000 .. 200,000,000", 800, 200),
 }
 
+# Tracked app missing from the page; fetched through SteamSpy appdetails.
+CANNED_APP_DETAILS = {
+    427520: steamspy_game(
+        427520, "Factorio", "5,000,000 .. 10,000,000", 200, 5
+    ),
+}
+
+TRACKED_APPIDS = "730,427520,620"
+
 CHART_MEASURED_AT = datetime(2026, 10, 1, 18, 0, 0)
 
 CANNED_MEASUREMENTS = [
@@ -75,7 +84,18 @@ CANNED_MEASUREMENTS = [
         "review_score_percent": 99.0,
     },
     {
-        # Valve-measured but absent from the SteamSpy page: not loaded.
+        # Tracked and off the page: loaded after the appdetails backfill.
+        "appid": 427520,
+        "current_players": 20000,
+        "player_rank": None,
+        "source_measured_at": None,
+        "positive_reviews": 195,
+        "negative_reviews": 5,
+        "total_reviews": 200,
+        "review_score_percent": 97.5,
+    },
+    {
+        # Top-100 but absent from the SteamSpy page and untracked: skipped.
         "appid": 999999,
         "current_players": 50,
         "player_rank": 100,
@@ -151,12 +171,35 @@ class IntegrationTestCase(unittest.TestCase):
         finally:
             connection.close()
 
-    def run_pipeline(self, top_games=None, measurements=None, warnings=()):
+    def run_pipeline(
+        self,
+        top_games=None,
+        measurements=None,
+        warnings=(),
+        app_details=None
+    ):
         if top_games is None:
             top_games = CANNED_TOP_GAMES
 
         if measurements is None:
             measurements = CANNED_MEASUREMENTS
+
+        if app_details is None:
+            app_details = CANNED_APP_DETAILS
+
+        def fake_app_details(appids):
+            rows = {
+                str(appid): app_details[appid]
+                for appid in appids
+                if appid in app_details
+            }
+            failures = [
+                f"SteamSpy appdetails failed for tracked app {appid}, "
+                "skipped: canned failure"
+                for appid in appids
+                if appid not in app_details
+            ]
+            return rows, failures
 
         with (
             patch.object(main, "get_top_games", return_value=top_games),
@@ -165,5 +208,11 @@ class IntegrationTestCase(unittest.TestCase):
                 "get_steam_measurements",
                 return_value=(measurements, list(warnings))
             ),
+            patch.object(
+                main,
+                "get_tracked_app_details",
+                side_effect=fake_app_details
+            ),
+            patch.dict(os.environ, {"STEAM_TRACKED_APPIDS": TRACKED_APPIDS}),
         ):
             main.run_pipeline()

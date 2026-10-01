@@ -1,7 +1,11 @@
 import logging
 import math
-from api.steam_api import get_steam_measurements, get_top_games
-from config import get_max_rejected_percent
+from api.steam_api import (
+    get_steam_measurements,
+    get_top_games,
+    get_tracked_app_details,
+)
+from config import get_max_rejected_percent, get_tracked_appids
 from database.mysql_database import get_connection
 from quality.data_quality import format_rejections, validate_games_data
 from transform.data_transformer import transform_games_data
@@ -310,6 +314,30 @@ def run_pipeline():
         if data is None:
             raise RuntimeError("No API data received")
 
+        # Tracked apps need a games row for their measurements' foreign key.
+        off_page_appids = [
+            appid
+            for appid in get_tracked_appids()
+            if str(appid) not in data
+        ]
+        backfilled_rows, backfill_warnings = get_tracked_app_details(
+            off_page_appids
+        )
+        data = {**data, **backfilled_rows}
+
+        for warning in backfill_warnings:
+            logging.warning(warning)
+
+        run_warnings.extend(backfill_warnings)
+
+        if backfilled_rows:
+            logging.info(
+                "Backfilled %s tracked app(s) missing from the SteamSpy page:"
+                " %s",
+                len(backfilled_rows),
+                ", ".join(backfilled_rows)
+            )
+
         games_list = []
 
         for game_id, game_data in data.items():
@@ -365,17 +393,17 @@ def run_pipeline():
             for measurement in steam_measurements
             if measurement["appid"] in known_appids
         ]
-        missing_appids = sorted(
-            measurement["appid"]
+        skipped_top_100 = sum(
+            1
             for measurement in steam_measurements
             if measurement["appid"] not in known_appids
+            and measurement["player_rank"] is not None
         )
 
-        if missing_appids:
-            logging.warning(
-                "Valve-measured app IDs absent from the loaded SteamSpy"
-                " rows: %s",
-                missing_appids
+        if skipped_top_100:
+            logging.info(
+                "%s top-100 games not in catalog page; skipped",
+                skipped_top_100
             )
 
         measurements_loaded = load_steam_measurements(

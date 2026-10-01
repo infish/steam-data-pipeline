@@ -35,7 +35,8 @@ MySQL healthy → bootstrap and migrations complete → scheduler and dashboard 
 ## Features
 
 - SteamSpy API extraction with retry and exponential backoff.
-- Validation and transformation of 1,000 games per configured API page.
+- Validation and transformation of 1,000 games per configured API page, plus
+  any tracked games that are not on that page.
 - Append-only historical metric snapshots.
 - Valve current-player measurements for top-100 games present on the configured
   catalog page, plus Steam review measurements for configured app IDs.
@@ -105,10 +106,23 @@ default is Counter-Strike (`730`), Factorio (`427520`), and Portal 2 (`620`),
 which adds review requests only for those games. The top-100 player coverage is
 one bulk request per daily run.
 
+A tracked game that is not on the configured SteamSpy page is fetched with
+SteamSpy `request=appdetails`, one request per game with a pause of just over
+one second before each (SteamSpy's limit is one such request per second). The
+result is shaped like a page row, so the game gets a `games` row and a snapshot,
+and its Valve measurement can be stored. If that lookup fails, the run records
+a warning and skips the game. Because of this, `rows_extracted` can exceed
+1,000.
+
+Top-100 games that are neither on the page nor tracked are not fetched; their
+Valve measurements are skipped and the run logs only their count.
+
 The source contract is:
 
 - Catalog and owner estimates:
-  `https://steamspy.com/api.php?request=all&page=<page>`
+  `https://steamspy.com/api.php?request=all&page=<page>`, plus
+  `https://steamspy.com/api.php?request=appdetails&appid=<appid>` for tracked
+  games missing from that page
 - Current players:
   `ISteamChartsService/GetGamesByConcurrentPlayers/v1/` for the top 100, then
   `ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=<appid>`

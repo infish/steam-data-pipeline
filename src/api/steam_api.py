@@ -1,3 +1,5 @@
+import time
+
 import requests
 from datetime import datetime, timezone
 from requests.adapters import HTTPAdapter
@@ -16,6 +18,31 @@ STEAM_TOP_PLAYERS_URL = (
     "ISteamChartsService/GetGamesByConcurrentPlayers/v1/"
 )
 STEAM_REVIEWS_URL = "https://store.steampowered.com/appreviews/{appid}"
+
+# SteamSpy allows one non-"all" request per second; this is the pause
+# before each appdetails call, including the first after the page request.
+STEAMSPY_REQUEST_INTERVAL_SECONDS = 1.1
+
+# The SteamSpy catalog fields run_pipeline reads from a page row.
+CATALOG_ROW_FIELDS = (
+    "appid",
+    "name",
+    "developer",
+    "publisher",
+    "owners",
+    "positive",
+    "negative",
+    "average_forever",
+    "average_2weeks",
+    "median_forever",
+    "median_2weeks",
+    "ccu",
+    "price",
+    "initialprice",
+    "discount",
+    "languages",
+    "genre",
+)
 
 
 def create_session():
@@ -64,14 +91,67 @@ def get_top_games():
     return data
 
 
-# Valve data enriches the SteamSpy catalog. These failures degrade a run
-# into warnings instead of failing it.
+# Enrichment requests (Valve data and the SteamSpy backfill of tracked
+# apps) degrade a run into warnings instead of failing it.
 ENRICHMENT_ERRORS = (
     requests.RequestException,
     ValueError,
     KeyError,
     TypeError
 )
+
+
+def fetch_steamspy_app_details(session, appid):
+    response = session.get(
+        STEAMSPY_URL,
+        params={"request": "appdetails", "appid": appid},
+        timeout=(5, 45)
+    )
+    response.raise_for_status()
+    details = response.json()
+
+    if not isinstance(details, dict):
+        raise ValueError(
+            f"SteamSpy appdetails is not an object for app {appid}"
+        )
+
+    if int(details.get("appid", -1)) != appid:
+        raise ValueError(
+            f"SteamSpy appdetails returned another app for {appid}"
+        )
+
+    if not details.get("name"):
+        raise ValueError(f"SteamSpy appdetails has no name for app {appid}")
+
+    return {field: details.get(field) for field in CATALOG_ROW_FIELDS}
+
+
+def get_tracked_app_details(appids, sleep_fn=time.sleep):
+    """Return ({appid_str: page_row}, warnings) for apps off the page.
+
+    Rows are shaped like SteamSpy request=all page rows. A failed lookup
+    becomes a warning and the app is skipped.
+    """
+    rows = {}
+    warnings = []
+
+    if not appids:
+        return rows, warnings
+
+    with create_session() as session:
+        for appid in appids:
+            sleep_fn(STEAMSPY_REQUEST_INTERVAL_SECONDS)
+
+            try:
+                rows[str(appid)] = fetch_steamspy_app_details(session, appid)
+            except ENRICHMENT_ERRORS as error:
+                warnings.append(
+                    f"SteamSpy appdetails failed for tracked app {appid}, "
+                    f"skipped: {error}"
+                )
+
+    return rows, warnings
+
 
 REVIEW_PARAMS = {
     "json": 1,

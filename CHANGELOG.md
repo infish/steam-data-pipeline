@@ -23,6 +23,11 @@ This file records user-visible changes to the Steam data pipeline.
   latest run completed with warnings.
 - `PIPELINE_MAX_REJECTED_PERCENT` (default `5`) caps the share of SteamSpy
   rows that may fail validation before the run fails.
+- Tracked games missing from the SteamSpy page are fetched with SteamSpy
+  `request=appdetails` (at most one request per second), so they get a
+  `games` row and snapshot and their Valve measurements are stored instead of
+  discarded. A failed lookup is a run warning. `rows_extracted` can now exceed
+  1,000.
 
 ### Changed
 
@@ -40,6 +45,8 @@ This file records user-visible changes to the Steam data pipeline.
 - Aligned both GitHub workflows on `actions/checkout@v7` and removed the
   leftover `refactor/production-ready` branch trigger from the test workflow.
 - Corrected the README project tree.
+- Top-100 games outside the catalog page are logged as a single INFO count
+  instead of a per-run warning listing every app ID.
 
 ### Fixed
 

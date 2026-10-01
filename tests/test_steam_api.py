@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 import requests
 
 from api.steam_api import (
+    CATALOG_ROW_FIELDS,
+    STEAMSPY_REQUEST_INTERVAL_SECONDS,
     STEAMSPY_URL,
     STEAM_CURRENT_PLAYERS_URL,
     STEAM_REVIEWS_URL,
@@ -12,6 +14,7 @@ from api.steam_api import (
     create_session,
     get_steam_measurements,
     get_top_games,
+    get_tracked_app_details,
 )
 
 
@@ -387,6 +390,95 @@ class SteamApiTests(unittest.TestCase):
             [STEAM_REVIEWS_URL.format(appid=427520)]
         )
 
+    def details_response(self, appid, name="Factorio"):
+        response = MagicMock()
+        response.json.return_value = {
+            "appid": appid,
+            "name": name,
+            "developer": "Wube Software LTD.",
+            "publisher": "Wube Software LTD.",
+            "owners": "5,000,000 .. 10,000,000",
+            "positive": 200000,
+            "negative": 5000,
+            "average_forever": 9000,
+            "average_2weeks": 600,
+            "median_forever": 3000,
+            "median_2weeks": 300,
+            "ccu": 20000,
+            "price": "3500",
+            "initialprice": "3500",
+            "discount": "0",
+            "languages": "English, Czech",
+            "genre": "Simulation, Strategy",
+            "tags": {"Automation": 9000},
+            "score_rank": ""
+        }
+        return response
+
+    def test_tracked_app_details_are_shaped_like_page_rows(self):
+        sleeps = []
+
+        with patch("api.steam_api.create_session") as mocked_session:
+            session = mocked_session.return_value.__enter__.return_value
+            session.get.side_effect = [
+                self.details_response(427520),
+                self.details_response(620, name="Portal 2")
+            ]
+
+            rows, warnings = get_tracked_app_details(
+                [427520, 620],
+                sleep_fn=sleeps.append
+            )
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(list(rows), ["427520", "620"])
+        self.assertEqual(tuple(rows["427520"]), CATALOG_ROW_FIELDS)
+        self.assertEqual(rows["427520"]["owners"], "5,000,000 .. 10,000,000")
+        self.assertEqual(rows["620"]["name"], "Portal 2")
+        self.assertNotIn("tags", rows["427520"])
+        self.assertEqual(sleeps, [STEAMSPY_REQUEST_INTERVAL_SECONDS] * 2)
+        self.assertGreaterEqual(STEAMSPY_REQUEST_INTERVAL_SECONDS, 1)
+        session.get.assert_any_call(
+            STEAMSPY_URL,
+            params={"request": "appdetails", "appid": 427520},
+            timeout=(5, 45)
+        )
+
+    def test_tracked_app_details_failures_become_warnings(self):
+        failed = MagicMock()
+        failed.raise_for_status.side_effect = requests.HTTPError("503")
+
+        with patch("api.steam_api.create_session") as mocked_session:
+            session = mocked_session.return_value.__enter__.return_value
+            session.get.side_effect = [
+                failed,
+                self.details_response(427520),
+                self.details_response(999, name=None)
+            ]
+
+            rows, warnings = get_tracked_app_details(
+                [111, 427520, 999],
+                sleep_fn=lambda seconds: None
+            )
+
+        self.assertEqual(list(rows), ["427520"])
+        self.assertEqual(len(warnings), 2)
+        self.assertIn("failed for tracked app 111", warnings[0])
+        self.assertIn("503", warnings[0])
+        self.assertIn("no name for app 999", warnings[1])
+
+    def test_no_tracked_app_details_requests_when_nothing_is_missing(self):
+        sleeps = []
+
+        with patch("api.steam_api.create_session") as mocked_session:
+            rows, warnings = get_tracked_app_details(
+                [],
+                sleep_fn=sleeps.append
+            )
+
+        self.assertEqual((rows, warnings), ({}, []))
+        self.assertEqual(sleeps, [])
+        mocked_session.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

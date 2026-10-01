@@ -15,18 +15,20 @@ from .base import (
 
 class RunPipelineIntegrationTests(IntegrationTestCase):
     def test_successful_run_loads_all_tables(self):
-        with self.assertLogs(level="WARNING") as logs:
+        with self.assertLogs(level="INFO") as logs:
             self.run_pipeline()
 
-        self.assertIn("[999999]", "\n".join(logs.output))
+        logged = "\n".join(logs.output)
+        self.assertIn("1 top-100 games not in catalog page; skipped", logged)
+        self.assertNotIn("WARNING", logged)
 
         runs = self.query("SELECT * FROM pipeline_runs")
         self.assertEqual(len(runs), 1)
         run = runs[0]
         self.assertEqual(run["status"], "SUCCESS")
-        self.assertEqual(run["rows_extracted"], 3)
-        self.assertEqual(run["rows_loaded"], 3)
-        self.assertEqual(run["measurements_loaded"], 2)
+        self.assertEqual(run["rows_extracted"], 4)
+        self.assertEqual(run["rows_loaded"], 4)
+        self.assertEqual(run["measurements_loaded"], 3)
         self.assertEqual(run["rows_rejected"], 0)
         self.assertIsNotNone(run["finished_at"])
         self.assertIsNone(run["error_message"])
@@ -37,17 +39,18 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             [row["appid"] for row in self.query(
                 "SELECT appid FROM games ORDER BY appid"
             )],
-            [570, 620, 730]
+            [570, 620, 730, 427520]
         )
 
         snapshots = self.query(
             "SELECT * FROM game_metric_snapshots ORDER BY appid"
         )
-        self.assertEqual(len(snapshots), 3)
+        self.assertEqual(len(snapshots), 4)
         self.assertTrue(
             all(row["run_id"] == run["run_id"] for row in snapshots)
         )
         counter_strike = snapshots[2]
+        self.assertEqual(counter_strike["appid"], 730)
         self.assertEqual(counter_strike["owners_low"], 50_000_000)
         self.assertEqual(counter_strike["owners_high"], 100_000_000)
         self.assertEqual(counter_strike["total_reviews"], 10_000)
@@ -57,7 +60,7 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             row["appid"]: row
             for row in self.query("SELECT * FROM steam_game_measurements")
         }
-        self.assertEqual(sorted(measurements), [620, 730])
+        self.assertEqual(sorted(measurements), [620, 730, 427520])
         self.assertEqual(measurements[730]["current_players"], 1_500_000)
         self.assertEqual(measurements[730]["player_rank"], 1)
         self.assertEqual(
@@ -155,17 +158,17 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             self.run_pipeline(top_games=self.with_bad_rows())
 
         logged = "\n".join(logs.output)
-        self.assertIn("Rejected 2 of 5 SteamSpy rows", logged)
+        self.assertIn("Rejected 2 of 6 SteamSpy rows", logged)
         self.assertIn("111: name is missing or empty", logged)
         self.assertIn("222: owners is missing", logged)
 
         (run,) = self.query("SELECT * FROM pipeline_runs")
         self.assertEqual(run["status"], "SUCCESS")
-        self.assertEqual(run["rows_extracted"], 5)
-        self.assertEqual(run["rows_loaded"], 3)
+        self.assertEqual(run["rows_extracted"], 6)
+        self.assertEqual(run["rows_loaded"], 4)
         self.assertEqual(run["rows_rejected"], 2)
         self.assertIn(
-            "Rejected 2 of 5 SteamSpy rows that failed validation "
+            "Rejected 2 of 6 SteamSpy rows that failed validation "
             "(app IDs: 111, 222)",
             run["warning_message"]
         )
@@ -173,9 +176,9 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             [row["appid"] for row in self.query(
                 "SELECT appid FROM games ORDER BY appid"
             )],
-            [570, 620, 730]
+            [570, 620, 730, 427520]
         )
-        self.assertEqual(self.count("game_metric_snapshots"), 3)
+        self.assertEqual(self.count("game_metric_snapshots"), 4)
 
     def test_rejections_over_the_limit_fail_the_run(self):
         with (
@@ -187,8 +190,58 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
 
         (run,) = self.query("SELECT * FROM pipeline_runs")
         self.assertEqual(run["status"], "FAILED")
-        self.assertIn("2 of 5 rows (40.0%)", run["error_message"])
+        self.assertIn("2 of 6 rows (33.3%)", run["error_message"])
         self.assertEqual(self.count("games"), 0)
+
+
+    def test_off_page_tracked_app_is_backfilled_with_its_measurement(self):
+        with self.assertLogs(level="INFO") as logs:
+            self.run_pipeline()
+
+        self.assertIn(
+            "Backfilled 1 tracked app(s) missing from the SteamSpy page: "
+            "427520",
+            "\n".join(logs.output)
+        )
+
+        (game,) = self.query("SELECT * FROM games WHERE appid = 427520")
+        self.assertEqual(game["name"], "Factorio")
+
+        (snapshot,) = self.query(
+            "SELECT * FROM game_metric_snapshots WHERE appid = 427520"
+        )
+        self.assertEqual(snapshot["owners_low"], 5_000_000)
+
+        (measurement,) = self.query(
+            "SELECT * FROM steam_game_measurements WHERE appid = 427520"
+        )
+        self.assertEqual(measurement["current_players"], 20000)
+        self.assertEqual(measurement["total_reviews"], 200)
+
+    def test_backfill_failure_is_a_warning_and_the_run_succeeds(self):
+        with self.assertLogs(level="WARNING") as logs:
+            self.run_pipeline(app_details={})
+
+        self.assertIn(
+            "SteamSpy appdetails failed for tracked app 427520",
+            "\n".join(logs.output)
+        )
+
+        (run,) = self.query("SELECT * FROM pipeline_runs")
+        self.assertEqual(run["status"], "SUCCESS")
+        self.assertEqual(run["rows_loaded"], 3)
+        self.assertEqual(run["measurements_loaded"], 2)
+        self.assertEqual(
+            run["warning_message"],
+            "SteamSpy appdetails failed for tracked app 427520, "
+            "skipped: canned failure"
+        )
+        self.assertEqual(
+            self.query(
+                "SELECT appid FROM steam_game_measurements WHERE appid = 427520"
+            ),
+            []
+        )
 
 
 if __name__ == "__main__":
