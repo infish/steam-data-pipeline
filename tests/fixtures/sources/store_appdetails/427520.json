@@ -1,0 +1,155 @@
+{
+  "427520": {
+    "success": true,
+    "data": {
+      "type": "game",
+      "name": "Factorio",
+      "steam_appid": 427520,
+      "is_free": false,
+      "required_age": 0,
+      "release_date": {
+        "coming_soon": false,
+        "date": "Aug 14, 2020"
+      },
+      "metacritic": {
+        "score": 90,
+        "url": "https://www.metacritic.com/game/pc/factorio?ftag=MCD-06-10aaa1f"
+      },
+      "platforms": {
+        "windows": true,
+        "mac": true,
+        "linux": true
+      },
+      "recommendations": {
+        "total": 196053
+      },
+      "price_overview": {
+        "currency": "USD",
+        "initial": 3500,
+        "final": 3500,
+        "discount_percent": 0,
+        "initial_formatted": "",
+        "final_formatted": "$35.00"
+      },
+      "genres": [
+        {
+          "id": "4",
+          "description": "Casual"
+        },
+        {
+          "id": "23",
+          "description": "Indie"
+        },
+        {
+          "id": "28",
+          "description": "Simulation"
+        },
+        {
+          "id": "2",
+          "description": "Strategy"
+        }
+      ],
+      "categories": [
+        {
+          "id": 2,
+          "description": "Single-player"
+        },
+        {
+          "id": 1,
+          "description": "Multi-player"
+        },
+        {
+          "id": 9,
+          "description": "Co-op"
+        },
+        {
+          "id": 38,
+          "description": "Online Co-op"
+        },
+        {
+          "id": 48,
+          "description": "LAN Co-op"
+        },
+        {
+          "id": 27,
+          "description": "Cross-Platform Multiplayer"
+        },
+        {
+          "id": 22,
+          "description": "Steam Achievements"
+        },
+        {
+          "id": 64,
+          "description": "Adjustable Text Size"
+        },
+        {
+          "id": 67,
+          "description": "Camera Comfort"
+        },
+        {
+          "id": 68,
+          "description": "Custom Volume Controls"
+        },
+        {
+          "id": 78,
+          "description": "Adjustable Difficulty"
+        },
+        {
+          "id": 74,
+          "description": "Playable without Timed Input"
+        },
+        {
+          "id": 55,
+          "description": "DualShock Controller Support"
+        },
+        {
+          "id": 56,
+          "description": "DualShock Controller Support"
+        },
+        {
+          "id": 57,
+          "description": "DualSense Controller Support"
+        },
+        {
+          "id": 58,
+          "description": "DualSense Controller Support"
+        },
+        {
+          "id": 79,
+          "description": "Save Anytime"
+        },
+        {
+          "id": 65,
+          "description": "Subtitle Options"
+        },
+        {
+          "id": 18,
+          "description": "Partial Controller Support"
+        },
+        {
+          "id": 23,
+          "description": "Steam Cloud"
+        },
+        {
+          "id": 17,
+          "description": "Includes level editor"
+        },
+        {
+          "id": 42,
+          "description": "Remote Play on Tablet"
+        },
+        {
+          "id": 62,
+          "description": "Family Sharing"
+        }
+      ],
+      "developers": [
+        "Wube Software LTD."
+      ],
+      "publishers": [
+        "Wube Software LTD."
+      ],
+      "supported_languages": "English, French, Italian, German, Spanish - Spain, Hungarian, Dutch, Norwegian, Polish, Portuguese - Portugal, Portuguese - Brazil, Romanian, Finnish, Swedish, Czech, Russian, Ukrainian, Japanese, Simplified Chinese, Traditional Chinese, Korean, Turkish, Greek, Spanish - Latin America, Thai, Vietnamese, Belarusian, Catalan, Kazakh, Georgian"
+    }
+  }
+}

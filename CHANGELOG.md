@@ -21,6 +21,12 @@ This file records user-visible changes to the Steam data pipeline.
   abandoned at the start of the next run.
 - The dashboard shows a warning, with the details in an expander, when the
   latest run completed with warnings.
+- `docs/sources.md` documents every current and candidate data source (URL,
+  fields, timestamp meaning, freshness, rate limit, caveats, accepted or
+  rejected), with recorded responses in `tests/fixtures/sources/`. Confirmed:
+  Store price batching works only with `filters=price_overview`; the review
+  histogram returns monthly and daily buckets (no weekly) whose counts differ
+  from review totals; news items carry a `patchnotes` tag.
 - `PIPELINE_MAX_REJECTED_PERCENT` (default `5`) caps the share of SteamSpy
   rows that may fail validation before the run fails.
 - Tracked games missing from the SteamSpy page are fetched with SteamSpy
@@ -88,6 +94,12 @@ This file records user-visible changes to the Steam data pipeline.
 - The scheduler now waits for the configured run time in absolute time, so
   the daily run no longer fires an hour late after the spring DST change or an
   hour early after the autumn change.
+
+### Known issues
+
+- `games.genre` and `games.languages` have always been empty for games loaded
+  from the SteamSpy catalog page, because `request=all` rows do not include
+  those fields. Only games backfilled through `request=appdetails` have them.
 
 ### Removed
 

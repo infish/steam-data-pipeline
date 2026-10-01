@@ -72,7 +72,8 @@ Relatively stable game metadata:
 
 - App ID and name
 - Developer and publisher
-- Languages and genre
+- Languages and genre (empty for games loaded from the SteamSpy catalog page,
+  which does not include these fields; see `docs/sources.md`)
 - First and most recent appearance in the extraction
 
 ### `game_metric_snapshots`
@@ -119,7 +120,12 @@ a warning and skips the game. Because of this, `rows_extracted` can exceed
 Top-100 games that are neither on the page nor tracked are not fetched; their
 Valve measurements are skipped and the run logs only their count.
 
-The source contract is:
+Every source, including candidates for future phases, is documented in
+[`docs/sources.md`](docs/sources.md) with its fields, timestamp meaning,
+freshness, rate limit and caveats. Recorded example responses are in
+`tests/fixtures/sources/`.
+
+The endpoints currently called are:
 
 - Catalog and owner estimates:
   `https://steamspy.com/api.php?request=all&page=<page>`, plus
@@ -231,6 +237,8 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 │       └── V4__run_audit_columns.sql
 ├── deploy
 │   └── truenas-compose.yml
+├── docs
+│   └── sources.md
 ├── src
 │   ├── api
 │   │   └── steam_api.py
@@ -246,6 +254,8 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 │   ├── main.py
 │   └── scheduler.py
 ├── tests
+│   ├── fixtures
+│   │   └── sources        # recorded API responses, see docs/sources.md
 │   ├── integration
 │   │   ├── base.py
 │   │   ├── test_run_lifecycle.py

@@ -1,0 +1,288 @@
+[
+  {
+    "fixture": "store_appdetails/730.json",
+    "url": "https://store.steampowered.com/api/appdetails",
+    "params": {
+      "appids": 730,
+      "cc": "us",
+      "l": "english"
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:27+00:00",
+    "response_bytes": 18842,
+    "trimmed": "kept only fields listed in docs/sources.md; absent keys were absent in the response"
+  },
+  {
+    "fixture": "store_appdetails/427520.json",
+    "url": "https://store.steampowered.com/api/appdetails",
+    "params": {
+      "appids": 427520,
+      "cc": "us",
+      "l": "english"
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:29+00:00",
+    "response_bytes": 28613,
+    "trimmed": "kept only fields listed in docs/sources.md; absent keys were absent in the response"
+  },
+  {
+    "fixture": "store_appdetails/620.json",
+    "url": "https://store.steampowered.com/api/appdetails",
+    "params": {
+      "appids": 620,
+      "cc": "us",
+      "l": "english"
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:31+00:00",
+    "response_bytes": 28553,
+    "trimmed": "kept only fields listed in docs/sources.md; absent keys were absent in the response"
+  },
+  {
+    "fixture": "store_price_batch/batch.json",
+    "url": "https://store.steampowered.com/api/appdetails",
+    "params": {
+      "appids": "730,427520,620",
+      "cc": "us",
+      "filters": "price_overview"
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:32+00:00",
+    "response_bytes": 374,
+    "trimmed": "none"
+  },
+  {
+    "fixture": "store_price_batch/batch_without_filter.json",
+    "url": "https://store.steampowered.com/api/appdetails",
+    "params": {
+      "appids": "730,427520,620",
+      "cc": "us"
+    },
+    "http_status": 400,
+    "fetched_at_utc": "2026-10-01T17:46:34+00:00",
+    "response_bytes": 4,
+    "trimmed": "none (HTTP 400, body is JSON null)"
+  },
+  {
+    "fixture": "review_histogram/730.json",
+    "url": "https://store.steampowered.com/appreviewhistogram/730",
+    "params": {
+      "l": "english",
+      "review_score_preference": 0
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:36+00:00",
+    "response_bytes": 15270,
+    "trimmed": "none"
+  },
+  {
+    "fixture": "review_histogram/427520.json",
+    "url": "https://store.steampowered.com/appreviewhistogram/427520",
+    "params": {
+      "l": "english",
+      "review_score_preference": 0
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:37+00:00",
+    "response_bytes": 11614,
+    "trimmed": "none"
+  },
+  {
+    "fixture": "review_histogram/620.json",
+    "url": "https://store.steampowered.com/appreviewhistogram/620",
+    "params": {
+      "l": "english",
+      "review_score_preference": 0
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:39+00:00",
+    "response_bytes": 15592,
+    "trimmed": "none"
+  },
+  {
+    "fixture": "review_summary/730.json",
+    "url": "https://store.steampowered.com/appreviews/730",
+    "params": {
+      "json": 1,
+      "filter": "recent",
+      "language": "all",
+      "review_type": "all",
+      "purchase_type": "all",
+      "num_per_page": 1,
+      "filter_offtopic_activity": 0
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:41+00:00",
+    "response_bytes": 996,
+    "trimmed": "dropped reviews (user-written text) and cursor"
+  },
+  {
+    "fixture": "review_summary/427520.json",
+    "url": "https://store.steampowered.com/appreviews/427520",
+    "params": {
+      "json": 1,
+      "filter": "recent",
+      "language": "all",
+      "review_type": "all",
+      "purchase_type": "all",
+      "num_per_page": 1,
+      "filter_offtopic_activity": 0
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:43+00:00",
+    "response_bytes": 1007,
+    "trimmed": "dropped reviews (user-written text) and cursor"
+  },
+  {
+    "fixture": "review_summary/620.json",
+    "url": "https://store.steampowered.com/appreviews/620",
+    "params": {
+      "json": 1,
+      "filter": "recent",
+      "language": "all",
+      "review_type": "all",
+      "purchase_type": "all",
+      "num_per_page": 1,
+      "filter_offtopic_activity": 0
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:44+00:00",
+    "response_bytes": 994,
+    "trimmed": "dropped reviews (user-written text) and cursor"
+  },
+  {
+    "fixture": "most_played/all.json",
+    "url": "https://api.steampowered.com/ISteamChartsService/GetMostPlayedGames/v1/",
+    "params": {},
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:46+00:00",
+    "response_bytes": 6893,
+    "trimmed": "none"
+  },
+  {
+    "fixture": "top_concurrent/all.json",
+    "url": "https://api.steampowered.com/ISteamChartsService/GetGamesByConcurrentPlayers/v1/",
+    "params": {},
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:48+00:00",
+    "response_bytes": 7611,
+    "trimmed": "none"
+  },
+  {
+    "fixture": "current_players/730.json",
+    "url": "https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/",
+    "params": {
+      "appid": 730
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:50+00:00",
+    "response_bytes": 48,
+    "trimmed": "none"
+  },
+  {
+    "fixture": "current_players/427520.json",
+    "url": "https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/",
+    "params": {
+      "appid": 427520
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:51+00:00",
+    "response_bytes": 46,
+    "trimmed": "none"
+  },
+  {
+    "fixture": "current_players/620.json",
+    "url": "https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/",
+    "params": {
+      "appid": 620
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:53+00:00",
+    "response_bytes": 45,
+    "trimmed": "none"
+  },
+  {
+    "fixture": "news/730.json",
+    "url": "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/",
+    "params": {
+      "appid": 730,
+      "count": 20
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:54+00:00",
+    "response_bytes": 40908,
+    "trimmed": "dropped contents (third-party article text) and author"
+  },
+  {
+    "fixture": "news/427520.json",
+    "url": "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/",
+    "params": {
+      "appid": 427520,
+      "count": 20
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:56+00:00",
+    "response_bytes": 120385,
+    "trimmed": "dropped contents (third-party article text) and author"
+  },
+  {
+    "fixture": "news/620.json",
+    "url": "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/",
+    "params": {
+      "appid": 620,
+      "count": 20
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:58+00:00",
+    "response_bytes": 19519,
+    "trimmed": "dropped contents (third-party article text) and author"
+  },
+  {
+    "fixture": "steamspy_appdetails/730.json",
+    "url": "https://steamspy.com/api.php",
+    "params": {
+      "request": "appdetails",
+      "appid": 730
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:46:59+00:00",
+    "response_bytes": 1063,
+    "trimmed": "none"
+  },
+  {
+    "fixture": "steamspy_appdetails/427520.json",
+    "url": "https://steamspy.com/api.php",
+    "params": {
+      "request": "appdetails",
+      "appid": 427520
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:47:01+00:00",
+    "response_bytes": 1097,
+    "trimmed": "none"
+  },
+  {
+    "fixture": "steamspy_appdetails/620.json",
+    "url": "https://steamspy.com/api.php",
+    "params": {
+      "request": "appdetails",
+      "appid": 620
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:47:03+00:00",
+    "response_bytes": 1018,
+    "trimmed": "none"
+  },
+  {
+    "fixture": "steamspy_all/page0_tracked.json",
+    "url": "https://steamspy.com/api.php",
+    "params": {
+      "request": "all",
+      "page": 0
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-01T17:47:06+00:00",
+    "response_bytes": 354962,
+    "trimmed": "kept the 3 tracked apps out of 1000 rows"
+  }
+]
