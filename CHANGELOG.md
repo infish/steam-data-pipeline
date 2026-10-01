@@ -4,6 +4,15 @@ This file records user-visible changes to the Steam data pipeline.
 
 ## 2026-10-01
 
+### Added
+
+- Integration tests in `tests/integration/` that run the pipeline against a
+  real, migrated MySQL database with canned API payloads, covering a
+  successful load and the rollback of a run that fails after the snapshot
+  insert. They run only with `INTEGRATION_DB=1` and a `_test` database.
+- A CI `integration-tests` job with a MySQL 8.0 service container and Flyway
+  migrations.
+
 ### Fixed
 
 - The scheduler now waits for the configured run time in absolute time, so

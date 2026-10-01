@@ -46,6 +46,7 @@ MySQL healthy → bootstrap and migrations complete → scheduler and dashboard 
 - Docker-managed persistent storage.
 - Non-root Python containers.
 - Automated unit tests without live API requests.
+- Integration tests against a real, migrated MySQL database in CI.
 - Linux, macOS and Windows-compatible Docker Compose workflow.
 
 ## Technology
@@ -175,6 +176,9 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 │   ├── main.py
 │   └── scheduler.py
 ├── tests
+│   ├── integration
+│   │   ├── base.py
+│   │   └── test_run_pipeline.py
 │   ├── test_scheduler.py
 │   ├── test_steam_api.py
 │   └── test_transform.py
@@ -382,6 +386,33 @@ docker compose run --build --rm --no-deps \
 ```
 
 The API tests use mocks and never contact SteamSpy or Valve endpoints.
+
+### Integration tests
+
+Integration tests in `tests/integration/` run the pipeline against a real,
+migrated MySQL database with canned API payloads. They are skipped unless
+`INTEGRATION_DB=1` is set, and they refuse to run unless `MYSQL_DATABASE` ends
+in `_test`, because every test deletes all pipeline rows.
+
+Run them in a throwaway Compose project with its own database volume:
+
+```bash
+MYSQL_DATABASE=steam_pipeline_test docker compose -p steam-test \
+  --profile manual run --build --rm \
+  -e INTEGRATION_DB=1 -e PYTHONPATH=/app/src \
+  pipeline \
+  python -m unittest discover -s tests/integration -t tests -v
+```
+
+Remove the throwaway project afterwards:
+
+```bash
+docker compose -p steam-test --profile manual down -v
+```
+
+Never run integration tests against the `steam_pipeline` database used by a
+real deployment. CI runs the same tests in the `integration-tests` job against
+a MySQL service container migrated with Flyway.
 
 ## Security
 
