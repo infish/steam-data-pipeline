@@ -576,6 +576,49 @@ service.
 
 These limitations should be considered when interpreting charts and derived metrics.
 
+## Releases and image tags
+
+The `Publish Docker image` workflow builds the application image and pushes it
+to GHCR. It first runs the full test workflow (unit and integration tests); if
+any test fails, no image is published.
+
+Each published image gets these tags:
+
+| Tag | When |
+| --- | --- |
+| full commit SHA | every build |
+| `latest` | builds from `main` only |
+| `vX.Y.Z` | builds from a pushed `vX.Y.Z` git tag |
+
+A release tag never moves `latest`. `deploy/truenas-compose.yml` references a
+`vX.Y.Z` tag, never `latest`.
+
+To cut a release:
+
+1. On a branch, set the new version in all four `image:` lines of
+   `deploy/truenas-compose.yml`, and add the version to the top `CHANGELOG.md`
+   heading. Merge the branch into `main`.
+2. Tag the merge commit on `main` and push the tag:
+
+   ```bash
+   git switch main && git pull
+   git tag -a v1.0.1 -m "v1.0.1"
+   git push origin v1.0.1
+   ```
+
+3. Wait for the `Publish Docker image` run for that tag to finish
+   successfully, then confirm the image exists:
+
+   ```bash
+   docker pull ghcr.io/infish/steam-data-pipeline:v1.0.1
+   ```
+
+4. In TrueNAS, edit the app's YAML to use the new tag and save.
+
+To roll back, change the tag back to the previous release. This is safe only
+if the newer release added no database migrations, because Flyway migrations
+are not reversed.
+
 ## TrueNAS SCALE deployment
 
 The project can be deployed on TrueNAS SCALE as a single Custom App using the
@@ -592,11 +635,15 @@ The TrueNAS deployment runs:
 - the Streamlit dashboard
 - an optional manual one-shot pipeline service
 
-The application image is pulled from:
+The application image is pinned to a release tag:
 
 ```text
-ghcr.io/infish/steam-data-pipeline:latest
+ghcr.io/infish/steam-data-pipeline:v1.0.0
 ```
+
+Deploy only a tag whose image has been published (see
+[Releases and image tags](#releases-and-image-tags)). Pinning means updating
+the app never picks up unreleased changes from `main`.
 
 Before installing `deploy/truenas-compose.yml`:
 
@@ -624,7 +671,9 @@ the schema owner. To upgrade:
 2. Check that the dashboard password contains only letters, digits, `_` and
    `-`. If not, replace it in both `db-bootstrap` and `dashboard`; bootstrap
    applies the new value.
-3. Save the YAML. TrueNAS recreates the containers.
+3. Make sure the image tag in the YAML has been published (see
+   [Releases and image tags](#releases-and-image-tags)).
+4. Save the YAML. TrueNAS recreates the containers.
 
 On start, `db-bootstrap`:
 

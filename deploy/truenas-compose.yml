@@ -80,7 +80,7 @@ services:
         echo "db-bootstrap: dashboard and writer accounts are up to date"
 
   migration-assets:
-    image: ghcr.io/infish/steam-data-pipeline:latest
+    image: ghcr.io/infish/steam-data-pipeline:v1.0.0
     user: "0:0"
 
     command:
@@ -115,7 +115,7 @@ services:
       - flyway_migrations:/flyway/sql:ro
 
   scheduler:
-    image: ghcr.io/infish/steam-data-pipeline:latest
+    image: ghcr.io/infish/steam-data-pipeline:v1.0.0
     restart: unless-stopped
     command: python src/scheduler.py
 
@@ -140,7 +140,7 @@ services:
 
   pipeline:
     profiles: ["manual"]
-    image: ghcr.io/infish/steam-data-pipeline:latest
+    image: ghcr.io/infish/steam-data-pipeline:v1.0.0
 
     depends_on:
       migrate:
@@ -157,7 +157,7 @@ services:
       PIPELINE_MAX_REJECTED_PERCENT: "5"
 
   dashboard:
-    image: ghcr.io/infish/steam-data-pipeline:latest
+    image: ghcr.io/infish/steam-data-pipeline:v1.0.0
     restart: unless-stopped
 
     command: >

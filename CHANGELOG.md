@@ -52,6 +52,12 @@ This file records user-visible changes to the Steam data pipeline.
 - Corrected the README project tree.
 - Top-100 games outside the catalog page are logged as a single INFO count
   instead of a per-run warning listing every app ID.
+- The `Publish Docker image` workflow runs the full test workflow (now
+  reusable via `workflow_call`) first and publishes only if it passes.
+- Images get a `vX.Y.Z` tag when a `vX.Y.Z` git tag is pushed, in addition to
+  the commit SHA tag; `latest` now moves only for builds from `main`.
+- `deploy/truenas-compose.yml` pins the image to `v1.0.0` instead of
+  `latest`. The README documents the release procedure.
 
 ### Fixed
 
