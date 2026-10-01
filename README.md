@@ -149,13 +149,18 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 
 ```text
 .
+├── .github
+│   └── workflows
+│       ├── publish-image.yml
+│       └── tests.yml
 ├── db
-│   ├── init
-│   │   └── 01_create_dashboard_user.sh
 │   └── migrations
 │       ├── R__analytics_views.sql
 │       ├── V1__initial_schema.sql
-│       └── V2__steam_measurements.sql
+│       ├── V2__steam_measurements.sql
+│       └── V3__expand_valve_player_measurements.sql
+├── deploy
+│   └── truenas-compose.yml
 ├── src
 │   ├── api
 │   │   └── steam_api.py

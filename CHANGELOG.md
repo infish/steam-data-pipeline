@@ -2,6 +2,25 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## 2026-10-01
+
+### Fixed
+
+- The scheduler now waits for the configured run time in absolute time, so
+  the daily run no longer fires an hour late after the spring DST change or an
+  hour early after the autumn change.
+
+### Removed
+
+- Deleted the unused `db/init/01_create_dashboard_user.sh`; the dashboard
+  account is created by the `db-bootstrap` service.
+
+### Changed
+
+- Aligned both GitHub workflows on `actions/checkout@v7` and removed the
+  leftover `refactor/production-ready` branch trigger from the test workflow.
+- Corrected the README project tree.
+
 ## 2026-09-16
 
 ### Fixed

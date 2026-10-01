@@ -76,7 +76,9 @@ def wait_until(target, now_fn=None, sleep_fn=time.sleep):
         now_fn = lambda: datetime.now(target.tzinfo)
 
     while True:
-        remaining_seconds = (target - now_fn()).total_seconds()
+        # Compare absolute instants: subtracting aware datetimes that share
+        # a tzinfo uses wall-clock time and is off by an hour across DST.
+        remaining_seconds = target.timestamp() - now_fn().timestamp()
 
         if remaining_seconds <= 0:
             return
