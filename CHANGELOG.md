@@ -28,6 +28,11 @@ This file records user-visible changes to the Steam data pipeline.
   `games` row and snapshot and their Valve measurements are stored instead of
   discarded. A failed lookup is a run warning. `rows_extracted` can now exceed
   1,000.
+- A separate writer account (`WRITER_DB_USER`, `WRITER_DB_PASSWORD`) with
+  `SELECT, INSERT, UPDATE` on the database. The scheduler and manual pipeline
+  now connect as the writer; the schema owner (`PIPELINE_DB_*`) is used only
+  by Flyway. Existing deployments must add the writer variables before
+  upgrading; see "Upgrading an existing TrueNAS deployment" in the README.
 
 ### Changed
 
@@ -50,6 +55,15 @@ This file records user-visible changes to the Steam data pipeline.
 
 ### Fixed
 
+- `db-bootstrap` now runs `ALTER USER` after `CREATE USER IF NOT EXISTS`, so a
+  rotated dashboard password takes effect instead of locking the dashboard
+  out.
+- The MySQL healthcheck and bootstrap pass the root password through
+  `MYSQL_PWD` instead of `-p` on the command line.
+- `db-bootstrap` fails with a clear error if a value it writes into SQL
+  contains characters other than letters, digits, `_` and `-`.
+- The `mysql` service no longer receives unused dashboard credentials, so
+  rotating the dashboard password does not restart the database.
 - A null or malformed SteamSpy `owners` value no longer crashes the
   transform with a `TypeError`; it becomes a rejected row.
 - A failure while recording a failed run (for example, a failed rollback) no

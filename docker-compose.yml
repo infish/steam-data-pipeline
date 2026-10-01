@@ -8,8 +8,6 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${PIPELINE_DB_USER}
       MYSQL_PASSWORD: ${PIPELINE_DB_PASSWORD}
-      DASHBOARD_DB_USER: ${DASHBOARD_DB_USER}
-      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD}
 
     volumes:
       - mysql_data:/var/lib/mysql
@@ -18,7 +16,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent",
+          'MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysqladmin ping -h 127.0.0.1 -u root --silent',
         ]
       interval: 5s
       timeout: 5s
@@ -32,23 +30,54 @@ services:
         condition: service_healthy
 
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_PWD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
+      PIPELINE_DB_USER: ${PIPELINE_DB_USER}
       DASHBOARD_DB_USER: ${DASHBOARD_DB_USER}
       DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD}
+      WRITER_DB_USER: ${WRITER_DB_USER}
+      WRITER_DB_PASSWORD: ${WRITER_DB_PASSWORD}
 
     entrypoint:
       - /bin/bash
       - -c
       - |
-        mysql -h mysql -uroot -p"$${MYSQL_ROOT_PASSWORD}" <<SQL
+        set -euo pipefail
+
+        # These values are interpolated into SQL below.
+        for name in MYSQL_DATABASE DASHBOARD_DB_USER DASHBOARD_DB_PASSWORD \
+                    WRITER_DB_USER WRITER_DB_PASSWORD; do
+          if [[ ! "$${!name:-}" =~ ^[A-Za-z0-9_-]+$$ ]]; then
+            echo "db-bootstrap: $$name must be set and match ^[A-Za-z0-9_-]+\$$" >&2
+            exit 1
+          fi
+        done
+
+        if [[ "$$WRITER_DB_USER" == "$${PIPELINE_DB_USER:-}" ||
+              "$$WRITER_DB_USER" == "$$DASHBOARD_DB_USER" ]]; then
+          echo "db-bootstrap: WRITER_DB_USER must differ from the schema owner and dashboard users" >&2
+          exit 1
+        fi
+
+        mysql -h mysql -uroot <<SQL
         CREATE USER IF NOT EXISTS '$${DASHBOARD_DB_USER}'@'%'
           IDENTIFIED BY '$${DASHBOARD_DB_PASSWORD}';
-
+        ALTER USER '$${DASHBOARD_DB_USER}'@'%'
+          IDENTIFIED BY '$${DASHBOARD_DB_PASSWORD}';
         GRANT SELECT, SHOW VIEW
           ON \`$${MYSQL_DATABASE}\`.*
           TO '$${DASHBOARD_DB_USER}'@'%';
+
+        CREATE USER IF NOT EXISTS '$${WRITER_DB_USER}'@'%'
+          IDENTIFIED BY '$${WRITER_DB_PASSWORD}';
+        ALTER USER '$${WRITER_DB_USER}'@'%'
+          IDENTIFIED BY '$${WRITER_DB_PASSWORD}';
+        GRANT SELECT, INSERT, UPDATE
+          ON \`$${MYSQL_DATABASE}\`.*
+          TO '$${WRITER_DB_USER}'@'%';
         SQL
+
+        echo "db-bootstrap: dashboard and writer accounts are up to date"
 
   migration-assets:
     build: .
@@ -98,8 +127,8 @@ services:
     environment:
       MYSQL_HOST: mysql
       MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${PIPELINE_DB_USER}
-      MYSQL_PASSWORD: ${PIPELINE_DB_PASSWORD}
+      MYSQL_USER: ${WRITER_DB_USER}
+      MYSQL_PASSWORD: ${WRITER_DB_PASSWORD}
       STEAMSPY_MODE: ${STEAMSPY_MODE:-all}
       STEAMSPY_PAGE: ${STEAMSPY_PAGE:-0}
       STEAM_TRACKED_APPIDS: ${STEAM_TRACKED_APPIDS:-730,427520,620}
@@ -118,8 +147,8 @@ services:
     environment:
       MYSQL_HOST: mysql
       MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${PIPELINE_DB_USER}
-      MYSQL_PASSWORD: ${PIPELINE_DB_PASSWORD}
+      MYSQL_USER: ${WRITER_DB_USER}
+      MYSQL_PASSWORD: ${WRITER_DB_PASSWORD}
       STEAMSPY_MODE: ${STEAMSPY_MODE:-all}
       STEAMSPY_PAGE: ${STEAMSPY_PAGE:-0}
       STEAM_TRACKED_APPIDS: ${STEAM_TRACKED_APPIDS:-730,427520,620}

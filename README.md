@@ -19,7 +19,8 @@ flowchart TD
 Docker Compose manages these services:
 
 - `mysql` — persistent database.
-- `db-bootstrap` — creates or repairs the read-only dashboard account.
+- `db-bootstrap` — creates or repairs the read-only dashboard account and the
+  pipeline's writer account.
 - `migration-assets` — copies migrations from the application image.
 - `migrate` — applies pending Flyway migrations and exits.
 - `scheduler` — runs the pipeline daily.
@@ -43,7 +44,8 @@ MySQL healthy → bootstrap and migrations complete → scheduler and dashboard 
 - Audited pipeline runs with success/failure status.
 - SQL window functions for changes between snapshots.
 - Versioned and repeatable Flyway migrations.
-- Read-only dashboard database account.
+- Separate database accounts: a schema owner used only by Flyway, a writer
+  for the pipeline, and a read-only dashboard account.
 - Docker-managed persistent storage.
 - Non-root Python containers.
 - Automated unit tests without live API requests.
@@ -280,9 +282,10 @@ Create the private configuration file:
 cp .env.example .env
 ```
 
-Generate three separate passwords:
+Generate four separate passwords:
 
 ```bash
+openssl rand -hex 24
 openssl rand -hex 24
 openssl rand -hex 24
 openssl rand -hex 24
@@ -291,8 +294,14 @@ openssl rand -hex 24
 Open `.env` and assign them to:
 
 - `MYSQL_ROOT_PASSWORD`
-- `PIPELINE_DB_PASSWORD`
-- `DASHBOARD_DB_PASSWORD`
+- `PIPELINE_DB_PASSWORD` — schema owner, used only by Flyway migrations
+- `WRITER_DB_PASSWORD` — used by the scheduler and manual pipeline runs
+- `DASHBOARD_DB_PASSWORD` — read-only dashboard account
+
+The bootstrap service writes the database name, the dashboard and writer user
+names, and their passwords into SQL. It refuses to run unless each value
+contains only letters, digits, `_` and `-`. Hex passwords from
+`openssl rand -hex` always qualify.
 
 Never commit `.env`. It is excluded by both Git and Docker.
 
@@ -452,12 +461,19 @@ migrated MySQL database with canned API payloads. They are skipped unless
 `INTEGRATION_DB=1` is set, and they refuse to run unless `MYSQL_DATABASE` ends
 in `_test`, because every test deletes all pipeline rows.
 
-Run them in a throwaway Compose project with its own database volume:
+Run them in a throwaway Compose project with its own database volume. The
+tests clear tables between runs, which the pipeline's writer account cannot
+do, so they connect as the schema owner. Load `.env` into the shell first;
+`-e MYSQL_USER -e MYSQL_PASSWORD` then passes those values through without
+putting the password on the command line:
 
 ```bash
+set -a; . ./.env; set +a
+MYSQL_USER="$PIPELINE_DB_USER" MYSQL_PASSWORD="$PIPELINE_DB_PASSWORD" \
 MYSQL_DATABASE=steam_pipeline_test docker compose -p steam-test \
   --profile manual run --build --rm \
   -e INTEGRATION_DB=1 -e PYTHONPATH=/app/src \
+  -e MYSQL_USER -e MYSQL_PASSWORD \
   pipeline \
   python -m unittest discover -s tests/integration -t tests -v
 ```
@@ -478,6 +494,14 @@ a MySQL service container migrated with Flyway.
 - Database files live in a Docker named volume.
 - Credentials are stored in an ignored `.env` file.
 - The dashboard uses an account restricted to `SELECT` and `SHOW VIEW`.
+- The scheduler and manual pipeline use a writer account restricted to
+  `SELECT`, `INSERT` and `UPDATE`; it cannot drop, alter or delete. The schema
+  owner is used only by Flyway.
+- `db-bootstrap` re-applies the dashboard and writer passwords on every start,
+  so rotating a password in `.env` takes effect on the next
+  `docker compose up -d`.
+- The MySQL healthcheck and bootstrap pass the root password through the
+  `MYSQL_PWD` environment variable rather than on a command line.
 - Arbitrary SQL input is not accepted by the dashboard.
 - Streamlit accepts connections on the container network; the host-side port
   mapping determines where the dashboard is exposed.
@@ -576,8 +600,9 @@ ghcr.io/infish/steam-data-pipeline:latest
 
 Before installing `deploy/truenas-compose.yml`:
 
-1. Replace all three `CHANGE_ME_*` password placeholders with distinct strong
-   values.
+1. Replace all four `CHANGE_ME_*` password placeholders with distinct strong
+   values, for example from `openssl rand -hex 24`. Passwords may contain only
+   letters, digits, `_` and `-`.
 2. Confirm `/mnt/Apps/steam-data-pipeline/mysql` is the intended persistent
    dataset path.
 3. Keep the tracked app list small and leave startup collection disabled.
@@ -585,3 +610,40 @@ Before installing `deploy/truenas-compose.yml`:
 Paste the resulting YAML into the Custom App editor and deploy it. Flyway
 applies additive migrations before the scheduler and dashboard start. Updating
 the app recreates containers but preserves the MySQL host-path data.
+
+### Upgrading an existing TrueNAS deployment
+
+Deployments created before the writer account existed connect the scheduler as
+the schema owner. To upgrade:
+
+1. **Before** updating the app, prepare the new YAML: start from the current
+   `deploy/truenas-compose.yml`, fill in your existing root, schema owner and
+   dashboard passwords, and replace `CHANGE_ME_WRITER` with a new value such as
+   `openssl rand -hex 24`. The writer user and password appear in
+   `db-bootstrap`, `scheduler` and `pipeline` and must match in all three.
+2. Check that the dashboard password contains only letters, digits, `_` and
+   `-`. If not, replace it in both `db-bootstrap` and `dashboard`; bootstrap
+   applies the new value.
+3. Save the YAML. TrueNAS recreates the containers.
+
+On start, `db-bootstrap`:
+
+- refuses to run, with a message naming the variable, if a user name or
+  password is missing or contains other characters, or if the writer user is
+  the same as the schema owner or dashboard user;
+- creates the writer account if it does not exist;
+- sets the dashboard and writer passwords to the values in the YAML;
+- grants the dashboard `SELECT, SHOW VIEW` and the writer
+  `SELECT, INSERT, UPDATE` on the database.
+
+It does not change the root or schema owner accounts and does not touch data.
+The `mysql` container restarts once because its environment no longer carries
+dashboard credentials.
+
+If bootstrap fails, the scheduler does not start and no collection happens; the
+dashboard and stored data are unaffected. Fix the YAML and save again. To roll
+back, restore the previous YAML; the unused writer account is harmless.
+
+A local Docker Compose deployment upgrades the same way: add `WRITER_DB_USER`
+and `WRITER_DB_PASSWORD` to `.env` (see `.env.example`), then run
+`docker compose up -d`.
