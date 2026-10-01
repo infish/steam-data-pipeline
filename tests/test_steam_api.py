@@ -299,6 +299,28 @@ class SteamApiTests(unittest.TestCase):
             timeout=(5, 45)
         )
 
+    def test_malformed_chart_row_falls_back_to_direct_lookups(self):
+        malformed_chart = self.chart_response(players=None)
+
+        with (
+            patch("api.steam_api.get_tracked_appids", return_value=[730]),
+            patch("api.steam_api.create_session") as mocked_session
+        ):
+            session = mocked_session.return_value.__enter__.return_value
+            session.get.side_effect = [
+                malformed_chart,
+                self.players_response(1_000_000),
+                self.reviews_response(90, 10)
+            ]
+
+            result, warnings = get_steam_measurements()
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["current_players"], 1_000_000)
+        self.assertIsNone(result[0]["player_rank"])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("top-100 chart unavailable", warnings[0])
+
     def test_review_failure_keeps_row_with_null_reviews(self):
         failed_reviews = MagicMock()
         failed_reviews.raise_for_status.side_effect = requests.HTTPError(

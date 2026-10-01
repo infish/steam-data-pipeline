@@ -66,7 +66,12 @@ def get_top_games():
 
 # Valve data enriches the SteamSpy catalog. These failures degrade a run
 # into warnings instead of failing it.
-ENRICHMENT_ERRORS = (requests.RequestException, ValueError, KeyError)
+ENRICHMENT_ERRORS = (
+    requests.RequestException,
+    ValueError,
+    KeyError,
+    TypeError
+)
 
 REVIEW_PARAMS = {
     "json": 1,
