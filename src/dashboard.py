@@ -144,7 +144,7 @@ def get_kpis():
 
 def get_latest_run():
     runs = read_sql("""
-        SELECT run_id, status, rows_loaded, finished_at
+        SELECT run_id, status, rows_loaded, finished_at, warning_message
         FROM pipeline_runs
         ORDER BY run_id DESC
         LIMIT 1
@@ -185,6 +185,15 @@ metric_4.metric("Latest Run", f"{latest_run['status']} ({latest_run['rows_loaded
 st.caption(
     f"Latest run: {format_prague_time(latest_run['finished_at'])}"
 )
+
+if pd.notna(latest_run["warning_message"]) and latest_run["warning_message"]:
+    st.warning(
+        "The latest run completed with warnings. Some Valve player or "
+        "review measurements may be missing from this run."
+    )
+
+    with st.expander("Run warnings"):
+        st.text(latest_run["warning_message"])
 selected_view = st.selectbox(
     "Analysis view",
     list(VIEW_OPTIONS.keys())
@@ -370,7 +379,8 @@ with st.expander("Available tables, views, and columns", expanded=False):
 
 example_queries = {
     "Latest pipeline runs": """
-SELECT run_id, started_at, finished_at, status, rows_loaded, error_message
+SELECT run_id, started_at, finished_at, status, rows_loaded,
+       measurements_loaded, error_message, warning_message
 FROM pipeline_runs
 ORDER BY run_id DESC
 LIMIT 10;

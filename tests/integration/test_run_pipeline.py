@@ -3,7 +3,11 @@ from unittest.mock import patch
 
 import main
 
-from .base import CHART_MEASURED_AT, IntegrationTestCase
+from .base import (
+    CANNED_MEASUREMENTS,
+    CHART_MEASURED_AT,
+    IntegrationTestCase,
+)
 
 
 class RunPipelineIntegrationTests(IntegrationTestCase):
@@ -92,6 +96,46 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
         )
         self.assertIsNotNone(runs[0]["finished_at"])
         self.assertTrue(self.run_lock_is_free())
+
+
+    def test_valve_warnings_reach_the_run_row(self):
+        warnings = [
+            "Valve player lookup failed for app 620, row skipped: timeout",
+            "Steam review lookup failed for app 730, reviews left empty: 502",
+        ]
+
+        with self.assertLogs(level="WARNING") as logs:
+            self.run_pipeline(
+                measurements=CANNED_MEASUREMENTS[:1],
+                warnings=warnings
+            )
+
+        logged = "\n".join(logs.output)
+        for warning in warnings:
+            self.assertIn(warning, logged)
+
+        (run,) = self.query("SELECT * FROM pipeline_runs")
+        self.assertEqual(run["status"], "SUCCESS")
+        self.assertEqual(run["measurements_loaded"], 1)
+        self.assertEqual(run["warning_message"], "\n".join(warnings))
+
+    def test_steamspy_failure_still_fails_the_run(self):
+        with (
+            patch.object(
+                main,
+                "get_top_games",
+                side_effect=RuntimeError("SteamSpy down")
+            ),
+            patch.object(main, "get_steam_measurements") as valve,
+            self.assertLogs(level="ERROR"),
+            self.assertRaisesRegex(RuntimeError, "SteamSpy down")
+        ):
+            main.run_pipeline()
+
+        valve.assert_not_called()
+        (run,) = self.query("SELECT * FROM pipeline_runs")
+        self.assertEqual(run["status"], "FAILED")
+        self.assertEqual(run["error_message"], "SteamSpy down")
 
 
 if __name__ == "__main__":

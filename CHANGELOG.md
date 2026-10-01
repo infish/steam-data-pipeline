@@ -19,6 +19,19 @@ This file records user-visible changes to the Steam data pipeline.
   cleanly without creating a run row.
 - Leftover `RUNNING` rows from interrupted runs are marked `FAILED` as
   abandoned at the start of the next run.
+- The dashboard shows a warning, with the details in an expander, when the
+  latest run completed with warnings.
+
+### Changed
+
+- Valve enrichment failures no longer fail the run. A failed top-100 chart
+  falls back to direct player lookups for tracked apps, a failed player lookup
+  skips that app's measurement, and a failed or inconsistent review lookup
+  keeps the row with empty review fields. Each case is recorded in
+  `pipeline_runs.warning_message`. SteamSpy failures still fail the run.
+- Aligned both GitHub workflows on `actions/checkout@v7` and removed the
+  leftover `refactor/production-ready` branch trigger from the test workflow.
+- Corrected the README project tree.
 
 ### Fixed
 
@@ -33,12 +46,6 @@ This file records user-visible changes to the Steam data pipeline.
 
 - Deleted the unused `db/init/01_create_dashboard_user.sh`; the dashboard
   account is created by the `db-bootstrap` service.
-
-### Changed
-
-- Aligned both GitHub workflows on `actions/checkout@v7` and removed the
-  leftover `refactor/production-ready` branch trigger from the test workflow.
-- Corrected the README project tree.
 
 ## 2026-09-16
 

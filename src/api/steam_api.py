@@ -64,109 +64,164 @@ def get_top_games():
     return data
 
 
-def get_steam_measurements():
-    with create_session() as session:
-        charts_response = session.get(
-            STEAM_TOP_PLAYERS_URL,
-            timeout=(5, 45)
-        )
-        charts_response.raise_for_status()
-        charts_data = charts_response.json().get("response", {})
-        chart_rows = charts_data.get("ranks", [])
-        last_update = charts_data.get("last_update")
+# Valve data enriches the SteamSpy catalog. These failures degrade a run
+# into warnings instead of failing it.
+ENRICHMENT_ERRORS = (requests.RequestException, ValueError, KeyError)
 
-        if not chart_rows or not isinstance(last_update, int):
-            raise ValueError("Steam concurrent-player chart is incomplete")
+REVIEW_PARAMS = {
+    "json": 1,
+    "filter": "recent",
+    "language": "all",
+    "review_type": "all",
+    "purchase_type": "all",
+    "num_per_page": 1,
+    "filter_offtopic_activity": 0
+}
 
-        source_measured_at = datetime.fromtimestamp(
-            last_update,
-            timezone.utc
-        ).replace(tzinfo=None)
 
-        measurements = {
-            int(row["appid"]): {
-                "appid": int(row["appid"]),
-                "current_players": int(row["concurrent_in_game"]),
-                "player_rank": int(row["rank"]),
-                "source_measured_at": source_measured_at,
-                "positive_reviews": None,
-                "negative_reviews": None,
-                "total_reviews": None,
-                "review_score_percent": None
-            }
-            for row in chart_rows
+def empty_reviews():
+    return {
+        "positive_reviews": None,
+        "negative_reviews": None,
+        "total_reviews": None,
+        "review_score_percent": None
+    }
+
+
+def fetch_top_player_chart(session):
+    charts_response = session.get(
+        STEAM_TOP_PLAYERS_URL,
+        timeout=(5, 45)
+    )
+    charts_response.raise_for_status()
+    charts_data = charts_response.json().get("response", {})
+    chart_rows = charts_data.get("ranks", [])
+    last_update = charts_data.get("last_update")
+
+    if not chart_rows or not isinstance(last_update, int):
+        raise ValueError("Steam concurrent-player chart is incomplete")
+
+    source_measured_at = datetime.fromtimestamp(
+        last_update,
+        timezone.utc
+    ).replace(tzinfo=None)
+
+    return {
+        int(row["appid"]): {
+            "appid": int(row["appid"]),
+            "current_players": int(row["concurrent_in_game"]),
+            "player_rank": int(row["rank"]),
+            "source_measured_at": source_measured_at,
+            **empty_reviews()
         }
+        for row in chart_rows
+    }
+
+
+def fetch_current_players(session, appid):
+    players_response = session.get(
+        STEAM_CURRENT_PLAYERS_URL,
+        params={"appid": appid},
+        timeout=(5, 45)
+    )
+    players_response.raise_for_status()
+    players_data = players_response.json().get("response", {})
+
+    if players_data.get("result") != 1:
+        raise ValueError(
+            f"Steam current-player request failed for app {appid}"
+        )
+
+    return {
+        "appid": appid,
+        "current_players": int(players_data["player_count"]),
+        "player_rank": None,
+        "source_measured_at": None,
+        **empty_reviews()
+    }
+
+
+def fetch_review_summary(session, appid):
+    reviews_response = session.get(
+        STEAM_REVIEWS_URL.format(appid=appid),
+        params=REVIEW_PARAMS,
+        timeout=(5, 45)
+    )
+    reviews_response.raise_for_status()
+    reviews_data = reviews_response.json()
+
+    if reviews_data.get("success") != 1:
+        raise ValueError(
+            f"Steam review request failed for app {appid}"
+        )
+
+    summary = reviews_data.get("query_summary", {})
+    positive = summary.get("total_positive")
+    negative = summary.get("total_negative")
+    total = summary.get("total_reviews")
+
+    if None in (positive, negative, total):
+        raise ValueError(
+            f"Steam review summary is incomplete for app {appid}"
+        )
+
+    if positive + negative != total:
+        raise ValueError(
+            f"Steam review summary is inconsistent for app {appid}"
+        )
+
+    return {
+        "positive_reviews": positive,
+        "negative_reviews": negative,
+        "total_reviews": total,
+        "review_score_percent": (
+            round(positive / total * 100, 2)
+            if total else None
+        )
+    }
+
+
+def get_steam_measurements():
+    """Return (measurements, warnings) from Valve's player and review APIs.
+
+    A failed top-100 chart falls back to direct player lookups for the
+    tracked apps. A failed player lookup skips that app; a failed review
+    lookup keeps the app's row with null review fields.
+    """
+    warnings = []
+
+    with create_session() as session:
+        try:
+            measurements = fetch_top_player_chart(session)
+        except ENRICHMENT_ERRORS as error:
+            warnings.append(
+                "Valve top-100 chart unavailable, used direct player "
+                f"lookups for tracked apps: {error}"
+            )
+            measurements = {}
 
         for appid in get_tracked_appids():
             if appid not in measurements:
-                players_response = session.get(
-                    STEAM_CURRENT_PLAYERS_URL,
-                    params={"appid": appid},
-                    timeout=(5, 45)
-                )
-                players_response.raise_for_status()
-                players_data = players_response.json().get("response", {})
-
-                if players_data.get("result") != 1:
-                    raise ValueError(
-                        f"Steam current-player request failed for app {appid}"
+                try:
+                    measurements[appid] = fetch_current_players(
+                        session,
+                        appid
                     )
+                except ENRICHMENT_ERRORS as error:
+                    warnings.append(
+                        f"Valve player lookup failed for app {appid}, "
+                        f"row skipped: {error}"
+                    )
+                    continue
 
-                measurements[appid] = {
-                    "appid": appid,
-                    "current_players": int(players_data["player_count"]),
-                    "player_rank": None,
-                    "source_measured_at": None,
-                    "positive_reviews": None,
-                    "negative_reviews": None,
-                    "total_reviews": None,
-                    "review_score_percent": None
-                }
-
-            reviews_response = session.get(
-                STEAM_REVIEWS_URL.format(appid=appid),
-                params={
-                    "json": 1,
-                    "filter": "recent",
-                    "language": "all",
-                    "review_type": "all",
-                    "purchase_type": "all",
-                    "num_per_page": 1,
-                    "filter_offtopic_activity": 0
-                },
-                timeout=(5, 45)
-            )
-            reviews_response.raise_for_status()
-            reviews_data = reviews_response.json()
-
-            if reviews_data.get("success") != 1:
-                raise ValueError(
-                    f"Steam review request failed for app {appid}"
+            try:
+                measurements[appid].update(
+                    fetch_review_summary(session, appid)
+                )
+            except ENRICHMENT_ERRORS as error:
+                warnings.append(
+                    f"Steam review lookup failed for app {appid}, "
+                    f"reviews left empty: {error}"
                 )
 
-            summary = reviews_data.get("query_summary", {})
-            positive = summary.get("total_positive")
-            negative = summary.get("total_negative")
-            total = summary.get("total_reviews")
-
-            if None in (positive, negative, total):
-                raise ValueError(
-                    f"Steam review summary is incomplete for app {appid}"
-                )
-
-            if positive + negative != total:
-                raise ValueError(
-                    f"Steam review summary is inconsistent for app {appid}"
-                )
-
-            measurements[appid].update({
-                "positive_reviews": positive,
-                "negative_reviews": negative,
-                "total_reviews": total,
-                "review_score_percent": (
-                    round(positive / total * 100, 2)
-                    if total else None
-                )
-            })
-
-    return list(measurements.values())
+    return list(measurements.values()), warnings

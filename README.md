@@ -118,6 +118,19 @@ The source contract is:
   `language=all`, `review_type=all`, `purchase_type=all`,
   `filter_offtopic_activity=0`, and one returned review
 
+SteamSpy is the core source: if the catalog request fails, the run fails.
+Valve data is enrichment, so its failures degrade the run instead of aborting
+it. The run still ends as `SUCCESS`, each problem is logged, and the joined
+messages are stored in `pipeline_runs.warning_message` (up to 2,000
+characters). The dashboard shows a warning when the latest run has one.
+
+- Top-100 chart fails: every tracked app falls back to a direct player
+  lookup, so those rows have no rank and no source timestamp.
+- Player lookup fails for a tracked app: that app has no measurement row for
+  the run.
+- Review lookup fails or is inconsistent: the row is kept with empty review
+  fields.
+
 ### `pipeline_runs`
 
 Operational audit information:

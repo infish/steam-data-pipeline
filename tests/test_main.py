@@ -65,5 +65,22 @@ class RunPipelineErrorHandlingTests(unittest.TestCase):
         self.connection.close.assert_called_once_with()
 
 
+class SummarizeWarningsTests(unittest.TestCase):
+    def test_no_warnings_is_null(self):
+        self.assertIsNone(main.summarize_warnings([]))
+
+    def test_joins_warnings_one_per_line(self):
+        self.assertEqual(
+            main.summarize_warnings(["first", "second"]),
+            "first\nsecond"
+        )
+
+    def test_truncates_to_the_limit(self):
+        message = main.summarize_warnings(["x" * 3000])
+
+        self.assertEqual(len(message), main.WARNING_MESSAGE_LIMIT)
+        self.assertTrue(message.endswith("\u2026"))
+
+
 if __name__ == "__main__":
     unittest.main()

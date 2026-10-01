@@ -151,7 +151,7 @@ class IntegrationTestCase(unittest.TestCase):
         finally:
             connection.close()
 
-    def run_pipeline(self, top_games=None, measurements=None):
+    def run_pipeline(self, top_games=None, measurements=None, warnings=()):
         if top_games is None:
             top_games = CANNED_TOP_GAMES
 
@@ -163,7 +163,7 @@ class IntegrationTestCase(unittest.TestCase):
             patch.object(
                 main,
                 "get_steam_measurements",
-                return_value=measurements
+                return_value=(measurements, list(warnings))
             ),
         ):
             main.run_pipeline()

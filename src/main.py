@@ -14,6 +14,7 @@ logging.basicConfig(
 
 RUN_LOCK_NAME = "steam_pipeline_run"
 ABANDONED_RUN_MESSAGE = "Abandoned: process ended before completion"
+WARNING_MESSAGE_LIMIT = 2000
 
 def utc_now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -91,6 +92,18 @@ def finish_pipeline_run(
             run_id
         )
     )
+
+
+def summarize_warnings(warnings, limit=WARNING_MESSAGE_LIMIT):
+    if not warnings:
+        return None
+
+    message = "\n".join(warnings)
+
+    if len(message) <= limit:
+        return message
+
+    return message[:limit - 1] + "\u2026"
 
 
 def clean_value(value):
@@ -287,7 +300,10 @@ def run_pipeline():
         connection.commit()
 
         data = get_top_games()
-        steam_measurements = get_steam_measurements()
+        steam_measurements, run_warnings = get_steam_measurements()
+
+        for warning in run_warnings:
+            logging.warning(warning)
 
         if data is None:
             raise RuntimeError("No API data received")
@@ -355,14 +371,17 @@ def run_pipeline():
             "SUCCESS",
             rows_extracted=len(df),
             rows_loaded=rows_loaded,
-            measurements_loaded=measurements_loaded
+            measurements_loaded=measurements_loaded,
+            warning_message=summarize_warnings(run_warnings)
         )
         connection.commit()
 
         logging.info(
-            "Pipeline completed: %s games and %s Steam measurements loaded",
+            "Pipeline completed: %s games and %s Steam measurements loaded"
+            " (%s warnings)",
             rows_loaded,
-            measurements_loaded
+            measurements_loaded,
+            len(run_warnings)
         )
 
     except Exception as error:
