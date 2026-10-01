@@ -184,6 +184,19 @@ lost), the pipeline logs that secondary error and re-raises the original one.
 
 All database timestamps are stored in UTC. The dashboard converts displayed run times to `Europe/Prague`.
 
+### Dashboard behaviour
+
+- Query results are cached for 5 minutes, so a finished run can take up to
+  5 minutes to appear. The SQL Explorer's "Run example" button always queries
+  the database directly.
+- The Valve measurement chart has one point per successful run, starting with
+  the first run that stored any Valve measurement. A run that did not measure
+  the selected game leaves a gap in the line instead of joining its neighbours.
+- Each point is placed at Valve's source time when available, otherwise at the
+  collection time, otherwise at the run's finish time.
+- Games are selected by app ID and shown as `name (appid)`, so two games with
+  the same name stay distinct.
+
 ## SQL analytics
 
 The project includes views for:
@@ -229,6 +242,7 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 │   │   └── data_transformer.py
 │   ├── config.py
 │   ├── dashboard.py
+│   ├── dashboard_data.py
 │   ├── main.py
 │   └── scheduler.py
 ├── tests
@@ -236,6 +250,7 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 │   │   ├── base.py
 │   │   ├── test_run_lifecycle.py
 │   │   └── test_run_pipeline.py
+│   ├── test_dashboard_data.py
 │   ├── test_data_quality.py
 │   ├── test_main.py
 │   ├── test_scheduler.py
@@ -558,7 +573,8 @@ Important limitations:
 - Valve's current-player endpoint may be cached upstream for a short interval.
 - Valve supplies `source_measured_at` for its top-100 player feed. Direct player
   and review-summary calls do not include a source timestamp, so charts fall
-  back to the explicitly labeled `collected_at` value for those observations.
+  back to the explicitly labeled `collected_at` value for those observations,
+  and to the run's finish time for runs that did not measure the game.
 - Steam review totals use `language=all`, `purchase_type=all`, and
   `filter_offtopic_activity=0`. Moderation or classification changes can make
   totals decrease as well as increase.

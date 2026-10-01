@@ -2,6 +2,7 @@ import plotly.express as px
 import streamlit as st
 import pandas as pd
 
+from dashboard_data import build_measurement_series
 from database.mysql_database import get_connection
 
 
@@ -75,17 +76,33 @@ EXPLORER_OBJECTS = {
 }
 
 
-def read_sql(query, params=None):
+QUERY_CACHE_SECONDS = 300
+
+
+def read_sql(query, params=()):
     connection = get_connection()
 
     try:
-        return pd.read_sql(query, connection, params=params)
+        cursor = connection.cursor()
+        # No params means no %-substitution, so LIKE '%x%' stays literal.
+        cursor.execute(query, tuple(params) or None)
+        columns = [column[0] for column in cursor.description]
+        return pd.DataFrame.from_records(
+            cursor.fetchall(),
+            columns=columns,
+            coerce_float=True
+        )
     finally:
         connection.close()
 
 
+@st.cache_data(ttl=QUERY_CACHE_SECONDS, show_spinner=False)
+def cached_read_sql(query, params=()):
+    return read_sql(query, tuple(params))
+
+
 def get_database_objects():
-    objects = read_sql("""
+    objects = cached_read_sql("""
         SHOW FULL TABLES
     """)
     object_name_column = objects.columns[0]
@@ -95,7 +112,7 @@ def get_database_objects():
 
 
 def get_columns(object_name):
-    return read_sql(f"""
+    return cached_read_sql(f"""
         SHOW COLUMNS FROM `{object_name}`
     """)
 
@@ -120,7 +137,7 @@ def format_prague_time(value):
 
 
 def get_kpis():
-    return read_sql("""
+    return cached_read_sql("""
         SELECT
             COUNT(*) AS total_games,
             (
@@ -143,7 +160,7 @@ def get_kpis():
 
 
 def get_latest_run():
-    runs = read_sql("""
+    runs = cached_read_sql("""
         SELECT run_id, status, rows_loaded, finished_at, warning_message
         FROM pipeline_runs
         ORDER BY run_id DESC
@@ -156,8 +173,43 @@ def get_latest_run():
     return runs.iloc[0]
 
 
+def get_measurement_series(appid):
+    runs = cached_read_sql("""
+        SELECT run_id, finished_at
+        FROM pipeline_runs
+        WHERE status = 'SUCCESS'
+        ORDER BY run_id
+    """)
+    first_measured_run_id = cached_read_sql("""
+        SELECT MIN(run_id) AS run_id
+        FROM steam_game_measurements
+    """).iloc[0]["run_id"]
+    measurements = cached_read_sql(
+        """
+            SELECT
+                run_id,
+                collected_at,
+                source_measured_at,
+                current_players,
+                total_reviews,
+                positive_reviews,
+                negative_reviews,
+                review_score_percent
+            FROM steam_game_measurements
+            WHERE appid = %s
+        """,
+        params=(appid,)
+    )
+
+    return build_measurement_series(
+        runs,
+        measurements,
+        first_measured_run_id
+    )
+
+
 def get_steam_measurement_games():
-    return read_sql("""
+    return cached_read_sql("""
         SELECT DISTINCT measurements.appid, games.name
         FROM steam_game_measurements AS measurements
         JOIN games ON measurements.appid = games.appid
@@ -194,13 +246,18 @@ if pd.notna(latest_run["warning_message"]) and latest_run["warning_message"]:
 
     with st.expander("Run warnings"):
         st.text(latest_run["warning_message"])
+
+st.caption(
+    f"Query results are cached for {QUERY_CACHE_SECONDS // 60} minutes."
+)
+
 selected_view = st.selectbox(
     "Analysis view",
     list(VIEW_OPTIONS.keys())
 )
 
 view_config = VIEW_OPTIONS[selected_view]
-df = read_sql(view_config["query"])
+df = cached_read_sql(view_config["query"])
 
 fig = px.bar(
     df.sort_values(view_config["x"], ascending=True),
@@ -241,7 +298,8 @@ st.caption(
     "direct Valve lookups for configured games outside that list. Review "
     "totals are collected only for configured tracked games. Charts use the "
     "source measurement time when Valve provides it and otherwise show the "
-    "collection time."
+    "collection time. Runs that did not measure the selected game leave a "
+    "gap in the line instead of a line drawn across the missing run."
 )
 
 measurement_games = get_steam_measurement_games()
@@ -252,11 +310,17 @@ if measurement_games.empty:
         "start collecting them."
     )
 else:
-    selected_measurement_game = st.selectbox(
+    game_names = dict(zip(
+        measurement_games["appid"].astype(int),
+        measurement_games["name"]
+    ))
+    selected_measurement_appid = st.selectbox(
         "Game",
-        measurement_games["name"].tolist(),
+        list(game_names),
+        format_func=lambda appid: f"{game_names[appid]} ({appid})",
         key="steam_measurement_game"
     )
+    selected_measurement_game = game_names[selected_measurement_appid]
 
     measurement_labels = {
         "current_players": "Current Players",
@@ -266,29 +330,7 @@ else:
         "review_score_percent": "Positive Steam Review Share"
     }
 
-    selected_measurement_appid = int(
-        measurement_games.loc[
-            measurement_games["name"] == selected_measurement_game,
-            "appid"
-        ].iloc[0]
-    )
-
-    measurement_df = read_sql(
-        """
-            SELECT
-                collected_at,
-                source_measured_at,
-                current_players,
-                total_reviews,
-                positive_reviews,
-                negative_reviews,
-                review_score_percent
-            FROM steam_game_measurements
-            WHERE appid = %s
-            ORDER BY collected_at
-        """,
-        params=(selected_measurement_appid,)
-    )
+    measurement_df = get_measurement_series(selected_measurement_appid)
 
     available_metrics = [
         metric
@@ -301,9 +343,6 @@ else:
         format_func=measurement_labels.get,
         key="steam_measurement_metric"
     )
-    measurement_df["measurement_time"] = measurement_df[
-        "source_measured_at"
-    ].fillna(measurement_df["collected_at"])
 
     measurement_fig = px.line(
         measurement_df,
@@ -317,14 +356,15 @@ else:
     )
     measurement_fig.update_layout(
         height=450,
-        xaxis_title="Measurement Time (UTC; collection fallback)",
+        xaxis_title="Measurement Time (UTC; collection, then run fallback)",
         yaxis_title=measurement_labels[selected_measurement]
     )
     st.plotly_chart(measurement_fig, use_container_width=True)
 
-    if len(measurement_df) >= 3:
-        recent_values = measurement_df[selected_measurement].tail(3)
-        if recent_values.nunique(dropna=False) == 1:
+    recent_values = measurement_df[selected_measurement].dropna().tail(3)
+
+    if len(recent_values) == 3:
+        if recent_values.nunique() == 1:
             st.warning(
                 "The latest three collected values are identical. The source "
                 "may be unchanged or cached; verify it before treating the "
@@ -333,6 +373,7 @@ else:
 
     st.dataframe(
         measurement_df[[
+            "run_id",
             "measurement_time",
             "collected_at",
             "source_measured_at",

@@ -58,9 +58,19 @@ This file records user-visible changes to the Steam data pipeline.
   the commit SHA tag; `latest` now moves only for builds from `main`.
 - `deploy/truenas-compose.yml` pins the image to `v1.0.0` instead of
   `latest`. The README documents the release procedure.
+- The dashboard caches query results for 5 minutes; "Run example" stays
+  uncached. Queries are read through a database cursor, which removes the
+  pandas "only supports SQLAlchemy" warning.
 
 ### Fixed
 
+- The Valve measurement chart no longer draws a line across runs that did
+  not measure the selected game; those runs now leave a gap. Points fall back
+  from source time to collection time to run finish time.
+- Games with the same name are now distinct in the dashboard's game selector,
+  which uses the app ID and shows `name (appid)`.
+- The "latest three values are identical" warning ignores runs without a
+  measurement.
 - `db-bootstrap` now runs `ALTER USER` after `CREATE USER IF NOT EXISTS`, so a
   rotated dashboard password takes effect instead of locking the dashboard
   out.
