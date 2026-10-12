@@ -3,7 +3,12 @@ from datetime import datetime
 
 import pandas as pd
 
-from dashboard_data import build_measurement_series
+from dashboard_data import (
+    build_measurement_series,
+    price_steps,
+    request_budget_usage,
+    with_missing_days,
+)
 
 
 def runs(*run_ids):
@@ -104,6 +109,77 @@ class BuildMeasurementSeriesTests(unittest.TestCase):
 
         self.assertTrue(series.empty)
         self.assertIn("measurement_time", series.columns)
+
+
+
+class MissingDaysTests(unittest.TestCase):
+    def test_gap_days_become_nan_rows(self):
+        daily = pd.DataFrame({
+            "observation_date": [datetime(2026, 10, 1), datetime(2026, 10, 3)],
+            "peak_players": [100, 300],
+        })
+
+        filled = with_missing_days(daily)
+
+        self.assertEqual(len(filled), 3)
+        self.assertTrue(pd.isna(filled.loc[1, "peak_players"]))
+        self.assertEqual(filled.loc[2, "peak_players"], 300)
+
+
+class PriceStepsTests(unittest.TestCase):
+    def versions(self, *rows):
+        return pd.DataFrame(
+            rows,
+            columns=["valid_from", "price_state", "currency", "final_price"]
+        )
+
+    def test_current_price_is_extended_and_cents_become_units(self):
+        steps = price_steps(
+            self.versions(
+                (datetime(2026, 10, 1), "priced", "USD", 3500),
+                (datetime(2026, 10, 5), "priced", "USD", 1750),
+            ),
+            datetime(2026, 10, 12)
+        )
+
+        self.assertEqual(list(steps["price"]), [35.0, 17.5, 17.5])
+        self.assertEqual(steps["time"].iloc[-1], datetime(2026, 10, 12))
+
+    def test_unpriced_and_other_currency_versions_break_the_line(self):
+        steps = price_steps(
+            self.versions(
+                (datetime(2026, 10, 1), "priced", "GBP", 2500),
+                (datetime(2026, 10, 2), "unavailable", None, None),
+                (datetime(2026, 10, 3), "priced", "USD", 1999),
+            ),
+            datetime(2026, 10, 4)
+        )
+
+        self.assertTrue(pd.isna(steps["price"].iloc[0]))
+        self.assertTrue(pd.isna(steps["price"].iloc[1]))
+        self.assertEqual(steps["price"].iloc[2], 19.99)
+
+
+class RequestBudgetTests(unittest.TestCase):
+    def test_sums_sources_and_finds_the_busiest_window(self):
+        budget = [{
+            "budget": "Store",
+            "sources": ("a", "b"),
+            "planned_per_day": 100,
+            "limit": "150 per 5 min",
+            "window_limit": 150,
+        }]
+
+        usage = request_budget_usage(
+            {"a": 30, "b": 20, "c": 999},
+            {"a": {1: 10, 2: 20}, "b": {2: 5, 3: 15}},
+            budget
+        ).iloc[0]
+
+        self.assertEqual(usage["requests_last_24h"], 50)
+        self.assertEqual(usage["used_pct_of_plan"], 50.0)
+        self.assertEqual(usage["busiest_5_min"], 25)
+        self.assertTrue(usage["within_limit"])
 
 
 if __name__ == "__main__":

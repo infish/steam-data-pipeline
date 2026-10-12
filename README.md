@@ -252,18 +252,47 @@ lost), the pipeline logs that secondary error and re-raises the original one.
 
 All database timestamps are stored in UTC. The dashboard converts displayed run times to `Europe/Prague`.
 
-### Dashboard behaviour
+## Dashboard
+
+A Streamlit multipage app (`src/dashboard.py` and `src/dashboard_pages/`).
+Every chart has a caption saying where its numbers come from and what its
+timestamp means.
+
+| Page | Shows |
+| --- | --- |
+| Overview | games in the catalog, players right now (Valve), sources healthy, latest run of each job and its warnings, top week-over-week movers, most played now |
+| Game detail | Store attributes and SteamSpy tags; daily peak, average and 7-day average players with patch-notes markers; top-100 rank; hourly players; review sentiment drift and monthly review history; price history as a step chart |
+| Market explorer | genre and tag summaries, release-year groups, free versus paid |
+| Pipeline health | run history and durations per job, freshness per source, SteamSpy staleness over time, raw duplicate rates, rejected rows, recent data-quality problems, request budget used versus planned |
+| SQL explorer | tables, views and marts with their columns, and predefined example queries |
+
+![Overview](docs/screenshots/overview.jpg)
+
+More screenshots: [game detail](docs/screenshots/game-detail.jpg),
+[market explorer](docs/screenshots/market-explorer.jpg),
+[pipeline health](docs/screenshots/pipeline-health.jpg),
+[SQL explorer](docs/screenshots/sql-explorer.jpg). They were taken on a
+throwaway stack seeded from the recorded API responses, so trends cover a
+single day.
+
+Behaviour shared by all pages:
 
 - Query results are cached for 5 minutes, so a finished run can take up to
-  5 minutes to appear. The SQL Explorer's "Run example" button always queries
+  5 minutes to appear. The SQL explorer's "Run example" button always queries
   the database directly.
-- The Valve measurement chart has one point per successful run, starting with
-  the first run that stored any Valve measurement. A run that did not measure
-  the selected game leaves a gap in the line instead of joining its neighbours.
-- Each point is placed at Valve's source time when available, otherwise at the
-  collection time, otherwise at the run's finish time.
+- Series built per run or per day have one point per run or day, and a run
+  or day without data leaves a gap instead of a line drawn across it.
+- Valve player points use Valve's source time when available, otherwise the
+  collection time, otherwise the run's finish time.
 - Games are selected by app ID and shown as `name (appid)`, so two games with
   the same name stay distinct.
+
+To try the dashboard without calling the APIs, seed an empty database from
+the recorded responses in `tests/fixtures/sources/`:
+
+```bash
+docker compose run --rm pipeline python src/reprocess.py --seed-fixtures
+```
 
 ## Jobs
 
@@ -362,7 +391,7 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 ├── db/migrations/            Flyway: versioned V*__ schema changes, repeatable views
 ├── db/transforms/            SQL that rebuilds each analytics mart after every job
 ├── deploy/                   TrueNAS Custom App definition
-├── docs/sources.md           data contract for every API source
+├── docs/                     data contract, marts, observability, budget, screenshots
 ├── src/
 │   ├── api/                  HTTP calls to SteamSpy and Steam, via the raw layer
 │   ├── ingest/               raw landing layer, fixture and raw replay sessions
@@ -372,7 +401,10 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 │   ├── quality/              row-level validation
 │   ├── transform/            SteamSpy row transformation
 │   ├── database/             MySQL connection
-│   ├── dashboard.py          Streamlit dashboard (dashboard_data.py: chart shaping)
+│   ├── dashboard.py          Streamlit entry point and page navigation
+│   ├── dashboard_pages/      the dashboard pages
+│   ├── dashboard_common.py   shared queries, caching and formatting
+│   ├── dashboard_data.py     pure chart shaping (gaps, price steps, budget)
 │   ├── main.py               run the pipeline once
 │   ├── reprocess.py          rebuild a run from its stored raw responses
 │   ├── scheduler.py          in-process scheduler

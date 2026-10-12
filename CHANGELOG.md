@@ -67,6 +67,11 @@ This file records user-visible changes to the Steam data pipeline.
   against `docs/sources.md`, table invariants and the mart tests are stored
   in `data_quality_results`; failures become run warnings and never delete
   data. `docs/observability.md` documents the checks.
+- Multipage dashboard: Overview, Game detail, Market explorer, Pipeline
+  health and SQL explorer, every chart captioned with its source and
+  timestamp meaning; screenshots in `docs/screenshots/`.
+- `python src/reprocess.py --seed-fixtures` seeds an empty database from the
+  recorded API responses.
 
 ### Changed
 

@@ -54,3 +54,88 @@ def build_measurement_series(runs, measurements, first_measured_run_id):
     )
 
     return series.sort_values("run_id").reset_index(drop=True)[columns]
+
+
+def with_missing_days(daily, date_column="observation_date"):
+    """Add a NaN row for every calendar day without data, so lines break."""
+    if daily.empty:
+        return daily
+
+    daily = daily.copy()
+    daily[date_column] = pd.to_datetime(daily[date_column])
+    days = pd.date_range(daily[date_column].min(), daily[date_column].max())
+    return (
+        daily.set_index(date_column)
+        .reindex(days)
+        .rename_axis(date_column)
+        .reset_index()
+    )
+
+
+def price_steps(versions, until):
+    """Points for a step chart of a game's price history in one currency.
+
+    versions: game_price_history rows (valid_from, price_state, currency,
+    final_price) for one game and country, oldest first. Each version starts
+    a step at valid_from; the current one is extended to `until`. Versions
+    without a price, or in another currency than the latest priced one, are
+    NaN so the line breaks instead of mixing currencies.
+    """
+    columns = ["time", "price", "price_state"]
+
+    if versions.empty:
+        return pd.DataFrame(columns=columns)
+
+    priced = versions[versions["price_state"] == "priced"]
+    currency = priced["currency"].iloc[-1] if not priced.empty else None
+    rows = []
+
+    for version in versions.itertuples(index=False):
+        price = (
+            version.final_price / 100
+            if version.price_state == "priced"
+            and version.currency == currency
+            else float("nan")
+        )
+        rows.append((version.valid_from, price, version.price_state))
+
+    last = rows[-1]
+    rows.append((until, last[1], last[2]))
+    steps = pd.DataFrame(rows, columns=columns)
+    steps["time"] = pd.to_datetime(steps["time"])
+    return steps
+
+
+def request_budget_usage(counts, windows, budget):
+    """Requests in the last 24 hours against each planned budget.
+
+    counts: {source: requests in the last 24 h}; windows: {source:
+    {5-minute window: requests}}. Returns one row per budget.
+    """
+    rows = []
+
+    for entry in budget:
+        used = sum(counts.get(source, 0) for source in entry["sources"])
+        window_totals = {}
+
+        for source in entry["sources"]:
+            for window, count in windows.get(source, {}).items():
+                window_totals[window] = window_totals.get(window, 0) + count
+
+        rows.append({
+            "budget": entry["budget"],
+            "requests_last_24h": used,
+            "planned_per_day": entry["planned_per_day"],
+            "used_pct_of_plan": round(
+                used / entry["planned_per_day"] * 100, 1
+            ),
+            "busiest_5_min": max(window_totals.values(), default=0),
+            "limit": entry["limit"],
+            "within_limit": (
+                entry["window_limit"] is None
+                or max(window_totals.values(), default=0)
+                <= entry["window_limit"]
+            ),
+        })
+
+    return pd.DataFrame(rows)

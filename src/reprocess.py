@@ -1,6 +1,7 @@
 """Rebuild a run's loaded rows from its stored raw responses.
 
     python src/reprocess.py --run-id 42
+    python src/reprocess.py --seed-fixtures
 
 The run's raw_api_responses are replayed through the same collection,
 parsing and loading code as the original run's job, inside one transaction
@@ -8,13 +9,17 @@ that first deletes the run's loaded rows. Running it twice gives the same
 result.
 Requests the original run did not make (for example after STEAM_TRACKED_APPIDS
 changed) fail like an unreachable API and become warnings.
+
+--seed-fixtures fills an empty database for demos and dashboard checks: it
+runs every job once against the recorded responses in tests/fixtures/sources
+(docs/sources.md) instead of the live APIs.
 """
 
 import argparse
 import logging
 
 from database.mysql_database import get_connection
-from ingest.replay import RawReplaySession, ReplayRawStore
+from ingest.replay import FixtureSession, RawReplaySession, ReplayRawStore
 from jobs.base import (
     RunContext,
     acquire_lock,
@@ -24,6 +29,7 @@ from jobs.base import (
     update_run_results,
 )
 from jobs.registry import JOBS
+import main as pipeline
 
 
 logging.basicConfig(
@@ -131,11 +137,27 @@ def reprocess_run(run_id):
         connection.close()
 
 
+def seed_fixtures():
+    """Run every job once against the recorded fixture responses."""
+    runs = pipeline.run_pipeline(
+        session_factory=FixtureSession,
+        sleep_fn=lambda seconds: None
+    )
+    logging.info("Seeded from fixtures: %s", runs)
+    return runs
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--run-id", type=int, required=True)
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--run-id", type=int)
+    action.add_argument("--seed-fixtures", action="store_true")
     args = parser.parse_args(argv)
-    reprocess_run(args.run_id)
+
+    if args.seed_fixtures:
+        seed_fixtures()
+    else:
+        reprocess_run(args.run_id)
 
 
 if __name__ == "__main__":
