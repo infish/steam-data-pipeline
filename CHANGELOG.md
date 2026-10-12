@@ -2,6 +2,31 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## 2026-10-12
+
+### Added
+
+- Raw landing layer (`V5__raw_api_responses`): every API request is recorded
+  in `raw_api_responses` before parsing, with compressed body, SHA-256, HTTP
+  status, parameters and fetch time; parsers read the stored copy. A body
+  identical to the previous one for the same request is stored once and later
+  rows point to it (`is_duplicate_of`).
+- `RAW_RETENTION_DAYS` (default 30): payload bodies older than this are
+  removed at the end of each daily run; metadata is kept.
+- `python src/reprocess.py --run-id N` rebuilds a run's snapshots and Valve
+  measurements from its stored raw responses, idempotently.
+
+### Changed
+
+- The run lifecycle moved from `main.py` to `src/jobs/base.py`, and the daily
+  collection to `src/jobs/daily.py`; `python src/main.py` behaves as before.
+- The writer account is also granted `DELETE`, which retention and
+  reprocessing need. It still cannot create, drop or alter tables.
+- Upserting a game never moves `first_seen_at` later or `last_seen_at`
+  earlier, and older data never overwrites newer names or companies.
+- Integration tests feed recorded HTTP payloads through the whole path
+  (HTTP, raw layer, parsing, loading) instead of patching API functions.
+
 ## 2026-10-01
 
 ### Added

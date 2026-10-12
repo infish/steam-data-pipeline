@@ -81,3 +81,19 @@ def get_max_rejected_percent():
         )
 
     return value
+
+
+def get_raw_retention_days():
+    raw_value = get_env("RAW_RETENTION_DAYS", "30")
+
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise ValueError(
+            "RAW_RETENTION_DAYS must be a whole number"
+        ) from error
+
+    if value < 1:
+        raise ValueError("RAW_RETENTION_DAYS must be at least 1")
+
+    return value

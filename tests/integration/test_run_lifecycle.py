@@ -1,9 +1,9 @@
 import unittest
 from datetime import datetime
-from unittest.mock import patch
 
-import main
 from database.mysql_database import get_connection
+from jobs.base import ABANDONED_RUN_MESSAGE
+from jobs.daily import RUN_LOCK_NAME
 
 from .base import IntegrationTestCase
 
@@ -14,16 +14,15 @@ class RunLifecycleIntegrationTests(IntegrationTestCase):
 
         try:
             cursor = holder.cursor()
-            cursor.execute("SELECT GET_LOCK(%s, 0)", (main.RUN_LOCK_NAME,))
+            cursor.execute("SELECT GET_LOCK(%s, 0)", (RUN_LOCK_NAME,))
             self.assertEqual(cursor.fetchall()[0][0], 1)
 
-            with (
-                patch.object(main, "get_top_games") as get_top_games,
-                self.assertLogs(level="WARNING") as logs
-            ):
-                main.run_pipeline()
+            session = self.session()
 
-            get_top_games.assert_not_called()
+            with self.assertLogs(level="WARNING") as logs:
+                self.assertIsNone(self.run_pipeline(session=session))
+
+            self.assertEqual(session.calls, [])
             self.assertIn(
                 "Another pipeline run is active",
                 "\n".join(logs.output)
@@ -66,7 +65,7 @@ class RunLifecycleIntegrationTests(IntegrationTestCase):
         self.assertEqual(len(runs), 2)
         stale = runs.pop(stale_run_id)
         self.assertEqual(stale["status"], "FAILED")
-        self.assertEqual(stale["error_message"], main.ABANDONED_RUN_MESSAGE)
+        self.assertEqual(stale["error_message"], ABANDONED_RUN_MESSAGE)
         self.assertIsNone(stale["finished_at"])
         (new_run,) = runs.values()
         self.assertEqual(new_run["status"], "SUCCESS")

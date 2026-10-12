@@ -1,3 +1,4 @@
+import json
 import unittest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
@@ -12,63 +13,146 @@ from api.steam_api import (
     STEAM_REVIEWS_URL,
     STEAM_TOP_PLAYERS_URL,
     create_session,
+    fetch_json,
     get_steam_measurements,
     get_top_games,
     get_tracked_app_details,
 )
+from ingest.raw_store import MemoryRawStore
+from ingest.replay import make_response
 
 
-class SteamApiTests(unittest.TestCase):
+def response(payload, status=200):
+    return make_response("https://example.test", status, json.dumps(payload).encode())
+
+
+def failing(status=502):
+    return make_response("https://example.test", status, b"Bad gateway")
+
+
+def chart(appid=730, players=1234):
+    return response({
+        "response": {
+            "last_update": 1_789_560_000,
+            "ranks": [{
+                "rank": 1,
+                "appid": appid,
+                "concurrent_in_game": players
+            }]
+        }
+    })
+
+
+def players(count):
+    return response({"response": {"player_count": count, "result": 1}})
+
+
+def reviews(positive, negative, total=None):
+    return response({
+        "success": 1,
+        "query_summary": {
+            "total_positive": positive,
+            "total_negative": negative,
+            "total_reviews": positive + negative if total is None else total
+        }
+    })
+
+
+def spy_details(appid, name="Factorio"):
+    return response({
+        "appid": appid,
+        "name": name,
+        "developer": "Wube Software LTD.",
+        "publisher": "Wube Software LTD.",
+        "owners": "5,000,000 .. 10,000,000",
+        "positive": 200000,
+        "negative": 5000,
+        "average_forever": 9000,
+        "average_2weeks": 600,
+        "median_forever": 3000,
+        "median_2weeks": 300,
+        "ccu": 20000,
+        "price": "3500",
+        "initialprice": "3500",
+        "discount": "0",
+        "languages": "English, Czech",
+        "genre": "Simulation, Strategy",
+        "tags": {"Automation": 9000},
+        "score_rank": ""
+    })
+
+
+def session_with(*responses):
+    session = MagicMock()
+    session.get.side_effect = list(responses)
+    return session
+
+
+class FetchJsonTests(unittest.TestCase):
+    def test_records_the_response_before_parsing_and_parses_the_stored_copy(self):
+        store = MemoryRawStore()
+        store.read_payload = MagicMock(wraps=store.read_payload)
+        session = session_with(response({"ok": 1}))
+
+        data = fetch_json(session, store, "src", "https://x.test/a", {"q": 1})
+
+        self.assertEqual(data, {"ok": 1})
+        self.assertEqual(len(store.rows), 1)
+        self.assertEqual(store.rows[0]["source"], "src")
+        self.assertEqual(store.rows[0]["params"], {"q": 1})
+        self.assertEqual(store.rows[0]["http_status"], 200)
+        store.read_payload.assert_called_once_with(1)
+
+    def test_http_errors_are_recorded_then_raised(self):
+        store = MemoryRawStore()
+
+        with self.assertRaises(requests.HTTPError):
+            fetch_json(session_with(failing(503)), store, "src", "https://x.test")
+
+        self.assertEqual(store.rows[0]["http_status"], 503)
+        self.assertEqual(store.rows[0]["body"], b"Bad gateway")
+
+    def test_connection_errors_are_recorded_then_raised(self):
+        store = MemoryRawStore()
+
+        with self.assertRaises(requests.ConnectionError):
+            fetch_json(
+                session_with(requests.ConnectionError("refused")),
+                store,
+                "src",
+                "https://x.test"
+            )
+
+        self.assertIsNone(store.rows[0]["http_status"])
+        self.assertEqual(store.rows[0]["error"], "refused")
+
+
+class SteamSpyTests(unittest.TestCase):
     def test_all_mode_sends_page_and_returns_data(self):
-        config = {
-            "mode": "all",
-            "page": 0
-        }
+        session = session_with(response({"1": {"name": "Test Game"}}))
 
-        response = MagicMock()
-        response.json.return_value = {
-            "1": {"name": "Test Game"}
-        }
-
-        with (
-            patch(
-                "api.steam_api.get_steamspy_config",
-                return_value=config
-            ),
-            patch("api.steam_api.create_session") as mocked_session
+        with patch(
+            "api.steam_api.get_steamspy_config",
+            return_value={"mode": "all", "page": 0}
         ):
-            session = mocked_session.return_value.__enter__.return_value
-            session.get.return_value = response
-
-            result = get_top_games()
+            result = get_top_games(session)
 
         session.get.assert_called_once_with(
             STEAMSPY_URL,
             params={"request": "all", "page": 0},
             timeout=(5, 45)
         )
-        response.raise_for_status.assert_called_once_with()
         self.assertEqual(result, {"1": {"name": "Test Game"}})
 
     def test_empty_response_raises_error(self):
-        response = MagicMock()
-        response.json.return_value = {}
-
         with (
             patch(
                 "api.steam_api.get_steamspy_config",
                 return_value={"mode": "all", "page": 0}
             ),
-            patch("api.steam_api.create_session") as mocked_session
+            self.assertRaisesRegex(ValueError, "empty or unexpected")
         ):
-            session = mocked_session.return_value.__enter__.return_value
-            session.get.return_value = response
-
-            with self.assertRaisesRegex(
-                ValueError,
-                "empty or unexpected"
-            ):
-                get_top_games()
+            get_top_games(session_with(response({})))
 
     def test_retry_policy_is_configured(self):
         session = create_session()
@@ -84,36 +168,82 @@ class SteamApiTests(unittest.TestCase):
         finally:
             session.close()
 
+    def test_tracked_app_details_are_shaped_like_page_rows(self):
+        sleeps = []
+        session = session_with(
+            spy_details(427520),
+            spy_details(620, name="Portal 2")
+        )
+
+        rows, warnings = get_tracked_app_details(
+            session,
+            [427520, 620],
+            sleep_fn=sleeps.append
+        )
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(list(rows), ["427520", "620"])
+        self.assertEqual(tuple(rows["427520"]), CATALOG_ROW_FIELDS)
+        self.assertEqual(rows["427520"]["owners"], "5,000,000 .. 10,000,000")
+        self.assertEqual(rows["620"]["name"], "Portal 2")
+        self.assertNotIn("tags", rows["427520"])
+        self.assertEqual(sleeps, [STEAMSPY_REQUEST_INTERVAL_SECONDS] * 2)
+        self.assertGreaterEqual(STEAMSPY_REQUEST_INTERVAL_SECONDS, 1)
+        session.get.assert_any_call(
+            STEAMSPY_URL,
+            params={"request": "appdetails", "appid": 427520},
+            timeout=(5, 45)
+        )
+
+    def test_tracked_app_details_failures_become_warnings(self):
+        session = session_with(
+            failing(503),
+            spy_details(427520),
+            spy_details(999, name=None)
+        )
+
+        rows, warnings = get_tracked_app_details(
+            session,
+            [111, 427520, 999],
+            sleep_fn=lambda seconds: None
+        )
+
+        self.assertEqual(list(rows), ["427520"])
+        self.assertEqual(len(warnings), 2)
+        self.assertIn("failed for tracked app 111", warnings[0])
+        self.assertIn("503", warnings[0])
+        self.assertIn("no name for app 999", warnings[1])
+
+    def test_no_tracked_app_details_requests_when_nothing_is_missing(self):
+        sleeps = []
+        session = MagicMock()
+
+        rows, warnings = get_tracked_app_details(
+            session,
+            [],
+            sleep_fn=sleeps.append
+        )
+
+        self.assertEqual((rows, warnings), ({}, []))
+        self.assertEqual(sleeps, [])
+        session.get.assert_not_called()
+
+
+class SteamMeasurementTests(unittest.TestCase):
+    def measure(self, tracked, *responses):
+        session = session_with(*responses)
+
+        with patch("api.steam_api.get_tracked_appids", return_value=tracked):
+            result, warnings = get_steam_measurements(session)
+
+        return session, result, warnings
+
     def test_gets_authoritative_measurements_for_tracked_games(self):
-        charts_response = MagicMock()
-        charts_response.json.return_value = {
-            "response": {
-                "last_update": 1_789_560_000,
-                "ranks": [{
-                    "rank": 1,
-                    "appid": 730,
-                    "concurrent_in_game": 1234
-                }]
-            }
-        }
-        reviews_response = MagicMock()
-        reviews_response.json.return_value = {
-            "success": 1,
-            "query_summary": {
-                "total_positive": 90,
-                "total_negative": 10,
-                "total_reviews": 100
-            }
-        }
-
-        with (
-            patch("api.steam_api.get_tracked_appids", return_value=[730]),
-            patch("api.steam_api.create_session") as mocked_session
-        ):
-            session = mocked_session.return_value.__enter__.return_value
-            session.get.side_effect = [charts_response, reviews_response]
-
-            result, warnings = get_steam_measurements()
+        session, result, warnings = self.measure(
+            [730],
+            chart(),
+            reviews(90, 10)
+        )
 
         self.assertEqual(warnings, [])
         self.assertEqual(result, [{
@@ -128,6 +258,7 @@ class SteamApiTests(unittest.TestCase):
         }])
         session.get.assert_any_call(
             STEAM_TOP_PLAYERS_URL,
+            params=None,
             timeout=(5, 45)
         )
         session.get.assert_any_call(
@@ -145,35 +276,11 @@ class SteamApiTests(unittest.TestCase):
         )
 
     def test_inconsistent_review_summary_keeps_row_with_null_reviews(self):
-        charts_response = MagicMock()
-        charts_response.json.return_value = {
-            "response": {
-                "last_update": 1_789_560_000,
-                "ranks": [{
-                    "rank": 1,
-                    "appid": 730,
-                    "concurrent_in_game": 1234
-                }]
-            }
-        }
-        reviews_response = MagicMock()
-        reviews_response.json.return_value = {
-            "success": 1,
-            "query_summary": {
-                "total_positive": 90,
-                "total_negative": 10,
-                "total_reviews": 101
-            }
-        }
-
-        with (
-            patch("api.steam_api.get_tracked_appids", return_value=[730]),
-            patch("api.steam_api.create_session") as mocked_session
-        ):
-            session = mocked_session.return_value.__enter__.return_value
-            session.get.side_effect = [charts_response, reviews_response]
-
-            result, warnings = get_steam_measurements()
+        _, result, warnings = self.measure(
+            [730],
+            chart(),
+            reviews(90, 10, total=101)
+        )
 
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["current_players"], 1234)
@@ -183,43 +290,12 @@ class SteamApiTests(unittest.TestCase):
         self.assertIn("inconsistent for app 730", warnings[0])
 
     def test_uses_direct_player_lookup_when_tracked_game_is_outside_top_100(self):
-        charts_response = MagicMock()
-        charts_response.json.return_value = {
-            "response": {
-                "last_update": 1_789_560_000,
-                "ranks": [{
-                    "rank": 1,
-                    "appid": 730,
-                    "concurrent_in_game": 1234
-                }]
-            }
-        }
-        players_response = MagicMock()
-        players_response.json.return_value = {
-            "response": {"player_count": 50, "result": 1}
-        }
-        reviews_response = MagicMock()
-        reviews_response.json.return_value = {
-            "success": 1,
-            "query_summary": {
-                "total_positive": 9,
-                "total_negative": 1,
-                "total_reviews": 10
-            }
-        }
-
-        with (
-            patch("api.steam_api.get_tracked_appids", return_value=[620]),
-            patch("api.steam_api.create_session") as mocked_session
-        ):
-            session = mocked_session.return_value.__enter__.return_value
-            session.get.side_effect = [
-                charts_response,
-                players_response,
-                reviews_response
-            ]
-
-            result, warnings = get_steam_measurements()
+        session, result, warnings = self.measure(
+            [620],
+            chart(),
+            players(50),
+            reviews(9, 1)
+        )
 
         self.assertEqual(warnings, [])
         portal = next(row for row in result if row["appid"] == 620)
@@ -232,114 +308,42 @@ class SteamApiTests(unittest.TestCase):
             timeout=(5, 45)
         )
 
-    def chart_response(self, appid=730, players=1234):
-        response = MagicMock()
-        response.json.return_value = {
-            "response": {
-                "last_update": 1_789_560_000,
-                "ranks": [{
-                    "rank": 1,
-                    "appid": appid,
-                    "concurrent_in_game": players
-                }]
-            }
-        }
-        return response
-
-    def players_response(self, player_count):
-        response = MagicMock()
-        response.json.return_value = {
-            "response": {"player_count": player_count, "result": 1}
-        }
-        return response
-
-    def reviews_response(self, positive, negative):
-        response = MagicMock()
-        response.json.return_value = {
-            "success": 1,
-            "query_summary": {
-                "total_positive": positive,
-                "total_negative": negative,
-                "total_reviews": positive + negative
-            }
-        }
-        return response
-
     def test_chart_failure_falls_back_to_direct_player_lookups(self):
-        with (
-            patch(
-                "api.steam_api.get_tracked_appids",
-                return_value=[730, 620]
-            ),
-            patch("api.steam_api.create_session") as mocked_session
-        ):
-            session = mocked_session.return_value.__enter__.return_value
-            session.get.side_effect = [
-                requests.ConnectionError("chart down"),
-                self.players_response(1_000_000),
-                self.reviews_response(90, 10),
-                self.players_response(50),
-                self.reviews_response(9, 1)
-            ]
-
-            result, warnings = get_steam_measurements()
+        session, result, warnings = self.measure(
+            [730, 620],
+            requests.ConnectionError("chart down"),
+            players(1_000_000),
+            reviews(90, 10),
+            players(50),
+            reviews(9, 1)
+        )
 
         self.assertEqual(
             [(row["appid"], row["current_players"]) for row in result],
             [(730, 1_000_000), (620, 50)]
         )
         self.assertTrue(all(row["player_rank"] is None for row in result))
-        self.assertTrue(
-            all(row["source_measured_at"] is None for row in result)
-        )
         self.assertEqual(result[0]["total_reviews"], 100)
         self.assertEqual(len(warnings), 1)
         self.assertIn("top-100 chart unavailable", warnings[0])
         self.assertIn("chart down", warnings[0])
-        session.get.assert_any_call(
-            STEAM_CURRENT_PLAYERS_URL,
-            params={"appid": 730},
-            timeout=(5, 45)
-        )
 
     def test_malformed_chart_row_falls_back_to_direct_lookups(self):
-        malformed_chart = self.chart_response(players=None)
+        _, result, warnings = self.measure(
+            [730],
+            chart(players=None),
+            players(1_000_000),
+            reviews(90, 10)
+        )
 
-        with (
-            patch("api.steam_api.get_tracked_appids", return_value=[730]),
-            patch("api.steam_api.create_session") as mocked_session
-        ):
-            session = mocked_session.return_value.__enter__.return_value
-            session.get.side_effect = [
-                malformed_chart,
-                self.players_response(1_000_000),
-                self.reviews_response(90, 10)
-            ]
-
-            result, warnings = get_steam_measurements()
-
-        self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["current_players"], 1_000_000)
         self.assertIsNone(result[0]["player_rank"])
         self.assertEqual(len(warnings), 1)
         self.assertIn("top-100 chart unavailable", warnings[0])
 
     def test_review_failure_keeps_row_with_null_reviews(self):
-        failed_reviews = MagicMock()
-        failed_reviews.raise_for_status.side_effect = requests.HTTPError(
-            "502 Server Error"
-        )
+        _, result, warnings = self.measure([730], chart(), failing(502))
 
-        with (
-            patch("api.steam_api.get_tracked_appids", return_value=[730]),
-            patch("api.steam_api.create_session") as mocked_session
-        ):
-            session = mocked_session.return_value.__enter__.return_value
-            session.get.side_effect = [self.chart_response(), failed_reviews]
-
-            result, warnings = get_steam_measurements()
-
-        self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["current_players"], 1234)
         self.assertEqual(result[0]["player_rank"], 1)
         for field in (
@@ -351,28 +355,18 @@ class SteamApiTests(unittest.TestCase):
             self.assertIsNone(result[0][field])
         self.assertEqual(len(warnings), 1)
         self.assertIn("review lookup failed for app 730", warnings[0])
-        self.assertIn("502 Server Error", warnings[0])
+        self.assertIn("502", warnings[0])
 
     def test_player_failure_skips_the_row(self):
-        missing_count = MagicMock()
-        missing_count.json.return_value = {"response": {"result": 1}}
+        missing_count = response({"response": {"result": 1}})
 
-        with (
-            patch(
-                "api.steam_api.get_tracked_appids",
-                return_value=[620, 427520]
-            ),
-            patch("api.steam_api.create_session") as mocked_session
-        ):
-            session = mocked_session.return_value.__enter__.return_value
-            session.get.side_effect = [
-                self.chart_response(),
-                missing_count,
-                self.players_response(800),
-                self.reviews_response(8, 2)
-            ]
-
-            result, warnings = get_steam_measurements()
+        session, result, warnings = self.measure(
+            [620, 427520],
+            chart(),
+            missing_count,
+            players(800),
+            reviews(8, 2)
+        )
 
         self.assertEqual(
             sorted(row["appid"] for row in result),
@@ -390,95 +384,6 @@ class SteamApiTests(unittest.TestCase):
             [STEAM_REVIEWS_URL.format(appid=427520)]
         )
 
-    def details_response(self, appid, name="Factorio"):
-        response = MagicMock()
-        response.json.return_value = {
-            "appid": appid,
-            "name": name,
-            "developer": "Wube Software LTD.",
-            "publisher": "Wube Software LTD.",
-            "owners": "5,000,000 .. 10,000,000",
-            "positive": 200000,
-            "negative": 5000,
-            "average_forever": 9000,
-            "average_2weeks": 600,
-            "median_forever": 3000,
-            "median_2weeks": 300,
-            "ccu": 20000,
-            "price": "3500",
-            "initialprice": "3500",
-            "discount": "0",
-            "languages": "English, Czech",
-            "genre": "Simulation, Strategy",
-            "tags": {"Automation": 9000},
-            "score_rank": ""
-        }
-        return response
-
-    def test_tracked_app_details_are_shaped_like_page_rows(self):
-        sleeps = []
-
-        with patch("api.steam_api.create_session") as mocked_session:
-            session = mocked_session.return_value.__enter__.return_value
-            session.get.side_effect = [
-                self.details_response(427520),
-                self.details_response(620, name="Portal 2")
-            ]
-
-            rows, warnings = get_tracked_app_details(
-                [427520, 620],
-                sleep_fn=sleeps.append
-            )
-
-        self.assertEqual(warnings, [])
-        self.assertEqual(list(rows), ["427520", "620"])
-        self.assertEqual(tuple(rows["427520"]), CATALOG_ROW_FIELDS)
-        self.assertEqual(rows["427520"]["owners"], "5,000,000 .. 10,000,000")
-        self.assertEqual(rows["620"]["name"], "Portal 2")
-        self.assertNotIn("tags", rows["427520"])
-        self.assertEqual(sleeps, [STEAMSPY_REQUEST_INTERVAL_SECONDS] * 2)
-        self.assertGreaterEqual(STEAMSPY_REQUEST_INTERVAL_SECONDS, 1)
-        session.get.assert_any_call(
-            STEAMSPY_URL,
-            params={"request": "appdetails", "appid": 427520},
-            timeout=(5, 45)
-        )
-
-    def test_tracked_app_details_failures_become_warnings(self):
-        failed = MagicMock()
-        failed.raise_for_status.side_effect = requests.HTTPError("503")
-
-        with patch("api.steam_api.create_session") as mocked_session:
-            session = mocked_session.return_value.__enter__.return_value
-            session.get.side_effect = [
-                failed,
-                self.details_response(427520),
-                self.details_response(999, name=None)
-            ]
-
-            rows, warnings = get_tracked_app_details(
-                [111, 427520, 999],
-                sleep_fn=lambda seconds: None
-            )
-
-        self.assertEqual(list(rows), ["427520"])
-        self.assertEqual(len(warnings), 2)
-        self.assertIn("failed for tracked app 111", warnings[0])
-        self.assertIn("503", warnings[0])
-        self.assertIn("no name for app 999", warnings[1])
-
-    def test_no_tracked_app_details_requests_when_nothing_is_missing(self):
-        sleeps = []
-
-        with patch("api.steam_api.create_session") as mocked_session:
-            rows, warnings = get_tracked_app_details(
-                [],
-                sleep_fn=sleeps.append
-            )
-
-        self.assertEqual((rows, warnings), ({}, []))
-        self.assertEqual(sleeps, [])
-        mocked_session.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

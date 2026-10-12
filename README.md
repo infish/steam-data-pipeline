@@ -153,6 +153,25 @@ characters). The dashboard shows a warning when the latest run has one.
 - Review lookup fails or is inconsistent: the row is kept with empty review
   fields.
 
+### `raw_api_responses`
+
+The raw landing layer. Every API request the pipeline makes is recorded here
+**before** anything parses it, and parsers read the stored copy rather than
+the live response:
+
+- source, endpoint, request parameters (JSON) and their hash, HTTP status,
+  fetch time (UTC), and any connection error;
+- the response body, zlib-compressed, with its SHA-256 and uncompressed size.
+
+When a response is byte-identical to the previous one for the same source and
+request, only its metadata is stored, with `is_duplicate_of` pointing at the
+row that holds the body. A long run of duplicates is therefore a cheap,
+built-in sign of a stale source.
+
+Bodies older than `RAW_RETENTION_DAYS` (default 30) are removed at the end of
+each daily run; metadata rows are kept forever. A body that a newer duplicate
+still points to is kept until that duplicate is old enough too.
+
 ### `pipeline_runs`
 
 Operational audit information:
@@ -224,54 +243,31 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 
 ```text
 .
-├── .github
-│   └── workflows
-│       ├── publish-image.yml
-│       └── tests.yml
-├── db
-│   └── migrations
-│       ├── R__analytics_views.sql
-│       ├── V1__initial_schema.sql
-│       ├── V2__steam_measurements.sql
-│       ├── V3__expand_valve_player_measurements.sql
-│       └── V4__run_audit_columns.sql
-├── deploy
-│   └── truenas-compose.yml
-├── docs
-│   └── sources.md
-├── src
-│   ├── api
-│   │   └── steam_api.py
-│   ├── database
-│   │   └── mysql_database.py
-│   ├── quality
-│   │   └── data_quality.py
-│   ├── transform
-│   │   └── data_transformer.py
-│   ├── config.py
-│   ├── dashboard.py
-│   ├── dashboard_data.py
-│   ├── main.py
-│   └── scheduler.py
-├── tests
-│   ├── fixtures
-│   │   └── sources        # recorded API responses, see docs/sources.md
-│   ├── integration
-│   │   ├── base.py
-│   │   ├── test_run_lifecycle.py
-│   │   └── test_run_pipeline.py
-│   ├── test_dashboard_data.py
-│   ├── test_data_quality.py
-│   ├── test_main.py
-│   ├── test_scheduler.py
-│   ├── test_steam_api.py
-│   └── test_transform.py
+├── .github/workflows/        CI: unit + integration tests, gated image publishing
+├── db/migrations/            Flyway: versioned V*__ schema changes, repeatable views
+├── deploy/                   TrueNAS Custom App definition
+├── docs/sources.md           data contract for every API source
+├── src/
+│   ├── api/                  HTTP calls to SteamSpy and Steam, via the raw layer
+│   ├── ingest/               raw landing layer, fixture and raw replay sessions
+│   ├── jobs/                 run lifecycle (lock, run row, raw store) and jobs
+│   ├── quality/              row-level validation
+│   ├── transform/            SteamSpy row transformation
+│   ├── database/             MySQL connection
+│   ├── dashboard.py          Streamlit dashboard (dashboard_data.py: chart shaping)
+│   ├── main.py               run the pipeline once
+│   ├── reprocess.py          rebuild a run from its stored raw responses
+│   ├── scheduler.py          in-process scheduler
+│   └── config.py             environment configuration
+├── tests/
+│   ├── fixtures/sources/     recorded API responses (see docs/sources.md)
+│   ├── integration/          tests against a real MySQL (INTEGRATION_DB=1)
+│   └── test_*.py             unit tests
 ├── .env.example
 ├── CHANGELOG.md
 ├── docker-compose.yml
 ├── Dockerfile
-├── requirements.txt
-└── README.md
+└── requirements.txt
 ```
 
 ## Prerequisites
@@ -338,6 +334,7 @@ Collection settings use these defaults:
 | `STEAMSPY_PAGE` | `0` | SteamSpy catalog page |
 | `STEAM_TRACKED_APPIDS` | `730,427520,620` | App IDs enriched with reviews and direct player fallback |
 | `PIPELINE_MAX_REJECTED_PERCENT` | `5` | Fail the run if more than this % of SteamSpy rows fail validation |
+| `RAW_RETENTION_DAYS` | `30` | Days to keep raw response bodies; metadata is kept forever |
 | `PIPELINE_TIMEZONE` | `Europe/Prague` | Daily scheduler timezone |
 | `PIPELINE_RUN_HOUR` | `20` | Daily local run hour |
 | `PIPELINE_RUN_MINUTE` | `0` | Daily local run minute |
@@ -386,6 +383,23 @@ page, and appends Valve measurements for the tracked app IDs.
 The scheduler runs once daily. It does not collect on container startup, which
 avoids duplicate observations during app restarts. Manual runs remain available
 for focused validation.
+
+## Reprocess a run
+
+Rebuild a run's snapshots and Valve measurements from its stored raw
+responses, without calling any API:
+
+```bash
+docker compose --profile manual run --rm pipeline python src/reprocess.py --run-id 42
+```
+
+The run's responses are replayed through the same parsing and loading code
+as the original run, in one transaction that first deletes the run's loaded
+rows, so running it twice gives the same result. Only successful runs made
+after the raw landing layer existed can be reprocessed, and only while their
+payload bodies are within `RAW_RETENTION_DAYS`. Reprocessing uses the current
+configuration; a request the original run did not make fails like an
+unreachable API and becomes a warning.
 
 ## View logs
 
@@ -520,8 +534,9 @@ a MySQL service container migrated with Flyway.
 - Credentials are stored in an ignored `.env` file.
 - The dashboard uses an account restricted to `SELECT` and `SHOW VIEW`.
 - The scheduler and manual pipeline use a writer account restricted to
-  `SELECT`, `INSERT` and `UPDATE`; it cannot drop, alter or delete. The schema
-  owner is used only by Flyway.
+  `SELECT`, `INSERT`, `UPDATE` and `DELETE`; it cannot create, drop or alter
+  tables. `DELETE` is needed for retention and reprocessing. The schema owner
+  is used only by Flyway.
 - `db-bootstrap` re-applies the dashboard and writer passwords on every start,
   so rotating a password in `.env` takes effect on the next
   `docker compose up -d`.
@@ -709,7 +724,7 @@ On start, `db-bootstrap`:
 - creates the writer account if it does not exist;
 - sets the dashboard and writer passwords to the values in the YAML;
 - grants the dashboard `SELECT, SHOW VIEW` and the writer
-  `SELECT, INSERT, UPDATE` on the database.
+  `SELECT, INSERT, UPDATE, DELETE` on the database.
 
 It does not change the root or schema owner accounts and does not touch data.
 The `mysql` container restarts once because its environment no longer carries

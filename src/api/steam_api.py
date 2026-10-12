@@ -1,3 +1,4 @@
+import json
 import time
 
 import requests
@@ -6,6 +7,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from config import get_steamspy_config, get_tracked_appids
+from ingest.raw_store import MemoryRawStore
 
 
 STEAMSPY_URL = "https://steamspy.com/api.php"
@@ -18,6 +20,13 @@ STEAM_TOP_PLAYERS_URL = (
     "ISteamChartsService/GetGamesByConcurrentPlayers/v1/"
 )
 STEAM_REVIEWS_URL = "https://store.steampowered.com/appreviews/{appid}"
+
+# Source names recorded in raw_api_responses.source (see docs/sources.md).
+SOURCE_STEAMSPY_ALL = "steamspy_all"
+SOURCE_STEAMSPY_APPDETAILS = "steamspy_appdetails"
+SOURCE_TOP_CONCURRENT = "valve_top_concurrent"
+SOURCE_CURRENT_PLAYERS = "valve_current_players"
+SOURCE_REVIEW_SUMMARY = "steam_review_summary"
 
 # SteamSpy allows one non-"all" request per second; this is the pause
 # before each appdetails call, including the first after the page request.
@@ -66,7 +75,26 @@ def create_session():
     return session
 
 
-def get_top_games():
+def fetch_json(session, store, source, url, params=None):
+    """GET a JSON endpoint through the raw landing layer.
+
+    The response is recorded before anything parses it, and the parsed
+    value comes from the stored payload, not from the live response, so a
+    later reprocess reads exactly what this run read.
+    """
+    try:
+        response = session.get(url, params=params, timeout=(5, 45))
+    except requests.RequestException as error:
+        store.record(source, url, params, error=str(error))
+        raise
+
+    response_id = store.record(source, url, params, response=response)
+    response.raise_for_status()
+    return json.loads(store.read_payload(response_id))
+
+
+def get_top_games(session, store=None):
+    store = store or MemoryRawStore()
     config = get_steamspy_config()
 
     params = {
@@ -76,14 +104,13 @@ def get_top_games():
     if config["mode"] == "all":
         params["page"] = config["page"]
 
-    with create_session() as session:
-        response = session.get(
-            STEAMSPY_URL,
-            params=params,
-            timeout=(5, 45)
-        )
-        response.raise_for_status()
-        data = response.json()
+    data = fetch_json(
+        session,
+        store,
+        SOURCE_STEAMSPY_ALL,
+        STEAMSPY_URL,
+        params
+    )
 
     if not isinstance(data, dict) or not data:
         raise ValueError("SteamSpy returned an empty or unexpected response")
@@ -101,14 +128,14 @@ ENRICHMENT_ERRORS = (
 )
 
 
-def fetch_steamspy_app_details(session, appid):
-    response = session.get(
+def fetch_steamspy_app_details(session, store, appid):
+    details = fetch_json(
+        session,
+        store,
+        SOURCE_STEAMSPY_APPDETAILS,
         STEAMSPY_URL,
-        params={"request": "appdetails", "appid": appid},
-        timeout=(5, 45)
+        {"request": "appdetails", "appid": appid}
     )
-    response.raise_for_status()
-    details = response.json()
 
     if not isinstance(details, dict):
         raise ValueError(
@@ -126,29 +153,30 @@ def fetch_steamspy_app_details(session, appid):
     return {field: details.get(field) for field in CATALOG_ROW_FIELDS}
 
 
-def get_tracked_app_details(appids, sleep_fn=time.sleep):
+def get_tracked_app_details(session, appids, store=None, sleep_fn=time.sleep):
     """Return ({appid_str: page_row}, warnings) for apps off the page.
 
     Rows are shaped like SteamSpy request=all page rows. A failed lookup
     becomes a warning and the app is skipped.
     """
+    store = store or MemoryRawStore()
     rows = {}
     warnings = []
 
-    if not appids:
-        return rows, warnings
+    for appid in appids:
+        sleep_fn(STEAMSPY_REQUEST_INTERVAL_SECONDS)
 
-    with create_session() as session:
-        for appid in appids:
-            sleep_fn(STEAMSPY_REQUEST_INTERVAL_SECONDS)
-
-            try:
-                rows[str(appid)] = fetch_steamspy_app_details(session, appid)
-            except ENRICHMENT_ERRORS as error:
-                warnings.append(
-                    f"SteamSpy appdetails failed for tracked app {appid}, "
-                    f"skipped: {error}"
-                )
+        try:
+            rows[str(appid)] = fetch_steamspy_app_details(
+                session,
+                store,
+                appid
+            )
+        except ENRICHMENT_ERRORS as error:
+            warnings.append(
+                f"SteamSpy appdetails failed for tracked app {appid}, "
+                f"skipped: {error}"
+            )
 
     return rows, warnings
 
@@ -173,13 +201,13 @@ def empty_reviews():
     }
 
 
-def fetch_top_player_chart(session):
-    charts_response = session.get(
-        STEAM_TOP_PLAYERS_URL,
-        timeout=(5, 45)
-    )
-    charts_response.raise_for_status()
-    charts_data = charts_response.json().get("response", {})
+def fetch_top_player_chart(session, store):
+    charts_data = fetch_json(
+        session,
+        store,
+        SOURCE_TOP_CONCURRENT,
+        STEAM_TOP_PLAYERS_URL
+    ).get("response", {})
     chart_rows = charts_data.get("ranks", [])
     last_update = charts_data.get("last_update")
 
@@ -203,14 +231,14 @@ def fetch_top_player_chart(session):
     }
 
 
-def fetch_current_players(session, appid):
-    players_response = session.get(
+def fetch_current_players(session, store, appid):
+    players_data = fetch_json(
+        session,
+        store,
+        SOURCE_CURRENT_PLAYERS,
         STEAM_CURRENT_PLAYERS_URL,
-        params={"appid": appid},
-        timeout=(5, 45)
-    )
-    players_response.raise_for_status()
-    players_data = players_response.json().get("response", {})
+        {"appid": appid}
+    ).get("response", {})
 
     if players_data.get("result") != 1:
         raise ValueError(
@@ -226,14 +254,14 @@ def fetch_current_players(session, appid):
     }
 
 
-def fetch_review_summary(session, appid):
-    reviews_response = session.get(
+def fetch_review_summary(session, store, appid):
+    reviews_data = fetch_json(
+        session,
+        store,
+        SOURCE_REVIEW_SUMMARY,
         STEAM_REVIEWS_URL.format(appid=appid),
-        params=REVIEW_PARAMS,
-        timeout=(5, 45)
+        REVIEW_PARAMS
     )
-    reviews_response.raise_for_status()
-    reviews_data = reviews_response.json()
 
     if reviews_data.get("success") != 1:
         raise ValueError(
@@ -266,47 +294,48 @@ def fetch_review_summary(session, appid):
     }
 
 
-def get_steam_measurements():
+def get_steam_measurements(session, store=None):
     """Return (measurements, warnings) from Valve's player and review APIs.
 
     A failed top-100 chart falls back to direct player lookups for the
     tracked apps. A failed player lookup skips that app; a failed review
     lookup keeps the app's row with null review fields.
     """
+    store = store or MemoryRawStore()
     warnings = []
 
-    with create_session() as session:
-        try:
-            measurements = fetch_top_player_chart(session)
-        except ENRICHMENT_ERRORS as error:
-            warnings.append(
-                "Valve top-100 chart unavailable, used direct player "
-                f"lookups for tracked apps: {error}"
-            )
-            measurements = {}
+    try:
+        measurements = fetch_top_player_chart(session, store)
+    except ENRICHMENT_ERRORS as error:
+        warnings.append(
+            "Valve top-100 chart unavailable, used direct player "
+            f"lookups for tracked apps: {error}"
+        )
+        measurements = {}
 
-        for appid in get_tracked_appids():
-            if appid not in measurements:
-                try:
-                    measurements[appid] = fetch_current_players(
-                        session,
-                        appid
-                    )
-                except ENRICHMENT_ERRORS as error:
-                    warnings.append(
-                        f"Valve player lookup failed for app {appid}, "
-                        f"row skipped: {error}"
-                    )
-                    continue
-
+    for appid in get_tracked_appids():
+        if appid not in measurements:
             try:
-                measurements[appid].update(
-                    fetch_review_summary(session, appid)
+                measurements[appid] = fetch_current_players(
+                    session,
+                    store,
+                    appid
                 )
             except ENRICHMENT_ERRORS as error:
                 warnings.append(
-                    f"Steam review lookup failed for app {appid}, "
-                    f"reviews left empty: {error}"
+                    f"Valve player lookup failed for app {appid}, "
+                    f"row skipped: {error}"
                 )
+                continue
+
+        try:
+            measurements[appid].update(
+                fetch_review_summary(session, store, appid)
+            )
+        except ENRICHMENT_ERRORS as error:
+            warnings.append(
+                f"Steam review lookup failed for app {appid}, "
+                f"reviews left empty: {error}"
+            )
 
     return list(measurements.values()), warnings

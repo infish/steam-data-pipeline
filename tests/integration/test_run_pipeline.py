@@ -2,10 +2,11 @@ import os
 import unittest
 from unittest.mock import patch
 
-import main
+import requests
+
+from jobs import daily
 
 from .base import (
-    CANNED_MEASUREMENTS,
     CANNED_TOP_GAMES,
     CHART_MEASURED_AT,
     IntegrationTestCase,
@@ -72,7 +73,7 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
         self.assertEqual(measurements[620]["total_reviews"], 1000)
 
     def test_failure_after_snapshot_insert_rolls_back_the_load(self):
-        real_load = main.load_steam_measurements
+        real_load = daily.load_steam_measurements
 
         def load_then_fail(*args, **kwargs):
             real_load(*args, **kwargs)
@@ -80,7 +81,7 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
 
         with (
             patch.object(
-                main,
+                daily,
                 "load_steam_measurements",
                 side_effect=load_then_fail
             ),
@@ -103,46 +104,48 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
         self.assertIsNotNone(runs[0]["finished_at"])
         self.assertTrue(self.run_lock_is_free())
 
-
     def test_valve_warnings_reach_the_run_row(self):
-        warnings = [
-            "Valve player lookup failed for app 620, row skipped: timeout",
-            "Steam review lookup failed for app 730, reviews left empty: 502",
-        ]
-
         with self.assertLogs(level="WARNING") as logs:
-            self.run_pipeline(
-                measurements=CANNED_MEASUREMENTS[:1],
-                warnings=warnings
-            )
+            self.run_pipeline({
+                "valve_current_players:620": (503, {"error": "busy"}),
+                "steam_review_summary:730": (502, {"error": "bad gateway"}),
+            })
 
         logged = "\n".join(logs.output)
-        for warning in warnings:
-            self.assertIn(warning, logged)
+        self.assertIn("Steam review lookup failed for app 730", logged)
+        self.assertIn("Valve player lookup failed for app 620", logged)
 
         (run,) = self.query("SELECT * FROM pipeline_runs")
         self.assertEqual(run["status"], "SUCCESS")
-        self.assertEqual(run["measurements_loaded"], 1)
-        self.assertEqual(run["warning_message"], "\n".join(warnings))
+        self.assertEqual(run["measurements_loaded"], 2)
+        warning_lines = run["warning_message"].split("\n")
+        self.assertEqual(len(warning_lines), 2)
+        self.assertTrue(warning_lines[0].startswith(
+            "Steam review lookup failed for app 730, reviews left empty: 502"
+        ))
+        self.assertTrue(warning_lines[1].startswith(
+            "Valve player lookup failed for app 620, row skipped: 503"
+        ))
 
     def test_steamspy_failure_still_fails_the_run(self):
         with (
-            patch.object(
-                main,
-                "get_top_games",
-                side_effect=RuntimeError("SteamSpy down")
-            ),
-            patch.object(main, "get_steam_measurements") as valve,
             self.assertLogs(level="ERROR"),
-            self.assertRaisesRegex(RuntimeError, "SteamSpy down")
+            self.assertRaisesRegex(requests.ConnectionError, "SteamSpy down")
         ):
-            main.run_pipeline()
+            self.run_pipeline({
+                "steamspy_all": requests.ConnectionError("SteamSpy down")
+            })
 
-        valve.assert_not_called()
         (run,) = self.query("SELECT * FROM pipeline_runs")
         self.assertEqual(run["status"], "FAILED")
         self.assertEqual(run["error_message"], "SteamSpy down")
 
+        # The failed request is still in the landing layer; Valve was
+        # never called.
+        (raw,) = self.query("SELECT * FROM raw_api_responses")
+        self.assertEqual(raw["source"], "steamspy_all")
+        self.assertIsNone(raw["http_status"])
+        self.assertEqual(raw["error_message"], "SteamSpy down")
 
     def with_bad_rows(self):
         top_games = dict(CANNED_TOP_GAMES)
@@ -155,7 +158,7 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             patch.dict(os.environ, {"PIPELINE_MAX_REJECTED_PERCENT": "50"}),
             self.assertLogs(level="WARNING") as logs
         ):
-            self.run_pipeline(top_games=self.with_bad_rows())
+            self.run_pipeline({"steamspy_all": self.with_bad_rows()})
 
         logged = "\n".join(logs.output)
         self.assertIn("Rejected 2 of 6 SteamSpy rows", logged)
@@ -186,13 +189,12 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             self.assertLogs(level="ERROR"),
             self.assertRaisesRegex(ValueError, "above the 5% limit")
         ):
-            self.run_pipeline(top_games=self.with_bad_rows())
+            self.run_pipeline({"steamspy_all": self.with_bad_rows()})
 
         (run,) = self.query("SELECT * FROM pipeline_runs")
         self.assertEqual(run["status"], "FAILED")
         self.assertIn("2 of 6 rows (33.3%)", run["error_message"])
         self.assertEqual(self.count("games"), 0)
-
 
     def test_off_page_tracked_app_is_backfilled_with_its_measurement(self):
         with self.assertLogs(level="INFO") as logs:
@@ -220,7 +222,9 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
 
     def test_backfill_failure_is_a_warning_and_the_run_succeeds(self):
         with self.assertLogs(level="WARNING") as logs:
-            self.run_pipeline(app_details={})
+            self.run_pipeline({
+                "steamspy_appdetails:427520": (503, {"error": "busy"})
+            })
 
         self.assertIn(
             "SteamSpy appdetails failed for tracked app 427520",
@@ -231,11 +235,9 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
         self.assertEqual(run["status"], "SUCCESS")
         self.assertEqual(run["rows_loaded"], 3)
         self.assertEqual(run["measurements_loaded"], 2)
-        self.assertEqual(
-            run["warning_message"],
-            "SteamSpy appdetails failed for tracked app 427520, "
-            "skipped: canned failure"
-        )
+        self.assertTrue(run["warning_message"].startswith(
+            "SteamSpy appdetails failed for tracked app 427520, skipped: 503"
+        ))
         self.assertEqual(
             self.query(
                 "SELECT appid FROM steam_game_measurements WHERE appid = 427520"

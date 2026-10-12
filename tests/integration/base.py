@@ -1,3 +1,4 @@
+import calendar
 import os
 import unittest
 from datetime import datetime
@@ -5,6 +6,8 @@ from unittest.mock import patch
 
 from config import get_mysql_config
 from database.mysql_database import get_connection
+from ingest.replay import FixtureSession
+from jobs.daily import RUN_LOCK_NAME
 import main
 
 
@@ -15,6 +18,7 @@ PIPELINE_TABLES = [
     "steam_game_measurements",
     "game_metric_snapshots",
     "games",
+    "raw_api_responses",
     "pipeline_runs",
 ]
 
@@ -43,6 +47,21 @@ def steamspy_game(appid, name, owners, positive, negative):
     }
 
 
+def review_summary(positive, negative):
+    return {
+        "success": 1,
+        "query_summary": {
+            "total_positive": positive,
+            "total_negative": negative,
+            "total_reviews": positive + negative,
+        },
+    }
+
+
+def current_players(count):
+    return {"response": {"player_count": count, "result": 1}}
+
+
 CANNED_TOP_GAMES = {
     "730": steamspy_game(
         730, "Counter-Strike 2", "50,000,000 .. 100,000,000", 9000, 1000
@@ -51,61 +70,34 @@ CANNED_TOP_GAMES = {
     "570": steamspy_game(570, "Dota 2", "100,000,000 .. 200,000,000", 800, 200),
 }
 
-# Tracked app missing from the page; fetched through SteamSpy appdetails.
-CANNED_APP_DETAILS = {
-    427520: steamspy_game(
-        427520, "Factorio", "5,000,000 .. 10,000,000", 200, 5
-    ),
-}
-
 TRACKED_APPIDS = "730,427520,620"
 
 CHART_MEASURED_AT = datetime(2026, 10, 1, 18, 0, 0)
 
-CANNED_MEASUREMENTS = [
-    {
-        "appid": 730,
-        "current_players": 1_500_000,
-        "player_rank": 1,
-        "source_measured_at": CHART_MEASURED_AT,
-        "positive_reviews": 7000,
-        "negative_reviews": 1000,
-        "total_reviews": 8000,
-        "review_score_percent": 87.5,
+# HTTP payloads served by FixtureSession, keyed by ingest.replay.route_for.
+# 730 is on the page and in the top 100; 620 is on the page but outside the
+# top 100; 427520 (Factorio) is tracked but off the page, so it is fetched
+# through SteamSpy appdetails; 999999 is top-100 only and is skipped.
+CANNED_RESPONSES = {
+    "steamspy_all": CANNED_TOP_GAMES,
+    "steamspy_appdetails:427520": steamspy_game(
+        427520, "Factorio", "5,000,000 .. 10,000,000", 200, 5
+    ),
+    "valve_top_concurrent": {
+        "response": {
+            "last_update": calendar.timegm(CHART_MEASURED_AT.timetuple()),
+            "ranks": [
+                {"rank": 1, "appid": 730, "concurrent_in_game": 1_500_000},
+                {"rank": 100, "appid": 999999, "concurrent_in_game": 50},
+            ],
+        }
     },
-    {
-        "appid": 620,
-        "current_players": 4000,
-        "player_rank": None,
-        "source_measured_at": None,
-        "positive_reviews": 990,
-        "negative_reviews": 10,
-        "total_reviews": 1000,
-        "review_score_percent": 99.0,
-    },
-    {
-        # Tracked and off the page: loaded after the appdetails backfill.
-        "appid": 427520,
-        "current_players": 20000,
-        "player_rank": None,
-        "source_measured_at": None,
-        "positive_reviews": 195,
-        "negative_reviews": 5,
-        "total_reviews": 200,
-        "review_score_percent": 97.5,
-    },
-    {
-        # Top-100 but absent from the SteamSpy page and untracked: skipped.
-        "appid": 999999,
-        "current_players": 50,
-        "player_rank": 100,
-        "source_measured_at": CHART_MEASURED_AT,
-        "positive_reviews": None,
-        "negative_reviews": None,
-        "total_reviews": None,
-        "review_score_percent": None,
-    },
-]
+    "valve_current_players:620": current_players(4000),
+    "valve_current_players:427520": current_players(20000),
+    "steam_review_summary:730": review_summary(7000, 1000),
+    "steam_review_summary:620": review_summary(990, 10),
+    "steam_review_summary:427520": review_summary(195, 5),
+}
 
 
 @unittest.skipUnless(INTEGRATION_ENABLED, "set INTEGRATION_DB=1 to run")
@@ -133,13 +125,24 @@ class IntegrationTestCase(unittest.TestCase):
         finally:
             connection.close()
 
+    def execute(self, sql, params=()):
+        connection = get_connection()
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute(sql, params)
+            connection.commit()
+            return cursor.lastrowid
+        finally:
+            connection.close()
+
     def count(self, table):
         return self.query(f"SELECT COUNT(*) AS n FROM {table}")[0]["n"]
 
     def run_lock_is_free(self):
         return self.query(
             "SELECT IS_FREE_LOCK(%s) AS free",
-            (main.RUN_LOCK_NAME,)
+            (RUN_LOCK_NAME,)
         )[0]["free"] == 1
 
     def reset_tables(self):
@@ -164,6 +167,11 @@ class IntegrationTestCase(unittest.TestCase):
                     + ", ".join(sorted(unknown))
                 )
 
+            # Self-references must go before the rows they point at.
+            cursor.execute(
+                "UPDATE raw_api_responses SET is_duplicate_of = NULL"
+            )
+
             for table in PIPELINE_TABLES:
                 cursor.execute(f"DELETE FROM {table}")
 
@@ -171,48 +179,19 @@ class IntegrationTestCase(unittest.TestCase):
         finally:
             connection.close()
 
-    def run_pipeline(
-        self,
-        top_games=None,
-        measurements=None,
-        warnings=(),
-        app_details=None
-    ):
-        if top_games is None:
-            top_games = CANNED_TOP_GAMES
+    def session(self, overrides=None):
+        return FixtureSession({**CANNED_RESPONSES, **(overrides or {})})
 
-        if measurements is None:
-            measurements = CANNED_MEASUREMENTS
+    def run_pipeline(self, overrides=None, now_fn=None, session=None):
+        """Run the daily job against canned HTTP responses; return run_id."""
+        session = session or self.session(overrides)
+        options = {
+            "session_factory": lambda: session,
+            "sleep_fn": lambda seconds: None,
+        }
 
-        if app_details is None:
-            app_details = CANNED_APP_DETAILS
+        if now_fn is not None:
+            options["now_fn"] = now_fn
 
-        def fake_app_details(appids):
-            rows = {
-                str(appid): app_details[appid]
-                for appid in appids
-                if appid in app_details
-            }
-            failures = [
-                f"SteamSpy appdetails failed for tracked app {appid}, "
-                "skipped: canned failure"
-                for appid in appids
-                if appid not in app_details
-            ]
-            return rows, failures
-
-        with (
-            patch.object(main, "get_top_games", return_value=top_games),
-            patch.object(
-                main,
-                "get_steam_measurements",
-                return_value=(measurements, list(warnings))
-            ),
-            patch.object(
-                main,
-                "get_tracked_app_details",
-                side_effect=fake_app_details
-            ),
-            patch.dict(os.environ, {"STEAM_TRACKED_APPIDS": TRACKED_APPIDS}),
-        ):
-            main.run_pipeline()
+        with patch.dict(os.environ, {"STEAM_TRACKED_APPIDS": TRACKED_APPIDS}):
+            return main.run_pipeline(**options)
