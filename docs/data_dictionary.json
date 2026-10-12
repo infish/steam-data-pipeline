@@ -1,0 +1,270 @@
+{
+  "introduction": "Every table and view in the `steam_pipeline` database, by layer: raw landing, normalized tables, analytics marts, views, operations, and legacy. All timestamps are UTC. Structure is read from `information_schema`; descriptions live in `docs/data_dictionary.json`. Sources and their caveats are in [`sources.md`](sources.md), how marts are built in [`marts.md`](marts.md), which tables feed which mart in [`lineage.md`](lineage.md), and the data-quality checks in [`observability.md`](observability.md).",
+  "layers": [
+    {
+      "title": "Raw landing layer",
+      "description": "Every API response, stored before parsing so any run can be reprocessed.",
+      "objects": {
+        "raw_api_responses": {
+          "description": "One row per API request any job made, including failed ones. Bodies are zlib-compressed; a body identical to the previous one for the same request is stored once, and later rows point to it. Bodies older than `RAW_RETENTION_DAYS` are removed; metadata is kept.",
+          "columns": {
+            "run_id": "The job run that made the request.",
+            "source": "Logical source, e.g. `valve_top_concurrent` (see sources.md).",
+            "endpoint": "Request URL without parameters.",
+            "request_params": "Request parameters as JSON.",
+            "request_params_hash": "SHA-256 of endpoint plus canonical parameters; identifies the same request across runs.",
+            "http_status": "HTTP status; NULL when the request failed before a response (see error_message).",
+            "fetched_at": "When the response was received (collection time, not source time).",
+            "payload": "zlib-compressed response body; NULL for duplicates, failures and purged bodies.",
+            "payload_sha256": "SHA-256 of the uncompressed body; kept after purging.",
+            "payload_bytes": "Uncompressed body size.",
+            "is_duplicate_of": "The earlier row holding an identical body for the same request.",
+            "payload_purged_at": "When retention removed the body.",
+            "error_message": "Connection error text for requests without a response."
+          }
+        }
+      }
+    },
+    {
+      "title": "Catalog and dimensions",
+      "description": "Loaded by `catalog_daily` from the SteamSpy catalog page and the Steam Store.",
+      "objects": {
+        "games": {
+          "description": "One row per app ID seen in the SteamSpy catalog or tracked. Name and companies come from the newest catalog run.",
+          "columns": {
+            "developer": "Raw SteamSpy developer string; normalized links are in game_developers.",
+            "publisher": "Raw SteamSpy publisher string; normalized links are in game_publishers.",
+            "languages": "Raw SteamSpy languages; empty for catalog-page games (use game_languages).",
+            "genre": "Raw SteamSpy genre; empty for catalog-page games (use game_genres).",
+            "first_seen_at": "Load time of the first catalog run that included the game.",
+            "last_seen_at": "Load time of the latest catalog run that included the game."
+          }
+        },
+        "game_metric_snapshots": {
+          "description": "SteamSpy values per game per catalog run, append-only. SteamSpy gives no source time and can stay unchanged for long periods; use for broad comparison, not as a time series.",
+          "columns": {
+            "snapshot_time": "Collection time of the catalog run (not when SteamSpy measured the values).",
+            "owners": "SteamSpy owner range as text, e.g. `10,000,000 .. 20,000,000`.",
+            "estimated_owners": "Midpoint of the owner range.",
+            "review_score_percent": "SteamSpy positive share (positive / total reviews).",
+            "ccu": "SteamSpy's concurrent-user figure; not a reliable current-player count.",
+            "price_cents": "SteamSpy price in US cents."
+          }
+        },
+        "companies": {
+          "description": "Each developer or publisher name once (case- and accent-insensitive), split from SteamSpy strings."
+        },
+        "game_developers": {
+          "description": "Links games to their developers.",
+          "columns": {"position": "Order in the SteamSpy string, starting at 1."}
+        },
+        "game_publishers": {
+          "description": "Links games to their publishers.",
+          "columns": {"position": "Order in the SteamSpy string, starting at 1."}
+        },
+        "game_details": {
+          "description": "Steam Store details per game, refreshed for the `STORE_DETAILS_PER_RUN` stalest games each catalog run. NULL means the Store did not return the value.",
+          "columns": {
+            "store_available": "FALSE when the Store returned no data (delisted or region-locked); other columns then keep their last known values.",
+            "release_date": "Parsed release date; NULL when the Store text is not a complete date.",
+            "release_date_text": "The Store's release date text as returned (English).",
+            "details_fetched_at": "Load time of the run that last refreshed the Store details.",
+            "tags_fetched_at": "Load time of the run that last refreshed the SteamSpy tags.",
+            "run_id": "The catalog run that last refreshed the details."
+          }
+        },
+        "genres": {"description": "Steam Store genres, keyed by the Store's own genre ID."},
+        "game_genres": {"description": "Links games to Store genres."},
+        "categories": {"description": "Steam Store categories (e.g. Multi-player), keyed by the Store's own ID."},
+        "game_categories": {"description": "Links games to Store categories."},
+        "languages": {"description": "Supported languages named by the Store, each once."},
+        "game_languages": {
+          "description": "Links games to their supported languages.",
+          "columns": {"full_audio": "The Store marks the language as having full audio."}
+        },
+        "tags": {"description": "SteamSpy user tags, each once."},
+        "game_tags": {
+          "description": "Links games to SteamSpy user tags.",
+          "columns": {"votes": "Number of users who applied the tag (SteamSpy)."}
+        },
+        "game_price_history": {
+          "description": "Type 2 price history per game and Store country: a new version opens when the daily price check sees a change; unchanged prices write nothing.",
+          "columns": {
+            "price_state": "`priced`, `no_price` (sold without a price, e.g. free to play) or `unavailable` (Store returned no data).",
+            "currency": "ISO currency of the amounts; amounts are never compared across currencies.",
+            "initial_price": "Price before discount, in minor units (cents).",
+            "final_price": "Price paid, in minor units (cents).",
+            "valid_from": "Load time of the check that first saw this price.",
+            "valid_to": "Load time of the check that saw it change; NULL while current.",
+            "is_current": "TRUE for the open version; at most one per game and country.",
+            "current_key": "Generated: makes the open version unique per game and country."
+          }
+        }
+      }
+    },
+    {
+      "title": "Observations, history and events",
+      "description": "Loaded by `players_hourly` and `reviews_daily`.",
+      "objects": {
+        "player_observations": {
+          "description": "One row per game per hourly players run (top-100 chart or direct lookup). Rows older than `PLAYER_HOURLY_RETENTION_DAYS` are deleted; player_daily keeps their rollups.",
+          "columns": {
+            "collected_at": "Load time of the run (collection time).",
+            "source_measured_at": "Valve's measurement time from the top-100 chart; NULL for direct lookups.",
+            "player_rank": "Rank in Valve's top-100 concurrent-player chart; NULL for direct lookups.",
+            "source": "`top100` (chart) or `direct` (GetNumberOfCurrentPlayers)."
+          }
+        },
+        "player_daily": {
+          "description": "Daily rollup of player_observations per game and UTC day, recomputed for the days each players run touches. Kept forever.",
+          "columns": {
+            "observation_date": "UTC date of the measurement time (source time when known, otherwise collection time).",
+            "best_rank": "Best top-100 rank that day; NULL when only direct lookups.",
+            "updated_at": "Load time of the run that last recomputed the row."
+          }
+        },
+        "most_played_daily": {
+          "description": "Valve's daily-peak leaderboard (top 100 by peak players). Not limited to catalog games, so appid has no foreign key.",
+          "columns": {
+            "rollup_date": "The UTC day the peaks refer to (the previous complete day at fetch time).",
+            "last_week_rank": "Rank a week earlier; NULL when Valve reports the game was not ranked (-1).",
+            "run_id": "The players run that last wrote the row."
+          }
+        },
+        "review_observations": {
+          "description": "Steam review summary per tracked game per reviews run (all languages and purchase types).",
+          "columns": {
+            "collected_at": "Load time of the run (the summary has no source time).",
+            "review_score_desc": "Steam's rating label, e.g. `Very Positive`."
+          }
+        },
+        "review_rollups": {
+          "description": "Up and down review counts per period from Steam's review histogram, with the source's own dates: monthly for each game's life, daily for the last 30 days.",
+          "columns": {
+            "rollup_type": "`month` or `day` (the histogram returned no weekly buckets).",
+            "period_start": "First day of the period (UTC), as given by the source.",
+            "is_partial": "The period contains the fetch date and was still filling.",
+            "fetched_at": "Load time of the newest fetch; an older fetch never overwrites it."
+          }
+        },
+        "review_reconciliation": {
+          "description": "Per reviews run and game: the histogram's monthly totals compared with the review summary. Counts are recorded; only the positive share is held to a tolerance.",
+          "columns": {
+            "count_difference_percent": "(histogram total - summary total) / summary total.",
+            "share_difference_points": "Absolute difference of the positive shares, in percentage points.",
+            "within_tolerance": "share_difference_points <= tolerance_points."
+          }
+        },
+        "game_events": {
+          "description": "Steam news and update posts per game, one row per news gid; article text is not stored.",
+          "columns": {
+            "event_time": "Publication time from the source (UTC).",
+            "feed_type": "1 = the developer's Steam announcements, 0 = external press.",
+            "is_patch_notes": "The item carries Steam's `patchnotes` tag.",
+            "is_developer_post": "feed_type = 1.",
+            "first_seen_at": "Load time of the run that first stored the item."
+          }
+        }
+      }
+    },
+    {
+      "title": "Analytics marts",
+      "description": "Rebuilt after every job by `db/transforms/` (see marts.md and lineage.md).",
+      "objects": {
+        "mart_player_trends": {
+          "description": "Per game and UTC day: peak and average players, 7-day rolling average, day- and week-over-week peak change, rank and its change, top-100 membership, entries and exits, 7-day volatility.",
+          "columns": {
+            "rank_change_dod": "Yesterday's best rank minus today's; positive means the game moved up.",
+            "volatility_7d_pct": "Coefficient of variation of the daily average over 7 days, in percent."
+          }
+        },
+        "mart_player_peak_hours": {
+          "description": "Per game: the most frequent hour (Prague time) of the daily player peak, over days with at least 12 hourly observations."
+        },
+        "mart_review_trends": {
+          "description": "Per tracked game and UTC day: total and new reviews, lifetime and 30-day positive share, and sentiment drift.",
+          "columns": {
+            "new_reviews": "Change in total reviews since the previous observation; can be negative.",
+            "sentiment_drift_points": "positive_share_30d minus positive_share_lifetime."
+          }
+        },
+        "mart_price_status": {
+          "description": "Per game and Store country: current price, discount, on-sale flag, lowest recorded price, distance from it, discount events and days since the last discount.",
+          "columns": {"above_lowest_pct": "How far the current price is above the lowest recorded price in the same currency."}
+        },
+        "mart_genre_summary": {
+          "description": "Per Store genre: games, average SteamSpy review score and Metacritic, top-100 presence, release-year groups, platform and free/paid counts."
+        },
+        "mart_tag_summary": {
+          "description": "Per SteamSpy tag: games, total votes, average SteamSpy review score, top-100 presence, release-year groups and platform counts."
+        },
+        "mart_release_year_summary": {
+          "description": "Per Store release year: games, free and paid counts, average SteamSpy review score and Metacritic."
+        },
+        "mart_engagement": {
+          "description": "Per game: latest daily peak against SteamSpy's owner estimate and playtime skew. Rough by design (estimates, latest snapshot only).",
+          "columns": {
+            "rough_peak_to_owners_pct": "Latest daily peak as a share of estimated owners.",
+            "rough_playtime_skew": "Average / median playtime."
+          }
+        },
+        "mart_event_impact": {
+          "description": "Per developer patch-notes post: average daily players in the 7 days before and after the event day. A correlation, not proof of cause."
+        }
+      }
+    },
+    {
+      "title": "Views",
+      "description": "Defined in `db/migrations/R__analytics_views.sql`.",
+      "objects": {
+        "latest_successful_run": {"description": "The latest successful catalog run (`catalog_daily`, or `daily_legacy` before the job split)."},
+        "current_game_metrics": {"description": "games joined with their SteamSpy snapshot from the latest successful catalog run."},
+        "top_games_by_owners": {"description": "current_game_metrics with owner estimates, for ranking by estimated owners."},
+        "top_games_by_review_score": {"description": "current_game_metrics for games with at least 10,000 SteamSpy reviews, for ranking by positive share."},
+        "most_active_games_by_ccu": {"description": "Legacy: SteamSpy ccu from the latest snapshot. SteamSpy ccu is not a reliable player count; use player_observations."},
+        "free_vs_paid_summary": {"description": "Free versus paid games in the latest snapshot by SteamSpy price (0 = free), with average owners, review score and ccu."},
+        "publisher_summary": {"description": "Per raw SteamSpy publisher string in the latest snapshot: game count and owner estimates."},
+        "game_metric_trends": {"description": "SteamSpy snapshots of successful catalog runs with game attributes, for audit."},
+        "game_metric_changes": {"description": "Snapshot-to-snapshot changes of SteamSpy values per game (window functions), for audit."},
+        "game_price_summary": {"description": "Per game and Store country: the current price version with lowest price, discount events and days since the last discount derived from game_price_history."},
+        "daily_pipeline_summary": {"description": "Successful runs per UTC day and job, with rows and observations loaded."}
+      }
+    },
+    {
+      "title": "Operations",
+      "description": "Run audit, data quality and schema history.",
+      "objects": {
+        "pipeline_runs": {
+          "description": "One row per job run, with status, counters and messages.",
+          "columns": {
+            "job_name": "`catalog_daily`, `players_hourly`, `reviews_daily`, `backfill`, or `daily_legacy` for runs before the job split.",
+            "rows_extracted": "Rows received from the job's main source.",
+            "rows_loaded": "Rows loaded (games, observations or rollups, depending on the job).",
+            "measurements_loaded": "Player or review observations loaded.",
+            "rows_rejected": "SteamSpy rows rejected by row-level validation (catalog runs).",
+            "error_message": "Why a FAILED run failed.",
+            "warning_message": "Degraded input and failed checks of a successful run, one per line."
+          }
+        },
+        "data_quality_results": {
+          "description": "Every data-quality check and mart test result, stored after every run (see observability.md).",
+          "columns": {
+            "target": "The source, table or table.column checked.",
+            "status": "`pass`, `warn` or `fail`; a fail adds a run warning and never deletes data.",
+            "checked_at": "When the check ran."
+          }
+        },
+        "flyway_schema_history": {"description": "Flyway's record of applied migrations."}
+      }
+    },
+    {
+      "title": "Legacy",
+      "description": "Kept read-only for audit.",
+      "objects": {
+        "steam_game_measurements": {
+          "description": "Combined player and review measurements of the single daily run used before the job split. Copied into player_observations and review_observations; no longer written."
+        }
+      }
+    }
+  ]
+}

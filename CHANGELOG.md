@@ -72,6 +72,13 @@ This file records user-visible changes to the Steam data pipeline.
   timestamp meaning; screenshots in `docs/screenshots/`.
 - `python src/reprocess.py --seed-fixtures` seeds an empty database from the
   recorded API responses.
+- `docs/data_dictionary.md`, generated from `information_schema` and
+  `docs/data_dictionary.json` by `scripts/generate_data_dictionary.py`; CI
+  fails when it is out of date or a table or view has no description.
+- `docs/lineage.md` (sources → raw → normalized → marts) and decision records
+  in `docs/adr/`.
+- README: layered architecture diagram and a "What this project
+  demonstrates" section linking each practice to its files.
 
 ### Changed
 

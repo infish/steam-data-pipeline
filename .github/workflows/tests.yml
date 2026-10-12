@@ -89,3 +89,8 @@ jobs:
           INTEGRATION_DB: "1"
           PYTHONPATH: src
         run: python -m unittest discover -s tests/integration -t tests -v
+
+      - name: Check the data dictionary is current
+        env:
+          PYTHONPATH: src
+        run: python scripts/generate_data_dictionary.py --check

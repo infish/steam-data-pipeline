@@ -1,20 +1,55 @@
 # Steam Data Pipeline
 
-A Dockerized data pipeline that extracts a SteamSpy game catalog plus focused measurements from Valve's Steam endpoints, validates and transforms them with Python, stores historical observations in MySQL, and presents SQL-driven analytics in a Streamlit dashboard.
+A layered data pipeline for Steam games. It collects a SteamSpy catalog,
+hourly Valve player counts, Steam Store details and prices, review history and
+update news; lands every API response untouched; loads normalized tables with
+history; rebuilds analytics marts; checks its own data; and presents it all in
+a Streamlit dashboard. It runs as one Docker Compose app on a home TrueNAS
+server.
 
-The project is designed as a practical data-engineering portfolio project, with reproducible deployment, database migrations, audit history, data-quality checks, automated tests, and separate database permissions.
+It is a data-engineering portfolio project, built around one principle that
+came out of a real incident: every number shown says where it comes from and
+what its timestamp means.
+
+![Dashboard overview](docs/screenshots/overview.jpg)
 
 ## Architecture
 
 ```mermaid
-flowchart TD
-    API["SteamSpy catalog"] --> Pipeline["Python pipeline"]
-    Steam["Valve Steam measurements"] --> Pipeline
-    Flyway["Flyway SQL migrations"] --> MySQL[("MySQL")]
-    Pipeline --> MySQL
-    MySQL --> Views["SQL analytics views"]
-    Views --> Dashboard["Read-only Streamlit dashboard"]
+flowchart LR
+    subgraph sources["API sources"]
+        spy["SteamSpy<br>catalog, tags"]
+        valve["Valve Web API<br>players, leaderboard, news"]
+        store["Steam Store<br>details, prices, reviews"]
+    end
+
+    subgraph jobs["Jobs (in-process scheduler)"]
+        players["players_hourly<br>every hour"]
+        catalog["catalog_daily<br>20:00"]
+        reviews["reviews_daily<br>20:30"]
+    end
+
+    raw[("Raw landing<br>raw_api_responses")]
+    normalized[("Normalized<br>games, observations, dimensions,<br>price history, review history, events")]
+    marts[("Marts<br>rebuilt after every job")]
+    quality[("data_quality_results")]
+    dashboard["Streamlit dashboard"]
+
+    sources --> jobs
+    jobs --> raw
+    raw --> normalized
+    normalized --> marts
+    normalized --> quality
+    marts --> quality
+    marts --> dashboard
+    quality --> dashboard
 ```
+
+Every request is stored in the raw layer before parsing; the jobs parse the
+stored copy into the normalized tables; SQL transforms rebuild the marts after
+every job, and the data-quality checks run on the result. Table-level detail
+is in [`docs/lineage.md`](docs/lineage.md) and
+[`docs/data_dictionary.md`](docs/data_dictionary.md).
 
 Docker Compose manages these services:
 
@@ -34,27 +69,62 @@ Startup order is enforced:
 MySQL healthy → bootstrap and migrations complete → scheduler and dashboard start
 ```
 
-## Features
+## What this project demonstrates
 
-- SteamSpy API extraction with retry and exponential backoff.
-- Validation and transformation of 1,000 games per configured API page, plus
-  any tracked games that are not on that page.
-- Append-only historical metric snapshots.
-- Hourly Valve current-player observations for top-100 games present in the
-  catalog and for tracked games, rolled up per day; daily Steam review
-  observations for tracked games.
-- A raw landing layer that stores every API response before parsing, with
-  deduplication, retention and reprocessing.
-- Audited pipeline runs with success/failure status.
-- SQL window functions for changes between snapshots.
-- Versioned and repeatable Flyway migrations.
-- Separate database accounts: a schema owner used only by Flyway, a writer
-  for the pipeline, and a read-only dashboard account.
-- Docker-managed persistent storage.
-- Non-root Python containers.
-- Automated unit tests without live API requests.
-- Integration tests against a real, migrated MySQL database in CI.
-- Linux, macOS and Windows-compatible Docker Compose workflow.
+- **Data contracts**: every source documented with fields, timestamp meaning,
+  freshness, rate limits and caveats, plus recorded responses —
+  [`docs/sources.md`](docs/sources.md),
+  [`tests/fixtures/sources/`](tests/fixtures/sources/).
+- **Raw landing layer**: responses stored before parsing, hash
+  deduplication, retention, and reprocessing of any run —
+  [`src/ingest/raw_store.py`](src/ingest/raw_store.py),
+  [`src/reprocess.py`](src/reprocess.py),
+  [ADR 2](docs/adr/0002-raw-landing-layer-with-hash-dedup.md).
+- **Layered model**: raw → normalized → marts, versioned with Flyway —
+  [`db/migrations/`](db/migrations/), [`db/transforms/`](db/transforms/),
+  [`docs/data_dictionary.md`](docs/data_dictionary.md),
+  [`docs/lineage.md`](docs/lineage.md).
+- **Incremental, idempotent loads**: daily rollups rebuilt for touched days,
+  keyed upserts that never let older data overwrite newer, per-run reprocessing
+  that reproduces identical rows —
+  [`src/jobs/players.py`](src/jobs/players.py),
+  [`src/jobs/review_history.py`](src/jobs/review_history.py),
+  [`tests/integration/test_raw_layer.py`](tests/integration/test_raw_layer.py).
+- **Backfills**: years of source-dated review history and news on demand —
+  [`src/backfill.py`](src/backfill.py).
+- **History tracking (SCD Type 2)**: price versions with validity ranges —
+  [`db/migrations/V8__price_history.sql`](db/migrations/V8__price_history.sql),
+  [`src/jobs/prices.py`](src/jobs/prices.py),
+  [ADR 3](docs/adr/0003-price-history-as-scd2.md).
+- **Normalization of messy inputs**: company strings with commas inside
+  names, HTML language lists, free-text release dates —
+  [`src/parsing/`](src/parsing/), [`tests/test_parsing.py`](tests/test_parsing.py).
+- **Request budgets**: rate limits planned per job and enforced with pauses —
+  [`docs/request_budget.md`](docs/request_budget.md).
+- **Data observability**: freshness, volume, staleness, duplicate rates,
+  schema drift, table invariants and mart tests stored after every run —
+  [`src/quality/checks.py`](src/quality/checks.py),
+  [`docs/observability.md`](docs/observability.md).
+- **Orchestration**: per-job schedules, locks, run audit, abandoned-run
+  reaping, DST-safe waits — [`src/scheduler.py`](src/scheduler.py),
+  [`src/jobs/base.py`](src/jobs/base.py),
+  [ADR 1](docs/adr/0001-mysql-and-in-process-scheduling.md).
+- **Analytics engineering**: rolling windows, volatility, sentiment drift,
+  event impact, Prague time without time-zone tables —
+  [`db/transforms/`](db/transforms/), [`docs/marts.md`](docs/marts.md).
+- **Honest data**: a documented stale-data incident and the design changes
+  that followed —
+  [Stale-data incident](#stale-data-incident-september-2026),
+  [ADR 4](docs/adr/0004-steamspy-for-catalog-not-time-series.md).
+- **Testing**: unit tests, integration tests against a real migrated MySQL,
+  and replay of recorded API responses through the whole path —
+  [`tests/`](tests/), [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
+- **Delivery and operations**: tests gate image publishing, release tags pin
+  the TrueNAS deployment, least-privilege database accounts, a generated data
+  dictionary checked in CI —
+  [`.github/workflows/`](.github/workflows/),
+  [`docker-compose.yml`](docker-compose.yml),
+  [`scripts/generate_data_dictionary.py`](scripts/generate_data_dictionary.py).
 
 ## Technology
 
@@ -391,7 +461,8 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 ├── db/migrations/            Flyway: versioned V*__ schema changes, repeatable views
 ├── db/transforms/            SQL that rebuilds each analytics mart after every job
 ├── deploy/                   TrueNAS Custom App definition
-├── docs/                     data contract, marts, observability, budget, screenshots
+├── docs/                     sources, data dictionary, lineage, marts,
+│                             observability, budget, ADRs, screenshots
 ├── src/
 │   ├── api/                  HTTP calls to SteamSpy and Steam, via the raw layer
 │   ├── ingest/               raw landing layer, fixture and raw replay sessions
@@ -409,6 +480,7 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 │   ├── reprocess.py          rebuild a run from its stored raw responses
 │   ├── scheduler.py          in-process scheduler
 │   └── config.py             environment configuration
+├── scripts/                  data dictionary generator
 ├── tests/
 │   ├── fixtures/sources/     recorded API responses (see docs/sources.md)
 │   ├── integration/          tests against a real MySQL (INTEGRATION_DB=1)
