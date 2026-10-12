@@ -19,6 +19,18 @@ PIPELINE_TABLES = [
     "review_observations",
     "player_daily",
     "most_played_daily",
+    "game_tags",
+    "tags",
+    "game_languages",
+    "languages",
+    "game_categories",
+    "categories",
+    "game_genres",
+    "genres",
+    "game_details",
+    "game_developers",
+    "game_publishers",
+    "companies",
     "game_metric_snapshots",
     "games",
     "raw_api_responses",
@@ -102,6 +114,34 @@ CANNED_RESPONSES = {
     "steam_review_summary:730": review_summary(7000, 1000),
     "steam_review_summary:620": review_summary(990, 10),
     "steam_review_summary:427520": review_summary(195, 5),
+    # 730, 620 and 427520 use the recorded Store and SteamSpy fixtures.
+    "store_appdetails:570": {
+        "570": {
+            "success": True,
+            "data": {
+                "type": "game",
+                "name": "Dota 2",
+                "is_free": True,
+                "required_age": 0,
+                "release_date": {"coming_soon": False, "date": "Jul 9, 2013"},
+                "platforms": {"windows": True, "mac": True, "linux": True},
+                "recommendations": {"total": 2_000_000},
+                "genres": [
+                    {"id": "1", "description": "Action"},
+                    {"id": "37", "description": "Free To Play"},
+                ],
+                "categories": [{"id": 1, "description": "Multi-player"}],
+                "supported_languages": (
+                    "English<strong>*</strong>, Czech<br><strong>*</strong>"
+                    "languages with full audio support"
+                ),
+            },
+        }
+    },
+    "steamspy_appdetails:570": {
+        **steamspy_game(570, "Dota 2", "100,000,000 .. 200,000,000", 800, 200),
+        "tags": {"MOBA": 100, "Free to Play": 50},
+    },
 }
 
 

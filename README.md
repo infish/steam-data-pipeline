@@ -76,9 +76,35 @@ Relatively stable game metadata:
 
 - App ID and name
 - Developer and publisher
-- Languages and genre (empty for games loaded from the SteamSpy catalog page,
-  which does not include these fields; see `docs/sources.md`)
+- Languages and genre as raw SteamSpy strings (empty for games loaded from the
+  SteamSpy catalog page, which does not include these fields; use the
+  normalized tables below instead)
 - First and most recent appearance in the extraction
+
+### Normalized dimensions
+
+Loaded by `catalog_daily`. Lookup tables hold each value once; bridge tables
+link games to them.
+
+- `companies`, `game_developers`, `game_publishers`: split from SteamSpy's
+  developer and publisher strings for every loaded game on every run
+  (`position` keeps SteamSpy's order). The splitting rule is a heuristic,
+  documented in [`docs/sources.md`](docs/sources.md#parsing-rules).
+- `game_details`: Steam Store type, release date (and its original text),
+  coming-soon flag, free-to-play flag, required age, Metacritic score,
+  Windows/Mac/Linux flags, recommendation count, `store_available`, and when
+  the details and tags were last fetched.
+- `genres` + `game_genres`, `categories` + `game_categories`: the Store's
+  genre and category IDs and English names.
+- `languages` + `game_languages`: supported languages, with `full_audio`.
+- `tags` + `game_tags`: SteamSpy user tags with their vote counts.
+
+Each catalog run refreshes Store details and tags for the
+`STORE_DETAILS_PER_RUN` (default 120) games that have gone longest without a
+refresh, new games first, so a 1,000-game catalog is refreshed about every 9
+days. A failed refresh keeps the previous values and adds a run warning; a
+game the Store no longer returns is marked `store_available = FALSE` and keeps
+its last known details.
 
 ### `game_metric_snapshots`
 
@@ -206,7 +232,7 @@ The scheduler runs three jobs, each with its own run rows
 | Job | Default schedule | Collects | Writes |
 | --- | --- | --- | --- |
 | `players_hourly` | every hour at :07 | Valve top-100 chart, direct lookups for tracked games outside it, daily-peak leaderboard | `player_observations`, `player_daily`, `most_played_daily` |
-| `catalog_daily` | 20:00 | SteamSpy catalog page, SteamSpy `appdetails` for tracked games off the page | `games`, `game_metric_snapshots` |
+| `catalog_daily` | 20:00 | SteamSpy catalog page, SteamSpy `appdetails` for tracked games off the page, Store details and SteamSpy tags for the stalest games | `games`, `game_metric_snapshots`, normalized dimensions |
 | `reviews_daily` | 20:30 | Steam review summaries for tracked games | `review_observations` |
 
 Times are in `PIPELINE_TIMEZONE` (default `Europe/Prague`). Hourly runs are
@@ -360,6 +386,8 @@ Collection settings use these defaults:
 | `STEAM_TRACKED_APPIDS` | `730,427520,620` | App IDs enriched with reviews and direct player fallback |
 | `PIPELINE_MAX_REJECTED_PERCENT` | `5` | Fail the run if more than this % of SteamSpy rows fail validation |
 | `RAW_RETENTION_DAYS` | `30` | Days to keep raw response bodies; metadata is kept forever |
+| `STORE_DETAILS_PER_RUN` | `120` | Games whose Store details and tags each catalog run refreshes (0–140) |
+| `STEAM_STORE_COUNTRY` | `us` | Store country code; sets the price currency |
 | `PLAYER_HOURLY_RETENTION_DAYS` | `90` | Days to keep hourly player observations; daily rollups are kept forever |
 | `PIPELINE_TIMEZONE` | `Europe/Prague` | Timezone of the job schedule |
 | `JOB_PLAYERS_MINUTE` | `7` | Minute past every hour for `players_hourly` |

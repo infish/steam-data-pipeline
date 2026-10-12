@@ -30,6 +30,16 @@ This file records user-visible changes to the Steam data pipeline.
   the schedule; `PIPELINE_RUN_HOUR/MINUTE` still set the catalog time if
   `JOB_CATALOG_TIME` is not given.
 - `docs/request_budget.md` lists requests per job and source.
+- Normalized dimensions (`V7__normalized_dimensions`): `companies` with
+  `game_developers`/`game_publishers` parsed from SteamSpy strings (keeping
+  names such as "Valve, Inc." whole); `game_details` from the Steam Store
+  (type, release date, platforms, Metacritic, free-to-play, required age,
+  recommendations); `genres`, `categories` and `languages` with their bridge
+  tables; SteamSpy `tags` with vote counts.
+- Each catalog run refreshes Store details and tags for the
+  `STORE_DETAILS_PER_RUN` (default 120) stalest games, new games first, paced
+  within the Store and SteamSpy rate limits. `STEAM_STORE_COUNTRY` (default
+  `us`) sets the Store country.
 
 ### Changed
 
@@ -40,6 +50,9 @@ This file records user-visible changes to the Steam data pipeline.
   catalog run; `daily_pipeline_summary` is grouped by job.
 - The dashboard reads players and reviews from the new tables and shows the
   latest run and any warnings of each job.
+- Genres and languages now come from the Steam Store into `game_genres` and
+  `game_languages`; the empty `games.genre` and `games.languages` columns
+  (see the 2026-10-01 known issue) are left as they are.
 - The writer account is also granted `DELETE`, which retention and
   reprocessing need. It still cannot create, drop or alter tables.
 - Upserting a game never moves `first_seen_at` later or `last_seen_at`

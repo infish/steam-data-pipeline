@@ -23,11 +23,11 @@ Status values:
 | Source | Status | Timestamp from the source | Fresh at most every |
 | --- | --- | --- | --- |
 | [SteamSpy catalog page](#steamspy-catalog-page) | in use | none | 1 day |
-| [SteamSpy app details](#steamspy-app-details) | in use; tags accepted | none | 1 day |
+| [SteamSpy app details](#steamspy-app-details) | in use (backfill, tags) | none | 1 day |
 | [Valve top concurrent players](#valve-top-concurrent-players) | in use | `last_update` | a few minutes |
 | [Valve current players](#valve-current-players) | in use | none | ~8 minutes |
 | [Steam review summary](#steam-review-summary) | in use; `review_score_desc` accepted | none | 10 minutes |
-| [Store app details](#store-app-details) | accepted | none | 1 hour |
+| [Store app details](#store-app-details) | in use (Phase 13) | none | 1 hour |
 | [Store price batch](#store-price-batch) | accepted (only with `filters=price_overview`) | none | 1 hour |
 | [Steam review histogram](#steam-review-histogram) | accepted with caveats | bucket dates | 1 day |
 | [Valve most played (daily peak)](#valve-most-played-daily-peak) | accepted | `rollup_date` | 1 day |
@@ -93,8 +93,8 @@ Fixture: `steamspy_all/page0_tracked.json` (the three tracked apps out of the
 
 ## SteamSpy app details
 
-**Status:** in use (backfill of tracked apps missing from the page, Phase 6);
-`tags` accepted for Phase 13.
+**Status:** in use: backfill of tracked apps missing from the page, and
+`tags` for the games whose Store details are refreshed.
 
 - URL: `https://steamspy.com/api.php?request=appdetails&appid=<appid>`
 - Fields: everything in a page row, plus `genre` (comma-separated),
@@ -171,7 +171,9 @@ Fixtures: `review_summary/<appid>.json` (the review text is removed).
 
 ## Store app details
 
-**Status:** accepted (Phase 13b).
+**Status:** in use: `catalog_daily` refreshes the `STORE_DETAILS_PER_RUN`
+stalest games per run into `game_details` and the genre, category and
+language tables.
 
 - URL: `https://store.steampowered.com/api/appdetails?appids=<appid>&cc=us&l=english`
 - One app ID per request.
@@ -318,3 +320,27 @@ Caveats:
   is not stored.
 
 Fixtures: `news/<appid>.json` (without `contents` and `author`).
+
+## Parsing rules
+
+Rules that are heuristics rather than documented source behaviour:
+
+- **Company names** (`developer`, `publisher` from SteamSpy) are split on
+  commas, but a part that is only a legal-form suffix (`Inc.`, `Ltd.`,
+  `Co.`, `LLC`, `GmbH`, `S.A.`, `AB` and similar; dots and spaces ignored) is
+  joined back onto the name before it, so `Valve, Inc.` stays one company.
+  HTML entities are decoded, whitespace is collapsed, and names that differ
+  only in case are kept once. A company that genuinely ends in a part such as
+  `AB` after a comma is merged with the name before it. The Store's own
+  `developers`/`publishers` lists are not used, because they exist only for
+  games whose details were refreshed.
+- **Release dates** are parsed only when they are complete dates in one of
+  the Store's English formats (`Aug 21, 2012`, `21 Aug, 2012`,
+  `August 21, 2012`, `21 August, 2012`). Anything else is stored as NULL,
+  with the original text in `release_date_text`. An unparseable date on a
+  released game adds a run warning; on a `coming_soon` game it does not.
+- **Languages** come from the Store's `supported_languages` HTML: the text
+  after the first `<br>` (the "full audio" footnote) is dropped, tags are
+  removed, and a `*` marks full audio support.
+- **Genre and category IDs** are the Store's own IDs; their English
+  descriptions are updated whenever a game is refreshed.

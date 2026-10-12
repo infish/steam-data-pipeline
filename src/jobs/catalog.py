@@ -10,6 +10,7 @@ from config import (
 )
 from ingest.raw_store import purge_raw_payloads
 from jobs.base import Job
+from jobs.dimensions import load_company_links, refresh_details
 from jobs.loading import clean_float, clean_int, clean_value
 from quality.data_quality import format_rejections, validate_games_data
 from transform.data_transformer import transform_games_data
@@ -198,6 +199,8 @@ def run_catalog(ctx):
     ingestion_time = ctx.load_time()
     rows_loaded = load_games(ctx.cursor, df, ingestion_time)
     load_game_metric_snapshots(ctx.cursor, df, ctx.run_id, ingestion_time)
+    load_company_links(ctx.cursor, df)
+    refresh_details(ctx, df["appid"].astype(int).tolist())
 
     ctx.counters.update(
         rows_extracted=rows_extracted,

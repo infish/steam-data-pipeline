@@ -63,7 +63,15 @@ class RunContext:
             self.warnings.append(message)
 
     def load_time(self):
-        return self.loaded_at or self.now_fn()
+        """One timestamp for everything a run loads, fixed at first use.
+
+        Every table loaded by a run then shares the same time, and
+        reprocessing can reproduce it exactly.
+        """
+        if self.loaded_at is None:
+            self.loaded_at = self.now_fn()
+
+        return self.loaded_at
 
 
 def acquire_lock(cursor, lock_name):

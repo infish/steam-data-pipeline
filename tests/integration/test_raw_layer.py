@@ -55,7 +55,13 @@ class RawLayerIntegrationTests(IntegrationTestCase):
                 for job, run_id in runs.items()
             },
             {
-                "catalog_daily": {"steamspy_all": 1, "steamspy_appdetails": 1},
+                # Factorio's appdetails is fetched twice: once to backfill
+                # its games row, once for its tags.
+                "catalog_daily": {
+                    "steamspy_all": 1,
+                    "steamspy_appdetails": 5,
+                    "store_appdetails": 4,
+                },
                 "players_hourly": {
                     "valve_top_concurrent": 1,
                     "valve_current_players": 2,
@@ -65,7 +71,17 @@ class RawLayerIntegrationTests(IntegrationTestCase):
             }
         )
 
-        for row in self.raw_rows():
+        rows = self.raw_rows()
+        duplicates = [row for row in rows if row["is_duplicate_of"]]
+        self.assertEqual(
+            [row["source"] for row in duplicates],
+            ["steamspy_appdetails"]
+        )
+
+        for row in rows:
+            if row["is_duplicate_of"]:
+                continue
+
             body = zlib.decompress(row["payload"])
             self.assertEqual(row["http_status"], 200)
             self.assertEqual(row["payload_bytes"], len(body))
@@ -73,7 +89,6 @@ class RawLayerIntegrationTests(IntegrationTestCase):
                 row["payload_sha256"],
                 hashlib.sha256(body).hexdigest()
             )
-            self.assertIsNone(row["is_duplicate_of"])
 
         (spy,) = [
             row for row in self.raw_rows() if row["source"] == "steamspy_all"
@@ -89,7 +104,14 @@ class RawLayerIntegrationTests(IntegrationTestCase):
 
     def test_an_identical_payload_is_stored_once(self):
         self.run_pipeline()
-        first = {row["request_params_hash"]: row for row in self.raw_rows()}
+        first_rows = self.raw_rows()
+        # Body holders by request; a request repeated within the first run
+        # is itself a duplicate.
+        first = {
+            row["request_params_hash"]: row
+            for row in first_rows
+            if row["is_duplicate_of"] is None
+        }
         second_runs = self.run_pipeline()
         second = [
             row
@@ -97,7 +119,7 @@ class RawLayerIntegrationTests(IntegrationTestCase):
             for row in self.raw_rows(run_id)
         ]
 
-        self.assertEqual(len(second), len(first))
+        self.assertEqual(len(second), len(first_rows))
 
         for row in second:
             original = first[row["request_params_hash"]]
@@ -151,6 +173,18 @@ class RawLayerIntegrationTests(IntegrationTestCase):
             ),
             self.query("SELECT * FROM games ORDER BY appid"),
             self.query("SELECT * FROM most_played_daily ORDER BY appid"),
+            self.query("SELECT * FROM game_details ORDER BY appid"),
+            self.query(
+                "SELECT * FROM game_genres ORDER BY appid, genre_id"
+            ),
+            self.query(
+                "SELECT appid, name, votes FROM game_tags JOIN tags"
+                " USING (tag_id) ORDER BY appid, name"
+            ),
+            self.query(
+                "SELECT appid, name, position FROM game_developers"
+                " JOIN companies USING (company_id) ORDER BY appid, name"
+            ),
             self.query(
                 "SELECT run_id, rows_extracted, rows_loaded,"
                 " measurements_loaded, rows_rejected, warning_message, status"
@@ -213,10 +247,12 @@ class RawLayerIntegrationTests(IntegrationTestCase):
         # has no recent duplicate yet and is purged.
         self.run_job("catalog_daily")
 
+        # Duplicates never had a body of their own; compare body holders.
         old_rows = [
             row
             for run_id in old_runs.values()
             for row in self.raw_rows(run_id)
+            if row["is_duplicate_of"] is None
         ]
         purged = Counter(
             row["source"] for row in old_rows if row["payload"] is None
@@ -225,7 +261,10 @@ class RawLayerIntegrationTests(IntegrationTestCase):
             row["source"] for row in old_rows if row["payload"] is not None
         )
 
-        self.assertEqual(kept, {"steamspy_all": 1, "steamspy_appdetails": 1})
+        self.assertEqual(
+            kept,
+            {"steamspy_all": 1, "steamspy_appdetails": 4, "store_appdetails": 4}
+        )
         self.assertEqual(
             purged,
             {

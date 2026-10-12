@@ -113,3 +113,31 @@ def get_player_hourly_retention_days():
         raise ValueError("PLAYER_HOURLY_RETENTION_DAYS must be at least 1")
 
     return value
+
+
+def get_store_details_per_run():
+    raw_value = get_env("STORE_DETAILS_PER_RUN", "120")
+
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise ValueError(
+            "STORE_DETAILS_PER_RUN must be a whole number"
+        ) from error
+
+    if not 0 <= value <= 140:
+        # 140 keeps one catalog run inside the 150-per-5-minute Store budget.
+        raise ValueError("STORE_DETAILS_PER_RUN must be between 0 and 140")
+
+    return value
+
+
+def get_store_country():
+    value = get_env("STEAM_STORE_COUNTRY", "us").strip().lower()
+
+    if len(value) != 2 or not value.isalpha():
+        raise ValueError(
+            "STEAM_STORE_COUNTRY must be a two-letter country code"
+        )
+
+    return value

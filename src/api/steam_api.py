@@ -20,6 +20,7 @@ STEAM_TOP_PLAYERS_URL = (
     "ISteamChartsService/GetGamesByConcurrentPlayers/v1/"
 )
 STEAM_REVIEWS_URL = "https://store.steampowered.com/appreviews/{appid}"
+STORE_APPDETAILS_URL = "https://store.steampowered.com/api/appdetails"
 STEAM_MOST_PLAYED_URL = (
     "https://api.steampowered.com/"
     "ISteamChartsService/GetMostPlayedGames/v1/"
@@ -32,10 +33,15 @@ SOURCE_TOP_CONCURRENT = "valve_top_concurrent"
 SOURCE_CURRENT_PLAYERS = "valve_current_players"
 SOURCE_REVIEW_SUMMARY = "steam_review_summary"
 SOURCE_MOST_PLAYED = "valve_most_played"
+SOURCE_STORE_APPDETAILS = "store_appdetails"
 
 # SteamSpy allows one non-"all" request per second; this is the pause
 # before each appdetails call, including the first after the page request.
 STEAMSPY_REQUEST_INTERVAL_SECONDS = 1.1
+
+# The Store budget is 150 requests per 5 minutes (docs/request_budget.md):
+# one request every 2 s, plus a margin.
+STORE_REQUEST_INTERVAL_SECONDS = 2.1
 
 # The SteamSpy catalog fields run_pipeline reads from a page row.
 CATALOG_ROW_FIELDS = (
@@ -133,7 +139,8 @@ ENRICHMENT_ERRORS = (
 )
 
 
-def fetch_steamspy_app_details(session, store, appid):
+def fetch_steamspy_appdetails_payload(session, store, appid):
+    """The full SteamSpy appdetails object, including tags."""
     details = fetch_json(
         session,
         store,
@@ -155,7 +162,24 @@ def fetch_steamspy_app_details(session, store, appid):
     if not details.get("name"):
         raise ValueError(f"SteamSpy appdetails has no name for app {appid}")
 
+    return details
+
+
+def fetch_steamspy_app_details(session, store, appid):
+    """SteamSpy appdetails shaped like a request=all page row."""
+    details = fetch_steamspy_appdetails_payload(session, store, appid)
     return {field: details.get(field) for field in CATALOG_ROW_FIELDS}
+
+
+def fetch_store_app_details(session, store, appid, country):
+    """The Store appdetails response for one app (prices in `country`)."""
+    return fetch_json(
+        session,
+        store,
+        SOURCE_STORE_APPDETAILS,
+        STORE_APPDETAILS_URL,
+        {"appids": appid, "cc": country, "l": "english"}
+    )
 
 
 def get_tracked_app_details(session, appids, store=None, sleep_fn=time.sleep):
