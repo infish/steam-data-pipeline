@@ -1,4 +1,5 @@
-"""reviews_daily: Steam review summaries for the tracked apps."""
+"""reviews_daily: review summaries, review history and news for tracked apps.
+"""
 
 import logging
 
@@ -6,6 +7,7 @@ from api.steam_api import get_review_summaries
 from config import get_tracked_appids
 from jobs.base import Job
 from jobs.loading import known_appids
+from jobs.review_history import collect_histograms, collect_news
 
 
 def load_review_observations(cursor, summaries, run_id, collected_at):
@@ -60,18 +62,23 @@ def run_reviews(ctx):
         ctx.run_id,
         ctx.load_time()
     )
+    rollups = collect_histograms(ctx, appids, summaries)
+    collect_news(ctx, appids)
+
+    # New news events depend on what earlier runs stored, so they are only
+    # logged; the counters stay the same when a run is reprocessed.
     ctx.counters.update(
         rows_extracted=len(summaries),
-        rows_loaded=loaded,
+        rows_loaded=loaded + rollups,
         measurements_loaded=loaded
     )
 
 
 def clear_reviews_run(cursor, run_id):
-    cursor.execute(
-        "DELETE FROM review_observations WHERE run_id = %s",
-        (run_id,)
-    )
+    # Rollups and events are upserts keyed by period and gid; replaying the
+    # run re-applies them without duplicates.
+    for table in ("review_observations", "review_reconciliation"):
+        cursor.execute(f"DELETE FROM {table} WHERE run_id = %s", (run_id,))
 
 
 REVIEWS_JOB = Job(

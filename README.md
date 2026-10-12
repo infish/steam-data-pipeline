@@ -166,6 +166,27 @@ types (including off-topic activity), the positive share, and Steam's rating
 (`review_score`, `review_score_desc`, e.g. "Very Positive"), with
 `collected_at`.
 
+### `review_rollups`, `review_reconciliation`, `game_events`
+
+Also collected by `reviews_daily` for the tracked games:
+
+- `review_rollups`: up and down review counts per month for each game's whole
+  life, and per day for the last 30 days, from Steam's review histogram. The
+  dates are the source's own (the first day of each period, UTC), so this is
+  real history, not values reconstructed from daily snapshots. The current
+  month and day are marked `is_partial`. Rows are upserted by game, rollup
+  type and period, and an older fetch never overwrites a newer one.
+- `review_reconciliation`: each run compares the histogram's monthly totals
+  with that run's review summary. The two endpoints count different review
+  sets (Phase 10 found totals differing by up to 15%), so the count
+  difference is only recorded; the positive share must agree within 2
+  percentage points, or the run gets a warning.
+- `game_events`: Steam news and update posts with their publication time,
+  feed, `is_patch_notes` (Steam's `patchnotes` tag) and `is_developer_post`
+  (the developer's own announcements, as opposed to press articles). Each
+  news `gid` is stored once; later runs add only new ones. Article text is not
+  stored.
+
 ### `steam_game_measurements` (read-only)
 
 The combined player and review measurements of the single daily run used
@@ -253,7 +274,7 @@ The scheduler runs three jobs, each with its own run rows
 | --- | --- | --- | --- |
 | `players_hourly` | every hour at :07 | Valve top-100 chart, direct lookups for tracked games outside it, daily-peak leaderboard | `player_observations`, `player_daily`, `most_played_daily` |
 | `catalog_daily` | 20:00 | SteamSpy catalog page, SteamSpy `appdetails` for tracked games off the page, Store details and SteamSpy tags for the stalest games, Store prices for all catalog games | `games`, `game_metric_snapshots`, normalized dimensions, `game_price_history` |
-| `reviews_daily` | 20:30 | Steam review summaries for tracked games | `review_observations` |
+| `reviews_daily` | 20:30 | Steam review summaries, review histograms and news for tracked games | `review_observations`, `review_rollups`, `review_reconciliation`, `game_events` |
 
 Times are in `PIPELINE_TIMEZONE` (default `Europe/Prague`). Hourly runs are
 scheduled in UTC, so they stay exactly one hour apart across DST changes;
@@ -466,6 +487,23 @@ docker compose run --rm pipeline python src/main.py players_hourly
 The scheduler does not collect on container startup, which avoids duplicate
 observations during app restarts. Manual runs remain available for focused
 validation.
+
+## Backfill review history or news
+
+Load review history or news for chosen games outside the schedule (the games
+need a `games` row):
+
+```bash
+docker compose run --rm pipeline python src/backfill.py --source review_histogram --appids 730,620
+```
+
+```bash
+docker compose run --rm pipeline python src/backfill.py --source news --appids 730 --count 100
+```
+
+Without `--appids`, the tracked games are used. The backfill runs as its own
+`backfill` job with a run row, lock and raw responses. Running it again adds
+nothing new: review periods and news items are keyed and upserted.
 
 ## Reprocess a run
 

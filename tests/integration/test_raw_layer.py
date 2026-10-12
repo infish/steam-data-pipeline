@@ -68,7 +68,11 @@ class RawLayerIntegrationTests(IntegrationTestCase):
                     "valve_current_players": 2,
                     "valve_most_played": 1,
                 },
-                "reviews_daily": {"steam_review_summary": 3},
+                "reviews_daily": {
+                    "steam_review_summary": 3,
+                    "steam_review_histogram": 3,
+                    "steam_news": 3,
+                },
             }
         )
 
@@ -177,6 +181,17 @@ class RawLayerIntegrationTests(IntegrationTestCase):
             self.query("SELECT * FROM game_details ORDER BY appid"),
             self.query("SELECT * FROM game_price_history ORDER BY price_id"),
             self.query(
+                "SELECT * FROM review_rollups"
+                " ORDER BY appid, rollup_type, period_start"
+            ),
+            self.query(
+                "SELECT run_id, appid, checked_at, histogram_total,"
+                " summary_total, count_difference_percent,"
+                " share_difference_points, within_tolerance"
+                " FROM review_reconciliation ORDER BY run_id, appid"
+            ),
+            self.query("SELECT * FROM game_events ORDER BY gid"),
+            self.query(
                 "SELECT * FROM game_genres ORDER BY appid, genre_id"
             ),
             self.query(
@@ -279,6 +294,8 @@ class RawLayerIntegrationTests(IntegrationTestCase):
                 "valve_current_players": 2,
                 "valve_most_played": 1,
                 "steam_review_summary": 3,
+                "steam_review_histogram": 3,
+                "steam_news": 3,
             }
         )
 

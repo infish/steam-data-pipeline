@@ -16,15 +16,18 @@ the number of app IDs in `STEAM_TRACKED_APPIDS` (default 3).
 | | | Steam Store `api/appdetails` | `STORE_DETAILS_PER_RUN` (120) | 120 |
 | | | Steam Store price batch | catalog games ÷ 50 (≈ 20) | ≈ 20 |
 | `reviews_daily` | 1 | Steam review summary | tracked apps (3) | 3 |
+| | | Steam review histogram | tracked apps (3) | 3 |
+| | | Steam news | tracked apps (3) | 3 |
+| `backfill` (manual) | on demand | review histogram or news | the given apps | — |
 
 ## Per source
 
 | Source | Requests per day | Peak rate | Limit used for planning | Headroom |
 | --- | --- | --- | --- | --- |
-| Valve Web API (top concurrent, current players, most played) | ≤ 120 | ≤ 5 per hourly run | keep modest; no published keyless limit | n/a |
+| Valve Web API (top concurrent, current players, most played, news) | ≤ 123 | ≤ 5 per hourly run | keep modest; no published keyless limit | n/a |
 | SteamSpy `request=all` | 1 | 1 per day | 1 per 60 s | ample |
 | SteamSpy other requests | ≤ 123 | 1 per 1.1 s (enforced pause) | 1 per s | pause is 10% above the limit |
-| Steam Store (`api/appdetails`, price batches, `appreviews`) | ≤ 143 | 1 per 2.1 s (enforced pause) | 150 per 5 min | the whole day's Store requests fit inside one 5-minute budget |
+| Steam Store (`api/appdetails`, price batches, `appreviews`, `appreviewhistogram`) | ≤ 146 | 1 per 2.1 s for details, prices and histograms | 150 per 5 min | the whole day's Store requests fit inside one 5-minute budget |
 
 ## Notes
 

@@ -29,9 +29,9 @@ Status values:
 | [Steam review summary](#steam-review-summary) | in use; `review_score_desc` accepted | none | 10 minutes |
 | [Store app details](#store-app-details) | in use (Phase 13) | none | 1 hour |
 | [Store price batch](#store-price-batch) | in use (only with `filters=price_overview`) | none | 1 hour |
-| [Steam review histogram](#steam-review-histogram) | accepted with caveats | bucket dates | 1 day |
-| [Valve most played (daily peak)](#valve-most-played-daily-peak) | accepted | `rollup_date` | 1 day |
-| [Steam news](#steam-news) | accepted | `date` per item | as published |
+| [Steam review histogram](#steam-review-histogram) | in use, with caveats | bucket dates | 1 day |
+| [Valve most played (daily peak)](#valve-most-played-daily-peak) | in use | `rollup_date` | 1 day |
+| [Steam news](#steam-news) | in use | `date` per item | as published |
 
 Rejected:
 
@@ -234,7 +234,8 @@ Fixtures: `store_price_batch/batch.json`, `batch_without_filter.json`.
 
 ## Steam review histogram
 
-**Status:** accepted with caveats (Phase 15). Undocumented endpoint.
+**Status:** in use, with the caveats below: `reviews_daily` and
+`backfill.py` upsert it into `review_rollups`. Undocumented endpoint.
 
 - URL: `https://store.steampowered.com/appreviewhistogram/<appid>?l=english&review_score_preference=0`
 - Fields: `success` (must be `1`), `count_all_reviews` (boolean),
@@ -274,7 +275,7 @@ Fixtures: `review_histogram/<appid>.json`.
 
 ## Valve most played (daily peak)
 
-**Status:** accepted (Phase 12).
+**Status:** in use: `players_hourly` upserts it into `most_played_daily`.
 
 - URL: `https://api.steampowered.com/ISteamChartsService/GetMostPlayedGames/v1/`
 - Fields: `response.rollup_date`, `response.ranks[].rank`, `appid`,
@@ -297,7 +298,8 @@ Fixture: `most_played/all.json`.
 
 ## Steam news
 
-**Status:** accepted (Phase 15).
+**Status:** in use: `reviews_daily` and `backfill.py` store new items in
+`game_events`.
 
 - URL: `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=<appid>&count=20`
 - Fields to use: `appnews.newsitems[].gid` (unique ID, string), `title`,
@@ -315,6 +317,9 @@ Caveats:
   (15 of 20 items for 730, 9 of 20 for 427520 and 620). `is_patch_notes` can be
   a tag check rather than a title heuristic.
 - `tags` is missing entirely on items without tags.
+- An app's feed can include press items filed under another app: Portal 2's
+  feed had two items with `appid` 70 (Half-Life). Only items whose `appid`
+  matches the requested app are stored.
 - `feed_type` `1` = the developer's Steam community announcements; `0` =
   external news sites (`feedlabel` such as `"PC Gamer"`). Only `feed_type = 1`
   should count as a developer event.

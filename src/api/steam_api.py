@@ -21,6 +21,12 @@ STEAM_TOP_PLAYERS_URL = (
 )
 STEAM_REVIEWS_URL = "https://store.steampowered.com/appreviews/{appid}"
 STORE_APPDETAILS_URL = "https://store.steampowered.com/api/appdetails"
+STEAM_REVIEW_HISTOGRAM_URL = (
+    "https://store.steampowered.com/appreviewhistogram/{appid}"
+)
+STEAM_NEWS_URL = (
+    "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/"
+)
 STEAM_MOST_PLAYED_URL = (
     "https://api.steampowered.com/"
     "ISteamChartsService/GetMostPlayedGames/v1/"
@@ -35,6 +41,8 @@ SOURCE_REVIEW_SUMMARY = "steam_review_summary"
 SOURCE_MOST_PLAYED = "valve_most_played"
 SOURCE_STORE_APPDETAILS = "store_appdetails"
 SOURCE_STORE_PRICES = "store_prices"
+SOURCE_REVIEW_HISTOGRAM = "steam_review_histogram"
+SOURCE_NEWS = "steam_news"
 
 # Batching works with filters=price_overview (docs/sources.md). The maximum
 # batch size is undocumented; 50 stays well below the ~100 worth testing.
@@ -188,6 +196,28 @@ def fetch_store_prices(session, store, appids, country):
             "cc": country,
             "filters": "price_overview",
         }
+    )
+
+
+def fetch_review_histogram(session, store, appid):
+    """The undocumented review histogram (monthly and last-30-day buckets)."""
+    return fetch_json(
+        session,
+        store,
+        SOURCE_REVIEW_HISTOGRAM,
+        STEAM_REVIEW_HISTOGRAM_URL.format(appid=appid),
+        {"l": "english", "review_score_preference": 0}
+    )
+
+
+def fetch_news(session, store, appid, count=20):
+    """The newest `count` Steam news items for an app."""
+    return fetch_json(
+        session,
+        store,
+        SOURCE_NEWS,
+        STEAM_NEWS_URL,
+        {"appid": appid, "count": count}
     )
 
 

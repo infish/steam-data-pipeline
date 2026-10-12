@@ -46,6 +46,15 @@ This file records user-visible changes to the Steam data pipeline.
   `no_price` or `unavailable`); unchanged prices write nothing. The
   `game_price_summary` view derives current price, on-sale flag, lowest price,
   discount events and days since the last discount.
+- Review history and events (`V9__review_history_and_events`):
+  `reviews_daily` upserts Steam's review histogram into `review_rollups`
+  (monthly for each game's life, daily for 30 days, partial periods marked),
+  stores a share-based reconciliation with the review summary in
+  `review_reconciliation`, and adds new news items to `game_events` with
+  `is_patch_notes` from Steam's `patchnotes` tag.
+- `python src/backfill.py --source review_histogram|news --appids …` loads
+  the same data on demand as a `backfill` job; repeated runs add no
+  duplicates.
 
 ### Changed
 
