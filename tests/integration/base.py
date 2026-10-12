@@ -7,7 +7,6 @@ from unittest.mock import patch
 from config import get_mysql_config
 from database.mysql_database import get_connection
 from ingest.replay import FixtureSession
-from jobs.daily import RUN_LOCK_NAME
 import main
 
 
@@ -16,11 +15,17 @@ INTEGRATION_ENABLED = os.getenv("INTEGRATION_DB") == "1"
 # Children before parents, so deletes respect the foreign keys.
 PIPELINE_TABLES = [
     "steam_game_measurements",
+    "player_observations",
+    "review_observations",
+    "player_daily",
+    "most_played_daily",
     "game_metric_snapshots",
     "games",
     "raw_api_responses",
     "pipeline_runs",
 ]
+
+ALL_JOBS = ("catalog_daily", "players_hourly", "reviews_daily")
 
 IGNORED_TABLES = {"flyway_schema_history"}
 
@@ -139,11 +144,18 @@ class IntegrationTestCase(unittest.TestCase):
     def count(self, table):
         return self.query(f"SELECT COUNT(*) AS n FROM {table}")[0]["n"]
 
-    def run_lock_is_free(self):
+    def run_lock_is_free(self, job_name="catalog_daily"):
         return self.query(
             "SELECT IS_FREE_LOCK(%s) AS free",
-            (RUN_LOCK_NAME,)
+            (f"steam_pipeline:{job_name}",)
         )[0]["free"] == 1
+
+    def run_row(self, run_id):
+        (row,) = self.query(
+            "SELECT * FROM pipeline_runs WHERE run_id = %s",
+            (run_id,)
+        )
+        return row
 
     def reset_tables(self):
         connection = get_connection()
@@ -182,8 +194,14 @@ class IntegrationTestCase(unittest.TestCase):
     def session(self, overrides=None):
         return FixtureSession({**CANNED_RESPONSES, **(overrides or {})})
 
-    def run_pipeline(self, overrides=None, now_fn=None, session=None):
-        """Run the daily job against canned HTTP responses; return run_id."""
+    def run_pipeline(
+        self,
+        overrides=None,
+        now_fn=None,
+        session=None,
+        jobs=ALL_JOBS
+    ):
+        """Run jobs against canned HTTP responses; return {job: run_id}."""
         session = session or self.session(overrides)
         options = {
             "session_factory": lambda: session,
@@ -194,4 +212,12 @@ class IntegrationTestCase(unittest.TestCase):
             options["now_fn"] = now_fn
 
         with patch.dict(os.environ, {"STEAM_TRACKED_APPIDS": TRACKED_APPIDS}):
-            return main.run_pipeline(**options)
+            return main.run_pipeline(list(jobs), **options)
+
+    def run_job(self, job_name, overrides=None, now_fn=None, session=None):
+        return self.run_pipeline(
+            overrides,
+            now_fn=now_fn,
+            session=session,
+            jobs=(job_name,)
+        )[job_name]

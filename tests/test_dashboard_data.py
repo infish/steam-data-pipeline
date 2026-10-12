@@ -81,6 +81,20 @@ class BuildMeasurementSeriesTests(unittest.TestCase):
 
         self.assertEqual(list(series["current_players"]), [100, 200])
 
+    def test_review_series_without_source_time_uses_collection_time(self):
+        reviews = pd.DataFrame([
+            {"run_id": 1, "collected_at": datetime(2026, 9, 1, 18, 1),
+             "total_reviews": 100},
+        ])
+
+        series = build_measurement_series(runs(1, 2), reviews, 1)
+
+        self.assertEqual(list(series["total_reviews"].fillna(-1)), [100, -1])
+        self.assertEqual(
+            list(series["measurement_time"]),
+            [datetime(2026, 9, 1, 18, 1), datetime(2026, 9, 2, 18, 5)]
+        )
+
     def test_no_measurements_at_all_gives_an_empty_series(self):
         series = build_measurement_series(
             runs(1, 2),

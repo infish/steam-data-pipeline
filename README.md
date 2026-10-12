@@ -23,8 +23,9 @@ Docker Compose manages these services:
   pipeline's writer account.
 - `migration-assets` — copies migrations from the application image.
 - `migrate` — applies pending Flyway migrations and exits.
-- `scheduler` — runs the pipeline daily.
-- `pipeline` — optional one-shot manual collection.
+- `scheduler` — runs the collection jobs on their schedules (see
+  [Jobs](#jobs)).
+- `pipeline` — optional one-shot manual run of all or some jobs.
 - `dashboard` — provides the interactive analytics interface.
 
 Startup order is enforced:
@@ -39,8 +40,11 @@ MySQL healthy → bootstrap and migrations complete → scheduler and dashboard 
 - Validation and transformation of 1,000 games per configured API page, plus
   any tracked games that are not on that page.
 - Append-only historical metric snapshots.
-- Valve current-player measurements for top-100 games present on the configured
-  catalog page, plus Steam review measurements for configured app IDs.
+- Hourly Valve current-player observations for top-100 games present in the
+  catalog and for tracked games, rolled up per day; daily Steam review
+  observations for tracked games.
+- A raw landing layer that stores every API response before parsing, with
+  deduplication, retention and reprocessing.
 - Audited pipeline runs with success/failure status.
 - SQL window functions for changes between snapshots.
 - Versioned and repeatable Flyway migrations.
@@ -90,68 +94,38 @@ time:
 - Current and original price
 - Discount percentage
 
-### `steam_game_measurements`
+### `player_observations`, `player_daily`, `most_played_daily`
 
-Focused observations from Valve endpoints:
+Collected by the hourly `players_hourly` job:
 
-- Current players and rank for Valve's top 100 concurrent games that are also
-  present on the configured SteamSpy catalog page
-- Direct current-player measurements for configured tracked games outside the
-  top 100
-- Steam Store review totals for tracked games, across all languages and
-  purchase types and including off-topic activity
-- Explicit collection time
-- Valve's source measurement time for the top-100 feed; direct calls retain a
-  null source time and use collection time as the chart fallback
+- `player_observations`: one row per game per run, with current players,
+  rank, `collected_at`, Valve's `source_measured_at` (top-100 feed only), and
+  `source` (`top100` or `direct`). Rows older than
+  `PLAYER_HOURLY_RETENTION_DAYS` (default 90) are deleted.
+- `player_daily`: per game and UTC day, the peak, average and minimum players,
+  the number of observations and the best rank. The days touched by each run
+  are recomputed after it; rollups are kept forever.
+- `most_played_daily`: Valve's daily-peak leaderboard (top 100 by peak
+  players, with last week's rank) for the previous complete UTC day. It is not
+  limited to catalog games.
 
-The Valve calls are intentionally limited to `STEAM_TRACKED_APPIDS`. The
-default is Counter-Strike (`730`), Factorio (`427520`), and Portal 2 (`620`),
-which adds review requests only for those games. The top-100 player coverage is
-one bulk request per daily run.
+Top-100 games that are not in `games` are skipped (the run logs their count).
+Tracked games outside the top 100 get a direct player lookup.
 
-A tracked game that is not on the configured SteamSpy page is fetched with
-SteamSpy `request=appdetails`, one request per game with a pause of just over
-one second before each (SteamSpy's limit is one such request per second). The
-result is shaped like a page row, so the game gets a `games` row and a snapshot,
-and its Valve measurement can be stored. If that lookup fails, the run records
-a warning and skips the game. Because of this, `rows_extracted` can exceed
-1,000.
+### `review_observations`
 
-Top-100 games that are neither on the page nor tracked are not fetched; their
-Valve measurements are skipped and the run logs only their count.
+Collected by the daily `reviews_daily` job for the games in
+`STEAM_TRACKED_APPIDS`: Steam review totals across all languages and purchase
+types (including off-topic activity), the positive share, and Steam's rating
+(`review_score`, `review_score_desc`, e.g. "Very Positive"), with
+`collected_at`.
 
-Every source, including candidates for future phases, is documented in
-[`docs/sources.md`](docs/sources.md) with its fields, timestamp meaning,
-freshness, rate limit and caveats. Recorded example responses are in
-`tests/fixtures/sources/`.
+### `steam_game_measurements` (read-only)
 
-The endpoints currently called are:
-
-- Catalog and owner estimates:
-  `https://steamspy.com/api.php?request=all&page=<page>`, plus
-  `https://steamspy.com/api.php?request=appdetails&appid=<appid>` for tracked
-  games missing from that page
-- Current players:
-  `ISteamChartsService/GetGamesByConcurrentPlayers/v1/` for the top 100, then
-  `ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=<appid>`
-  for configured games outside the top 100
-- Review summary:
-  `https://store.steampowered.com/appreviews/<appid>` with `filter=recent`,
-  `language=all`, `review_type=all`, `purchase_type=all`,
-  `filter_offtopic_activity=0`, and one returned review
-
-SteamSpy is the core source: if the catalog request fails, the run fails.
-Valve data is enrichment, so its failures degrade the run instead of aborting
-it. The run still ends as `SUCCESS`, each problem is logged, and the joined
-messages are stored in `pipeline_runs.warning_message` (up to 2,000
-characters). The dashboard shows a warning when the latest run has one.
-
-- Top-100 chart fails: every tracked app falls back to a direct player
-  lookup, so those rows have no rank and no source timestamp.
-- Player lookup fails for a tracked app: that app has no measurement row for
-  the run.
-- Review lookup fails or is inconsistent: the row is kept with empty review
-  fields.
+The combined player and review measurements of the single daily run used
+before the job split. Its rows were copied into `player_observations` and
+`review_observations`; the table is kept unchanged for audit and is no longer
+written.
 
 ### `raw_api_responses`
 
@@ -174,12 +148,14 @@ still points to is kept until that duplicate is old enough too.
 
 ### `pipeline_runs`
 
-Operational audit information:
+Operational audit information, one row per job run:
 
+- Job (`job_name`: `catalog_daily`, `players_hourly`, `reviews_daily`, or
+  `daily_legacy` for runs before the job split)
 - Start and finish timestamps
 - Status
-- Rows extracted from SteamSpy (`rows_extracted`) and loaded (`rows_loaded`)
-- Valve measurements loaded (`measurements_loaded`; historical runs were
+- Rows extracted and loaded (`rows_extracted`, `rows_loaded`)
+- Observations loaded (`measurements_loaded`; runs before the job split were
   backfilled from `steam_game_measurements`)
 - Rows rejected by validation (`rows_rejected`); before this column existed,
   any invalid row failed the whole run, so historical runs show 0
@@ -196,13 +172,13 @@ run logs the first 20 rejected app IDs with their reasons, stores the count in
 `PIPELINE_MAX_REJECTED_PERCENT` of rows are rejected, the run fails instead,
 because that usually means the source format changed.
 
-Only one pipeline run can be active at a time. Each run takes the MySQL named
-lock `steam_pipeline_run` before it creates a run row; if another run holds the
-lock, the new run logs a warning and exits without creating a row. While
-holding the lock, a run marks any leftover `RUNNING` rows as `FAILED` with
-`error_message = 'Abandoned: process ended before completion'`. Their
-`finished_at` stays empty because the process never finished. This covers runs
-interrupted by a crash or container restart.
+Only one run of a job can be active at a time. Each run takes the MySQL named
+lock `steam_pipeline:<job>` before it creates a run row; if another run of the
+same job holds the lock, the new run logs a warning and exits without creating
+a row. While holding the lock, a run marks its job's leftover `RUNNING` rows as
+`FAILED` with `error_message = 'Abandoned: process ended before completion'`.
+Their `finished_at` stays empty because the process never finished. This
+covers runs interrupted by a crash or container restart.
 
 If recording a failure itself fails (for example, the database connection is
 lost), the pipeline logs that secondary error and re-raises the original one.
@@ -221,6 +197,55 @@ All database timestamps are stored in UTC. The dashboard converts displayed run 
   collection time, otherwise at the run's finish time.
 - Games are selected by app ID and shown as `name (appid)`, so two games with
   the same name stay distinct.
+
+## Jobs
+
+The scheduler runs three jobs, each with its own run rows
+(`pipeline_runs.job_name`), lock and warnings:
+
+| Job | Default schedule | Collects | Writes |
+| --- | --- | --- | --- |
+| `players_hourly` | every hour at :07 | Valve top-100 chart, direct lookups for tracked games outside it, daily-peak leaderboard | `player_observations`, `player_daily`, `most_played_daily` |
+| `catalog_daily` | 20:00 | SteamSpy catalog page, SteamSpy `appdetails` for tracked games off the page | `games`, `game_metric_snapshots` |
+| `reviews_daily` | 20:30 | Steam review summaries for tracked games | `review_observations` |
+
+Times are in `PIPELINE_TIMEZONE` (default `Europe/Prague`). Hourly runs are
+scheduled in UTC, so they stay exactly one hour apart across DST changes;
+daily runs keep their wall-clock time. Jobs run one at a time; when several
+are due together they run in the order above. A failing job is logged and
+the others continue.
+
+`catalog_daily` makes sure every tracked game has a `games` row, which player
+and review observations need. A tracked game that is not on the configured
+SteamSpy page is fetched with SteamSpy `request=appdetails`, one request per
+game with a pause of just over one second before each (SteamSpy's limit is
+one such request per second). The result is shaped like a page row, so the
+game gets a `games` row and a snapshot. If that lookup fails, the run records
+a warning and skips the game. Because of this, `rows_extracted` can exceed
+1,000. Top-100 games that are neither on the page nor tracked are not
+fetched; the players job skips them and logs their count.
+
+A job's lock (`steam_pipeline:<job>`) stops the same job from running twice,
+for example a manual run during a scheduled one. At start, a job marks its
+own leftover `RUNNING` rows as abandoned; it never touches other jobs' runs.
+
+SteamSpy is the core source: if the catalog request fails, the
+`catalog_daily` run fails. Valve and Store data are enrichment, so their
+failures degrade a run instead of aborting it: the run still ends as
+`SUCCESS`, and each problem is logged and stored in
+`pipeline_runs.warning_message` (up to 2,000 characters).
+
+- Top-100 chart fails: every tracked app falls back to a direct player
+  lookup, so those rows have no rank and no source timestamp.
+- A player or review lookup fails for an app: that app has no row for the
+  run.
+- The daily-peak leaderboard fails: the players run keeps its observations.
+
+Every source, including candidates for future phases, is documented in
+[`docs/sources.md`](docs/sources.md) with its fields, timestamp meaning,
+freshness, rate limit and caveats. Recorded example responses are in
+`tests/fixtures/sources/`. Requests per job and source are budgeted in
+[`docs/request_budget.md`](docs/request_budget.md).
 
 ## SQL analytics
 
@@ -335,10 +360,15 @@ Collection settings use these defaults:
 | `STEAM_TRACKED_APPIDS` | `730,427520,620` | App IDs enriched with reviews and direct player fallback |
 | `PIPELINE_MAX_REJECTED_PERCENT` | `5` | Fail the run if more than this % of SteamSpy rows fail validation |
 | `RAW_RETENTION_DAYS` | `30` | Days to keep raw response bodies; metadata is kept forever |
-| `PIPELINE_TIMEZONE` | `Europe/Prague` | Daily scheduler timezone |
-| `PIPELINE_RUN_HOUR` | `20` | Daily local run hour |
-| `PIPELINE_RUN_MINUTE` | `0` | Daily local run minute |
+| `PLAYER_HOURLY_RETENTION_DAYS` | `90` | Days to keep hourly player observations; daily rollups are kept forever |
+| `PIPELINE_TIMEZONE` | `Europe/Prague` | Timezone of the job schedule |
+| `JOB_PLAYERS_MINUTE` | `7` | Minute past every hour for `players_hourly` |
+| `JOB_CATALOG_TIME` | `20:00` | Local time for `catalog_daily` |
+| `JOB_REVIEWS_TIME` | `20:30` | Local time for `reviews_daily` |
 | `PIPELINE_RUN_ON_STARTUP` | `false` | Optional immediate collection on scheduler startup |
+
+`PIPELINE_RUN_HOUR` and `PIPELINE_RUN_MINUTE` from earlier versions still set
+the catalog time when `JOB_CATALOG_TIME` is not given.
 
 Keep `PIPELINE_RUN_ON_STARTUP=false` for persistent deployments. Container
 restarts otherwise create extra observations unrelated to the daily schedule.
@@ -371,23 +401,28 @@ The Compose port mapping publishes the dashboard on port `8501` on all host
 interfaces. Restrict it with a firewall or change the mapping to
 `127.0.0.1:8501:8501` if it should only be reachable locally.
 
-## Run another snapshot
+## Run jobs manually
+
+Run all three jobs once, in order (catalog, players, reviews):
 
 ```bash
 docker compose run --rm pipeline
 ```
 
-This applies pending migrations, refreshes the configured SteamSpy catalog
-page, and appends Valve measurements for the tracked app IDs.
+Run only some jobs:
 
-The scheduler runs once daily. It does not collect on container startup, which
-avoids duplicate observations during app restarts. Manual runs remain available
-for focused validation.
+```bash
+docker compose run --rm pipeline python src/main.py players_hourly
+```
+
+The scheduler does not collect on container startup, which avoids duplicate
+observations during app restarts. Manual runs remain available for focused
+validation.
 
 ## Reprocess a run
 
-Rebuild a run's snapshots and Valve measurements from its stored raw
-responses, without calling any API:
+Rebuild a run's loaded rows (snapshots, player or review observations,
+depending on its job) from its stored raw responses, without calling any API:
 
 ```bash
 docker compose --profile manual run --rm pipeline python src/reprocess.py --run-id 42

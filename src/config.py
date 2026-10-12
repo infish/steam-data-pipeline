@@ -97,3 +97,19 @@ def get_raw_retention_days():
         raise ValueError("RAW_RETENTION_DAYS must be at least 1")
 
     return value
+
+
+def get_player_hourly_retention_days():
+    raw_value = get_env("PLAYER_HOURLY_RETENTION_DAYS", "90")
+
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise ValueError(
+            "PLAYER_HOURLY_RETENTION_DAYS must be a whole number"
+        ) from error
+
+    if value < 1:
+        raise ValueError("PLAYER_HOURLY_RETENTION_DAYS must be at least 1")
+
+    return value

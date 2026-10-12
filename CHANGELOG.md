@@ -13,13 +13,33 @@ This file records user-visible changes to the Steam data pipeline.
   rows point to it (`is_duplicate_of`).
 - `RAW_RETENTION_DAYS` (default 30): payload bodies older than this are
   removed at the end of each daily run; metadata is kept.
-- `python src/reprocess.py --run-id N` rebuilds a run's snapshots and Valve
-  measurements from its stored raw responses, idempotently.
+- `python src/reprocess.py --run-id N` rebuilds a run's loaded rows from its
+  stored raw responses, idempotently.
+- Collection is split into three jobs with their own runs, locks and
+  warnings: `players_hourly` (every hour), `catalog_daily` and
+  `reviews_daily` (`V6__jobs_and_observations`, `pipeline_runs.job_name`).
+- `player_observations` and `review_observations` store measurements by
+  grain; the existing `steam_game_measurements` rows were copied into them and
+  the old table is kept read-only.
+- `player_daily` rolls hourly observations up per game and UTC day (peak,
+  average, minimum, count, best rank); `most_played_daily` stores Valve's
+  daily-peak leaderboard.
+- `PLAYER_HOURLY_RETENTION_DAYS` (default 90) deletes old hourly observations;
+  daily rollups are kept.
+- `JOB_PLAYERS_MINUTE`, `JOB_CATALOG_TIME` and `JOB_REVIEWS_TIME` configure
+  the schedule; `PIPELINE_RUN_HOUR/MINUTE` still set the catalog time if
+  `JOB_CATALOG_TIME` is not given.
+- `docs/request_budget.md` lists requests per job and source.
 
 ### Changed
 
-- The run lifecycle moved from `main.py` to `src/jobs/base.py`, and the daily
-  collection to `src/jobs/daily.py`; `python src/main.py` behaves as before.
+- The run lifecycle moved from `main.py` to `src/jobs/base.py`.
+  `python src/main.py` runs all jobs once, or only the jobs named on the
+  command line.
+- `latest_successful_run` and `current_game_metrics` now refer to the latest
+  catalog run; `daily_pipeline_summary` is grouped by job.
+- The dashboard reads players and reviews from the new tables and shows the
+  latest run and any warnings of each job.
 - The writer account is also granted `DELETE`, which retention and
   reprocessing need. It still cannot create, drop or alter tables.
 - Upserting a game never moves `first_seen_at` later or `last_seen_at`

@@ -1,7 +1,9 @@
+-- The latest successful catalog run: snapshots come only from catalog runs.
 CREATE OR REPLACE VIEW latest_successful_run AS
 SELECT MAX(run_id) AS run_id
 FROM pipeline_runs
-WHERE status = 'SUCCESS';
+WHERE status = 'SUCCESS'
+  AND job_name IN ('catalog_daily', 'daily_legacy');
 
 
 CREATE OR REPLACE VIEW current_game_metrics AS
@@ -171,9 +173,11 @@ WINDOW game_history AS (
 CREATE OR REPLACE VIEW daily_pipeline_summary AS
 SELECT
     DATE(finished_at) AS run_date,
+    job_name,
     COUNT(*) AS successful_runs,
     SUM(rows_extracted) AS rows_extracted,
-    SUM(rows_loaded) AS rows_loaded
+    SUM(rows_loaded) AS rows_loaded,
+    SUM(measurements_loaded) AS measurements_loaded
 FROM pipeline_runs
 WHERE status = 'SUCCESS'
-GROUP BY DATE(finished_at);
+GROUP BY DATE(finished_at), job_name;

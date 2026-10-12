@@ -3,32 +3,37 @@
 import pandas as pd
 
 
-MEASUREMENT_COLUMNS = [
-    "collected_at",
-    "source_measured_at",
-    "current_players",
-    "total_reviews",
-    "positive_reviews",
-    "negative_reviews",
-    "review_score_percent",
-]
+TIME_COLUMNS = ("source_measured_at", "collected_at", "finished_at")
 
 
 def build_measurement_series(runs, measurements, first_measured_run_id):
     """Return one row per successful run, with NaN where the game was missed.
 
-    runs: successful pipeline runs with run_id and finished_at.
-    measurements: the selected game's rows from steam_game_measurements,
-        with run_id and MEASUREMENT_COLUMNS.
-    first_measured_run_id: the first run that stored any Valve measurement;
+    runs: successful runs of the job that collects the metric, with run_id
+        and finished_at.
+    measurements: the selected game's rows for that metric, with run_id,
+        collected_at, optionally source_measured_at, and value columns.
+    first_measured_run_id: the first run that stored any such measurement;
         earlier runs predate collection and are left out.
 
-    A run without a measurement for the game keeps NaN metric values, so a
-    line chart breaks there instead of drawing across the gap. The x value,
+    A run without a measurement for the game keeps NaN values, so a line
+    chart breaks there instead of drawing across the gap. The x value,
     measurement_time, falls back from Valve's source time to collection time
     to the run's finish time.
     """
-    columns = ["run_id", "finished_at", *MEASUREMENT_COLUMNS, "measurement_time"]
+    measurements = measurements.copy()
+
+    if "source_measured_at" not in measurements.columns:
+        measurements["source_measured_at"] = pd.NaT
+
+    value_columns = [
+        column for column in measurements.columns
+        if column not in ("run_id", "source_measured_at", "collected_at")
+    ]
+    columns = [
+        "run_id", "finished_at", "collected_at", "source_measured_at",
+        *value_columns, "measurement_time"
+    ]
 
     if first_measured_run_id is None or pd.isna(first_measured_run_id):
         return pd.DataFrame(columns=columns)
@@ -37,12 +42,9 @@ def build_measurement_series(runs, measurements, first_measured_run_id):
         runs["run_id"] >= first_measured_run_id,
         ["run_id", "finished_at"]
     ]
-    series = series_runs.merge(
-        measurements[["run_id", *MEASUREMENT_COLUMNS]],
-        on="run_id",
-        how="left"
-    )
-    for column in ("source_measured_at", "collected_at", "finished_at"):
+    series = series_runs.merge(measurements, on="run_id", how="left")
+
+    for column in TIME_COLUMNS:
         series[column] = pd.to_datetime(series[column])
 
     series["measurement_time"] = (

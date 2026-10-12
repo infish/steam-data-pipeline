@@ -14,7 +14,7 @@ class RunJobErrorHandlingTests(unittest.TestCase):
         self.session = MagicMock()
 
     def run_with(self, body):
-        job = Job(name="test", lock_name="test_lock", body=body)
+        job = Job(name="test", body=body)
 
         with (
             patch.object(base, "get_connection", return_value=self.connection),
@@ -36,7 +36,7 @@ class RunJobErrorHandlingTests(unittest.TestCase):
         self.assertIn("rollback broke", logged)
         self.cursor.execute.assert_any_call(
             "SELECT RELEASE_LOCK(%s)",
-            ("test_lock",)
+            ("steam_pipeline:test",)
         )
         self.session.close.assert_called_once_with()
         # The main connection and the raw store's connection are both closed.
@@ -48,11 +48,11 @@ class RunJobErrorHandlingTests(unittest.TestCase):
 
         self.assertIsNone(self.run_with(body))
 
-        self.assertIn("Another pipeline run is active", "\n".join(self.logs))
+        self.assertIn("Another test run is active", "\n".join(self.logs))
         body.assert_not_called()
         self.cursor.execute.assert_called_once_with(
             "SELECT GET_LOCK(%s, 0)",
-            ("test_lock",)
+            ("steam_pipeline:test",)
         )
         self.connection.commit.assert_not_called()
         self.connection.close.assert_called_once_with()

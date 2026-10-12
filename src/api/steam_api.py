@@ -20,6 +20,10 @@ STEAM_TOP_PLAYERS_URL = (
     "ISteamChartsService/GetGamesByConcurrentPlayers/v1/"
 )
 STEAM_REVIEWS_URL = "https://store.steampowered.com/appreviews/{appid}"
+STEAM_MOST_PLAYED_URL = (
+    "https://api.steampowered.com/"
+    "ISteamChartsService/GetMostPlayedGames/v1/"
+)
 
 # Source names recorded in raw_api_responses.source (see docs/sources.md).
 SOURCE_STEAMSPY_ALL = "steamspy_all"
@@ -27,6 +31,7 @@ SOURCE_STEAMSPY_APPDETAILS = "steamspy_appdetails"
 SOURCE_TOP_CONCURRENT = "valve_top_concurrent"
 SOURCE_CURRENT_PLAYERS = "valve_current_players"
 SOURCE_REVIEW_SUMMARY = "steam_review_summary"
+SOURCE_MOST_PLAYED = "valve_most_played"
 
 # SteamSpy allows one non-"all" request per second; this is the pause
 # before each appdetails call, including the first after the page request.
@@ -192,15 +197,6 @@ REVIEW_PARAMS = {
 }
 
 
-def empty_reviews():
-    return {
-        "positive_reviews": None,
-        "negative_reviews": None,
-        "total_reviews": None,
-        "review_score_percent": None
-    }
-
-
 def fetch_top_player_chart(session, store):
     charts_data = fetch_json(
         session,
@@ -225,7 +221,7 @@ def fetch_top_player_chart(session, store):
             "current_players": int(row["concurrent_in_game"]),
             "player_rank": int(row["rank"]),
             "source_measured_at": source_measured_at,
-            **empty_reviews()
+            "source": "top100"
         }
         for row in chart_rows
     }
@@ -250,7 +246,7 @@ def fetch_current_players(session, store, appid):
         "current_players": int(players_data["player_count"]),
         "player_rank": None,
         "source_measured_at": None,
-        **empty_reviews()
+        "source": "direct"
     }
 
 
@@ -284,22 +280,25 @@ def fetch_review_summary(session, store, appid):
         )
 
     return {
+        "appid": appid,
         "positive_reviews": positive,
         "negative_reviews": negative,
         "total_reviews": total,
         "review_score_percent": (
             round(positive / total * 100, 2)
             if total else None
-        )
+        ),
+        "review_score": summary.get("review_score"),
+        "review_score_desc": summary.get("review_score_desc")
     }
 
 
-def get_steam_measurements(session, store=None):
-    """Return (measurements, warnings) from Valve's player and review APIs.
+def get_player_measurements(session, store=None):
+    """Return (measurements, warnings) from Valve's player APIs.
 
-    A failed top-100 chart falls back to direct player lookups for the
-    tracked apps. A failed player lookup skips that app; a failed review
-    lookup keeps the app's row with null review fields.
+    The top-100 chart covers most games in one request. Tracked apps outside
+    it get a direct lookup; if the chart fails, every tracked app does. A
+    failed direct lookup skips that app with a warning.
     """
     store = store or MemoryRawStore()
     warnings = []
@@ -314,28 +313,68 @@ def get_steam_measurements(session, store=None):
         measurements = {}
 
     for appid in get_tracked_appids():
-        if appid not in measurements:
-            try:
-                measurements[appid] = fetch_current_players(
-                    session,
-                    store,
-                    appid
-                )
-            except ENRICHMENT_ERRORS as error:
-                warnings.append(
-                    f"Valve player lookup failed for app {appid}, "
-                    f"row skipped: {error}"
-                )
-                continue
+        if appid in measurements:
+            continue
 
         try:
-            measurements[appid].update(
-                fetch_review_summary(session, store, appid)
-            )
+            measurements[appid] = fetch_current_players(session, store, appid)
         except ENRICHMENT_ERRORS as error:
             warnings.append(
-                f"Steam review lookup failed for app {appid}, "
-                f"reviews left empty: {error}"
+                f"Valve player lookup failed for app {appid}, "
+                f"row skipped: {error}"
             )
 
     return list(measurements.values()), warnings
+
+
+def get_review_summaries(session, appids, store=None):
+    """Return (summaries, warnings); a failed lookup skips that app."""
+    store = store or MemoryRawStore()
+    summaries = []
+    warnings = []
+
+    for appid in appids:
+        try:
+            summaries.append(fetch_review_summary(session, store, appid))
+        except ENRICHMENT_ERRORS as error:
+            warnings.append(
+                f"Steam review lookup failed for app {appid}, "
+                f"skipped: {error}"
+            )
+
+    return summaries, warnings
+
+
+def get_most_played(session, store=None):
+    """Return (rollup_date, rows) for Valve's daily peak leaderboard.
+
+    rollup_date is the UTC day the peaks refer to (the previous full day).
+    """
+    store = store or MemoryRawStore()
+    data = fetch_json(
+        session,
+        store,
+        SOURCE_MOST_PLAYED,
+        STEAM_MOST_PLAYED_URL
+    ).get("response", {})
+    rollup_date = data.get("rollup_date")
+    ranks = data.get("ranks") or []
+
+    if not isinstance(rollup_date, int) or not ranks:
+        raise ValueError("Steam most-played leaderboard is incomplete")
+
+    rows = [
+        {
+            "appid": int(row["appid"]),
+            "player_rank": int(row["rank"]),
+            # -1 (or 0) marks a game that was not ranked last week.
+            "last_week_rank": (
+                int(row["last_week_rank"])
+                if int(row.get("last_week_rank") or 0) > 0 else None
+            ),
+            "peak_players": int(row["peak_in_game"]),
+        }
+        for row in ranks
+    ]
+    day = datetime.fromtimestamp(rollup_date, timezone.utc).date()
+    return day, rows

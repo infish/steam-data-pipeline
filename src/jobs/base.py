@@ -28,11 +28,18 @@ def utc_now():
 @dataclass(frozen=True)
 class Job:
     name: str
-    lock_name: str
     # body(ctx) collects, parses and loads; it raises to fail the run.
     body: Callable
     # clear_run(cursor, run_id) deletes a run's loaded rows before reprocess.
     clear_run: Optional[Callable] = None
+    # SQL returning the original load time of run %s, for reprocessing.
+    load_time_sql: Optional[str] = None
+    # Older job names whose stuck RUNNING rows this job also reaps.
+    reaps: tuple = ()
+
+    @property
+    def lock_name(self):
+        return f"steam_pipeline:{self.name}"
 
 
 @dataclass
@@ -69,26 +76,29 @@ def release_lock(cursor, lock_name):
     cursor.fetchall()
 
 
-def reap_abandoned_runs(cursor):
-    # Only safe while holding the run lock: no other run can be live.
+def reap_abandoned_runs(cursor, job_names):
+    # Only safe for jobs whose lock we hold: no run of theirs can be live.
+    # Other jobs have their own locks and may legitimately be running.
+    placeholders = ", ".join(["%s"] * len(job_names))
     cursor.execute(
-        """
+        f"""
         UPDATE pipeline_runs
         SET status = 'FAILED', error_message = %s
         WHERE status = 'RUNNING'
+          AND job_name IN ({placeholders})
         """,
-        (ABANDONED_RUN_MESSAGE,)
+        (ABANDONED_RUN_MESSAGE, *job_names)
     )
     return cursor.rowcount
 
 
-def start_pipeline_run(cursor, started_at):
+def start_pipeline_run(cursor, started_at, job_name):
     cursor.execute(
         """
-        INSERT INTO pipeline_runs (started_at, status)
-        VALUES (%s, %s)
+        INSERT INTO pipeline_runs (job_name, started_at, status)
+        VALUES (%s, %s, %s)
         """,
-        (started_at, "RUNNING")
+        (job_name, started_at, "RUNNING")
     )
     return cursor.lastrowid
 
@@ -183,23 +193,24 @@ def run_job(
 
         if not acquire_lock(cursor, job.lock_name):
             logging.warning(
-                "Another pipeline run is active; skipping this %s run",
+                "Another %s run is active; skipping this run",
                 job.name
             )
             return None
 
         lock_acquired = True
 
-        abandoned_runs = reap_abandoned_runs(cursor)
+        abandoned_runs = reap_abandoned_runs(cursor, (job.name, *job.reaps))
         connection.commit()
 
         if abandoned_runs:
             logging.warning(
-                "Marked %s abandoned RUNNING pipeline run(s) as FAILED",
-                abandoned_runs
+                "Marked %s abandoned RUNNING %s run(s) as FAILED",
+                abandoned_runs,
+                job.name
             )
 
-        run_id = start_pipeline_run(cursor, now_fn())
+        run_id = start_pipeline_run(cursor, now_fn(), job.name)
         connection.commit()
 
         raw_connection = get_connection()
@@ -240,7 +251,7 @@ def run_job(
         return run_id
 
     except Exception as error:
-        logging.exception("Pipeline failed")
+        logging.exception("%s run failed", job.name)
 
         if None not in (connection, cursor, run_id):
             try:

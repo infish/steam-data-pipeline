@@ -285,7 +285,8 @@ Freshness: `Cache-Control: no-cache, no-store`, but the content changes once a
 day. One request per day is enough.
 
 Caveats: only the top 100 by daily peak; Factorio and Portal 2 were not
-included. `peak_in_game` here is a daily peak and is not comparable with the
+included. `last_week_rank` is `-1` for games that were not ranked the week
+before (5 of 100 in the recording); store it as NULL. `peak_in_game` here is a daily peak and is not comparable with the
 instantaneous `concurrent_in_game` from the top concurrent feed.
 
 Fixture: `most_played/all.json`.

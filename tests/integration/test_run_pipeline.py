@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import requests
 
-from jobs import daily
+from jobs import catalog
 
 from .base import (
     CANNED_TOP_GAMES,
@@ -15,26 +15,35 @@ from .base import (
 
 
 class RunPipelineIntegrationTests(IntegrationTestCase):
-    def test_successful_run_loads_all_tables(self):
+    def test_full_run_loads_every_job(self):
         with self.assertLogs(level="INFO") as logs:
-            self.run_pipeline()
+            runs = self.run_pipeline()
 
         logged = "\n".join(logs.output)
         self.assertIn("1 top-100 games not in catalog page; skipped", logged)
         self.assertNotIn("WARNING", logged)
 
-        runs = self.query("SELECT * FROM pipeline_runs")
-        self.assertEqual(len(runs), 1)
-        run = runs[0]
-        self.assertEqual(run["status"], "SUCCESS")
-        self.assertEqual(run["rows_extracted"], 4)
-        self.assertEqual(run["rows_loaded"], 4)
-        self.assertEqual(run["measurements_loaded"], 3)
-        self.assertEqual(run["rows_rejected"], 0)
-        self.assertIsNotNone(run["finished_at"])
-        self.assertIsNone(run["error_message"])
-        self.assertIsNone(run["warning_message"])
-        self.assertTrue(self.run_lock_is_free())
+        for job_name, run_id in runs.items():
+            run = self.run_row(run_id)
+            self.assertEqual(run["job_name"], job_name)
+            self.assertEqual(run["status"], "SUCCESS")
+            self.assertIsNotNone(run["finished_at"])
+            self.assertIsNone(run["error_message"])
+            self.assertIsNone(run["warning_message"])
+            self.assertTrue(self.run_lock_is_free(job_name))
+
+        catalog_run = self.run_row(runs["catalog_daily"])
+        self.assertEqual(catalog_run["rows_extracted"], 4)
+        self.assertEqual(catalog_run["rows_loaded"], 4)
+        self.assertEqual(catalog_run["rows_rejected"], 0)
+        self.assertEqual(
+            self.run_row(runs["players_hourly"])["measurements_loaded"],
+            3
+        )
+        self.assertEqual(
+            self.run_row(runs["reviews_daily"])["measurements_loaded"],
+            3
+        )
 
         self.assertEqual(
             [row["appid"] for row in self.query(
@@ -47,9 +56,6 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             "SELECT * FROM game_metric_snapshots ORDER BY appid"
         )
         self.assertEqual(len(snapshots), 4)
-        self.assertTrue(
-            all(row["run_id"] == run["run_id"] for row in snapshots)
-        )
         counter_strike = snapshots[2]
         self.assertEqual(counter_strike["appid"], 730)
         self.assertEqual(counter_strike["owners_low"], 50_000_000)
@@ -57,23 +63,41 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
         self.assertEqual(counter_strike["total_reviews"], 10_000)
         self.assertEqual(float(counter_strike["review_score_percent"]), 90.0)
 
-        measurements = {
+        players = {
             row["appid"]: row
-            for row in self.query("SELECT * FROM steam_game_measurements")
+            for row in self.query("SELECT * FROM player_observations")
         }
-        self.assertEqual(sorted(measurements), [620, 730, 427520])
-        self.assertEqual(measurements[730]["current_players"], 1_500_000)
-        self.assertEqual(measurements[730]["player_rank"], 1)
+        self.assertEqual(sorted(players), [620, 730, 427520])
+        self.assertEqual(players[730]["current_players"], 1_500_000)
+        self.assertEqual(players[730]["player_rank"], 1)
+        self.assertEqual(players[730]["source"], "top100")
         self.assertEqual(
-            measurements[730]["source_measured_at"],
+            players[730]["source_measured_at"],
             CHART_MEASURED_AT
         )
-        self.assertIsNone(measurements[620]["player_rank"])
-        self.assertIsNone(measurements[620]["source_measured_at"])
-        self.assertEqual(measurements[620]["total_reviews"], 1000)
+        self.assertEqual(players[620]["source"], "direct")
+        self.assertIsNone(players[620]["player_rank"])
+        self.assertIsNone(players[620]["source_measured_at"])
+
+        reviews = {
+            row["appid"]: row
+            for row in self.query("SELECT * FROM review_observations")
+        }
+        self.assertEqual(sorted(reviews), [620, 730, 427520])
+        self.assertEqual(reviews[620]["total_reviews"], 1000)
+        self.assertEqual(float(reviews[730]["review_score_percent"]), 87.5)
+
+        self.assertEqual(self.count("player_daily"), 3)
+        # The leaderboard comes from the recorded Phase 10 fixture.
+        self.assertEqual(self.count("most_played_daily"), 100)
+        (top,) = self.query(
+            "SELECT * FROM most_played_daily WHERE player_rank = 1"
+        )
+        self.assertEqual(top["appid"], 730)
+        self.assertEqual(top["rollup_date"].isoformat(), "2026-09-30")
 
     def test_failure_after_snapshot_insert_rolls_back_the_load(self):
-        real_load = daily.load_steam_measurements
+        real_load = catalog.load_game_metric_snapshots
 
         def load_then_fail(*args, **kwargs):
             real_load(*args, **kwargs)
@@ -81,53 +105,51 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
 
         with (
             patch.object(
-                daily,
-                "load_steam_measurements",
+                catalog,
+                "load_game_metric_snapshots",
                 side_effect=load_then_fail
             ),
             self.assertLogs(level="ERROR"),
             self.assertRaisesRegex(RuntimeError, "forced failure")
         ):
-            self.run_pipeline()
+            self.run_job("catalog_daily")
 
         self.assertEqual(self.count("game_metric_snapshots"), 0)
-        self.assertEqual(self.count("steam_game_measurements"), 0)
         self.assertEqual(self.count("games"), 0)
 
-        runs = self.query("SELECT * FROM pipeline_runs")
-        self.assertEqual(len(runs), 1)
-        self.assertEqual(runs[0]["status"], "FAILED")
-        self.assertEqual(
-            runs[0]["error_message"],
-            "forced failure after load"
-        )
-        self.assertIsNotNone(runs[0]["finished_at"])
+        (run,) = self.query("SELECT * FROM pipeline_runs")
+        self.assertEqual(run["status"], "FAILED")
+        self.assertEqual(run["error_message"], "forced failure after load")
+        self.assertIsNotNone(run["finished_at"])
         self.assertTrue(self.run_lock_is_free())
 
-    def test_valve_warnings_reach_the_run_row(self):
-        with self.assertLogs(level="WARNING") as logs:
-            self.run_pipeline({
-                "valve_current_players:620": (503, {"error": "busy"}),
-                "steam_review_summary:730": (502, {"error": "bad gateway"}),
-            })
+    def test_valve_warnings_reach_their_job_runs(self):
+        self.run_job("catalog_daily")
 
-        logged = "\n".join(logs.output)
-        self.assertIn("Steam review lookup failed for app 730", logged)
-        self.assertIn("Valve player lookup failed for app 620", logged)
+        with self.assertLogs(level="WARNING"):
+            runs = self.run_pipeline(
+                {
+                    "valve_current_players:620": (503, {"error": "busy"}),
+                    "steam_review_summary:730": (502, {"error": "gateway"}),
+                },
+                jobs=("players_hourly", "reviews_daily")
+            )
 
-        (run,) = self.query("SELECT * FROM pipeline_runs")
-        self.assertEqual(run["status"], "SUCCESS")
-        self.assertEqual(run["measurements_loaded"], 2)
-        warning_lines = run["warning_message"].split("\n")
-        self.assertEqual(len(warning_lines), 2)
-        self.assertTrue(warning_lines[0].startswith(
-            "Steam review lookup failed for app 730, reviews left empty: 502"
-        ))
-        self.assertTrue(warning_lines[1].startswith(
+        players = self.run_row(runs["players_hourly"])
+        self.assertEqual(players["status"], "SUCCESS")
+        self.assertEqual(players["measurements_loaded"], 2)
+        self.assertTrue(players["warning_message"].startswith(
             "Valve player lookup failed for app 620, row skipped: 503"
         ))
 
-    def test_steamspy_failure_still_fails_the_run(self):
+        reviews = self.run_row(runs["reviews_daily"])
+        self.assertEqual(reviews["status"], "SUCCESS")
+        self.assertEqual(reviews["measurements_loaded"], 2)
+        self.assertTrue(reviews["warning_message"].startswith(
+            "Steam review lookup failed for app 730, skipped: 502"
+        ))
+
+    def test_steamspy_failure_fails_only_the_catalog_run(self):
         with (
             self.assertLogs(level="ERROR"),
             self.assertRaisesRegex(requests.ConnectionError, "SteamSpy down")
@@ -136,14 +158,23 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
                 "steamspy_all": requests.ConnectionError("SteamSpy down")
             })
 
-        (run,) = self.query("SELECT * FROM pipeline_runs")
-        self.assertEqual(run["status"], "FAILED")
-        self.assertEqual(run["error_message"], "SteamSpy down")
+        runs = {
+            row["job_name"]: row
+            for row in self.query("SELECT * FROM pipeline_runs")
+        }
+        self.assertEqual(runs["catalog_daily"]["status"], "FAILED")
+        self.assertEqual(
+            runs["catalog_daily"]["error_message"],
+            "SteamSpy down"
+        )
+        # The other jobs still ran; with no games rows they loaded nothing.
+        self.assertEqual(runs["players_hourly"]["status"], "SUCCESS")
+        self.assertEqual(runs["players_hourly"]["measurements_loaded"], 0)
+        self.assertEqual(runs["reviews_daily"]["status"], "SUCCESS")
 
-        # The failed request is still in the landing layer; Valve was
-        # never called.
-        (raw,) = self.query("SELECT * FROM raw_api_responses")
-        self.assertEqual(raw["source"], "steamspy_all")
+        (raw,) = self.query(
+            "SELECT * FROM raw_api_responses WHERE source = 'steamspy_all'"
+        )
         self.assertIsNone(raw["http_status"])
         self.assertEqual(raw["error_message"], "SteamSpy down")
 
@@ -158,14 +189,17 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             patch.dict(os.environ, {"PIPELINE_MAX_REJECTED_PERCENT": "50"}),
             self.assertLogs(level="WARNING") as logs
         ):
-            self.run_pipeline({"steamspy_all": self.with_bad_rows()})
+            run_id = self.run_job(
+                "catalog_daily",
+                {"steamspy_all": self.with_bad_rows()}
+            )
 
         logged = "\n".join(logs.output)
         self.assertIn("Rejected 2 of 6 SteamSpy rows", logged)
         self.assertIn("111: name is missing or empty", logged)
         self.assertIn("222: owners is missing", logged)
 
-        (run,) = self.query("SELECT * FROM pipeline_runs")
+        run = self.run_row(run_id)
         self.assertEqual(run["status"], "SUCCESS")
         self.assertEqual(run["rows_extracted"], 6)
         self.assertEqual(run["rows_loaded"], 4)
@@ -189,14 +223,17 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             self.assertLogs(level="ERROR"),
             self.assertRaisesRegex(ValueError, "above the 5% limit")
         ):
-            self.run_pipeline({"steamspy_all": self.with_bad_rows()})
+            self.run_job(
+                "catalog_daily",
+                {"steamspy_all": self.with_bad_rows()}
+            )
 
         (run,) = self.query("SELECT * FROM pipeline_runs")
         self.assertEqual(run["status"], "FAILED")
         self.assertIn("2 of 6 rows (33.3%)", run["error_message"])
         self.assertEqual(self.count("games"), 0)
 
-    def test_off_page_tracked_app_is_backfilled_with_its_measurement(self):
+    def test_off_page_tracked_app_is_backfilled_with_its_observations(self):
         with self.assertLogs(level="INFO") as logs:
             self.run_pipeline()
 
@@ -214,15 +251,19 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
         )
         self.assertEqual(snapshot["owners_low"], 5_000_000)
 
-        (measurement,) = self.query(
-            "SELECT * FROM steam_game_measurements WHERE appid = 427520"
+        (players,) = self.query(
+            "SELECT * FROM player_observations WHERE appid = 427520"
         )
-        self.assertEqual(measurement["current_players"], 20000)
-        self.assertEqual(measurement["total_reviews"], 200)
+        self.assertEqual(players["current_players"], 20000)
+
+        (reviews,) = self.query(
+            "SELECT * FROM review_observations WHERE appid = 427520"
+        )
+        self.assertEqual(reviews["total_reviews"], 200)
 
     def test_backfill_failure_is_a_warning_and_the_run_succeeds(self):
         with self.assertLogs(level="WARNING") as logs:
-            self.run_pipeline({
+            runs = self.run_pipeline({
                 "steamspy_appdetails:427520": (503, {"error": "busy"})
             })
 
@@ -231,16 +272,19 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             "\n".join(logs.output)
         )
 
-        (run,) = self.query("SELECT * FROM pipeline_runs")
-        self.assertEqual(run["status"], "SUCCESS")
-        self.assertEqual(run["rows_loaded"], 3)
-        self.assertEqual(run["measurements_loaded"], 2)
-        self.assertTrue(run["warning_message"].startswith(
+        catalog_run = self.run_row(runs["catalog_daily"])
+        self.assertEqual(catalog_run["status"], "SUCCESS")
+        self.assertEqual(catalog_run["rows_loaded"], 3)
+        self.assertTrue(catalog_run["warning_message"].startswith(
             "SteamSpy appdetails failed for tracked app 427520, skipped: 503"
         ))
         self.assertEqual(
+            self.run_row(runs["players_hourly"])["measurements_loaded"],
+            2
+        )
+        self.assertEqual(
             self.query(
-                "SELECT appid FROM steam_game_measurements WHERE appid = 427520"
+                "SELECT appid FROM player_observations WHERE appid = 427520"
             ),
             []
         )

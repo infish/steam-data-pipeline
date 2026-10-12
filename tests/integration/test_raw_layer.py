@@ -26,7 +26,12 @@ CHANGED_CHART = {
 
 
 class RawLayerIntegrationTests(IntegrationTestCase):
-    def raw_rows(self, run_id):
+    def raw_rows(self, run_id=None):
+        if run_id is None:
+            return self.query(
+                "SELECT * FROM raw_api_responses ORDER BY response_id"
+            )
+
         return self.query(
             "SELECT * FROM raw_api_responses WHERE run_id = %s"
             " ORDER BY response_id",
@@ -41,22 +46,26 @@ class RawLayerIntegrationTests(IntegrationTestCase):
         finally:
             connection.close()
 
-    def test_a_run_stores_every_response_before_parsing(self):
-        run_id = self.run_pipeline()
-        rows = self.raw_rows(run_id)
+    def test_every_response_is_stored_before_parsing(self):
+        runs = self.run_pipeline()
 
         self.assertEqual(
-            Counter(row["source"] for row in rows),
             {
-                "steamspy_all": 1,
-                "valve_top_concurrent": 1,
-                "valve_current_players": 2,
-                "steam_review_summary": 3,
-                "steamspy_appdetails": 1,
+                job: Counter(row["source"] for row in self.raw_rows(run_id))
+                for job, run_id in runs.items()
+            },
+            {
+                "catalog_daily": {"steamspy_all": 1, "steamspy_appdetails": 1},
+                "players_hourly": {
+                    "valve_top_concurrent": 1,
+                    "valve_current_players": 2,
+                    "valve_most_played": 1,
+                },
+                "reviews_daily": {"steam_review_summary": 3},
             }
         )
 
-        for row in rows:
+        for row in self.raw_rows():
             body = zlib.decompress(row["payload"])
             self.assertEqual(row["http_status"], 200)
             self.assertEqual(row["payload_bytes"], len(body))
@@ -66,7 +75,9 @@ class RawLayerIntegrationTests(IntegrationTestCase):
             )
             self.assertIsNone(row["is_duplicate_of"])
 
-        (spy,) = [row for row in rows if row["source"] == "steamspy_all"]
+        (spy,) = [
+            row for row in self.raw_rows() if row["source"] == "steamspy_all"
+        ]
         self.assertEqual(
             json.loads(zlib.decompress(spy["payload"])),
             CANNED_RESPONSES["steamspy_all"]
@@ -77,11 +88,14 @@ class RawLayerIntegrationTests(IntegrationTestCase):
         )
 
     def test_an_identical_payload_is_stored_once(self):
-        first_run = self.run_pipeline()
-        second_run = self.run_pipeline()
-        first = {row["request_params_hash"]: row
-                 for row in self.raw_rows(first_run)}
-        second = self.raw_rows(second_run)
+        self.run_pipeline()
+        first = {row["request_params_hash"]: row for row in self.raw_rows()}
+        second_runs = self.run_pipeline()
+        second = [
+            row
+            for run_id in second_runs.values()
+            for row in self.raw_rows(run_id)
+        ]
 
         self.assertEqual(len(second), len(first))
 
@@ -97,10 +111,11 @@ class RawLayerIntegrationTests(IntegrationTestCase):
 
         # Both runs still loaded their data from the stored payloads.
         self.assertEqual(self.count("game_metric_snapshots"), 8)
+        self.assertEqual(self.count("player_observations"), 6)
 
     def test_a_changed_payload_is_stored_again(self):
         self.run_pipeline()
-        second_run = self.run_pipeline(CHANGED_CHART)
+        second_run = self.run_job("players_hourly", CHANGED_CHART)
 
         (chart,) = [
             row for row in self.raw_rows(second_run)
@@ -109,82 +124,135 @@ class RawLayerIntegrationTests(IntegrationTestCase):
         self.assertIsNotNone(chart["payload"])
         self.assertIsNone(chart["is_duplicate_of"])
 
-    def loaded_rows(self, run_id):
+    def loaded_rows(self, runs):
         return (
             self.query(
                 "SELECT * FROM game_metric_snapshots WHERE run_id = %s"
                 " ORDER BY appid",
-                (run_id,)
+                (runs["catalog_daily"],)
             ),
             self.query(
                 "SELECT run_id, appid, collected_at, source_measured_at,"
-                " current_players, player_rank, positive_reviews,"
-                " negative_reviews, total_reviews, review_score_percent"
-                " FROM steam_game_measurements WHERE run_id = %s"
-                " ORDER BY appid",
-                (run_id,)
+                " current_players, player_rank, source"
+                " FROM player_observations WHERE run_id = %s ORDER BY appid",
+                (runs["players_hourly"],)
+            ),
+            self.query(
+                "SELECT appid, observation_date, peak_players, avg_players,"
+                " min_players, observation_count, best_rank, updated_at"
+                " FROM player_daily ORDER BY appid, observation_date"
+            ),
+            self.query(
+                "SELECT run_id, appid, collected_at, positive_reviews,"
+                " negative_reviews, total_reviews, review_score_percent,"
+                " review_score, review_score_desc"
+                " FROM review_observations WHERE run_id = %s ORDER BY appid",
+                (runs["reviews_daily"],)
             ),
             self.query("SELECT * FROM games ORDER BY appid"),
+            self.query("SELECT * FROM most_played_daily ORDER BY appid"),
             self.query(
-                "SELECT rows_extracted, rows_loaded, measurements_loaded,"
-                " rows_rejected, warning_message, status"
-                " FROM pipeline_runs WHERE run_id = %s",
-                (run_id,)
+                "SELECT run_id, rows_extracted, rows_loaded,"
+                " measurements_loaded, rows_rejected, warning_message, status"
+                " FROM pipeline_runs ORDER BY run_id"
             ),
         )
 
-    def test_reprocessing_a_run_rebuilds_identical_rows(self):
-        run_id = self.run_pipeline({
+    def test_reprocessing_runs_rebuilds_identical_rows(self):
+        runs = self.run_pipeline({
             "steam_review_summary:620": (502, {"error": "bad gateway"})
         })
-        before = self.loaded_rows(run_id)
+        before = self.loaded_rows(runs)
         raw_count = self.count("raw_api_responses")
 
         with patch.dict(os.environ, {"STEAM_TRACKED_APPIDS": TRACKED_APPIDS}):
-            reprocess_run(run_id)
-            after_first = self.loaded_rows(run_id)
-            reprocess_run(run_id)
-            after_second = self.loaded_rows(run_id)
+            for run_id in runs.values():
+                reprocess_run(run_id)
+
+            after_first = self.loaded_rows(runs)
+
+            for run_id in runs.values():
+                reprocess_run(run_id)
+
+            after_second = self.loaded_rows(runs)
 
         self.assertEqual(len(before[0]), 4)
         self.assertEqual(len(before[1]), 3)
-        self.assertIn("app 620", before[3][0]["warning_message"])
+        self.assertEqual(len(before[3]), 2)
+        self.assertIn(
+            "app 620",
+            self.run_row(runs["reviews_daily"])["warning_message"]
+        )
         self.assertEqual(after_first, before)
         self.assertEqual(after_second, before)
         # Reprocessing reads the landing layer; it writes nothing to it.
         self.assertEqual(self.count("raw_api_responses"), raw_count)
 
     def test_reprocessing_needs_stored_raw_responses(self):
-        run_id = self.execute(
+        catalog_run = self.execute(
+            "INSERT INTO pipeline_runs (job_name, started_at, finished_at,"
+            " status) VALUES ('catalog_daily', NOW(6), NOW(6), 'SUCCESS')"
+        )
+        legacy_run = self.execute(
             "INSERT INTO pipeline_runs (started_at, finished_at, status)"
             " VALUES (NOW(6), NOW(6), 'SUCCESS')"
         )
 
         with self.assertRaisesRegex(ValueError, "no stored raw responses"):
-            reprocess_run(run_id)
+            reprocess_run(catalog_run)
 
-    def test_old_bodies_are_purged_unless_a_recent_duplicate_uses_them(self):
+        with self.assertRaisesRegex(ValueError, "'daily_legacy'"):
+            reprocess_run(legacy_run)
+
+    def test_retention_purges_unreferenced_old_bodies(self):
         long_ago = utc_now() - timedelta(days=40)
-        old_run = self.run_pipeline(now_fn=lambda: long_ago)
-        # Same payloads except the chart: the new run's duplicates point at
-        # the old bodies, so only the old chart body is unreferenced.
-        self.run_pipeline(CHANGED_CHART)
+        old_runs = self.run_pipeline(now_fn=lambda: long_ago)
 
-        old_rows = self.raw_rows(old_run)
-        purged = [row for row in old_rows if row["payload"] is None]
-        kept = [row for row in old_rows if row["payload"] is not None]
+        # Retention runs at the end of the catalog job. Its own requests
+        # repeat the old catalog bodies, so those stay; every other old body
+        # has no recent duplicate yet and is purged.
+        self.run_job("catalog_daily")
 
-        self.assertEqual(
-            [row["source"] for row in purged],
-            ["valve_top_concurrent"]
+        old_rows = [
+            row
+            for run_id in old_runs.values()
+            for row in self.raw_rows(run_id)
+        ]
+        purged = Counter(
+            row["source"] for row in old_rows if row["payload"] is None
         )
-        self.assertIsNotNone(purged[0]["payload_purged_at"])
-        self.assertIsNotNone(purged[0]["payload_sha256"])
-        self.assertEqual(purged[0]["http_status"], 200)
-        self.assertEqual(len(kept), len(old_rows) - 1)
+        kept = Counter(
+            row["source"] for row in old_rows if row["payload"] is not None
+        )
 
-        with self.assertRaisesRegex(LookupError, "purged"):
-            self.read(purged[0]["response_id"])
+        self.assertEqual(kept, {"steamspy_all": 1, "steamspy_appdetails": 1})
+        self.assertEqual(
+            purged,
+            {
+                "valve_top_concurrent": 1,
+                "valve_current_players": 2,
+                "valve_most_played": 1,
+                "steam_review_summary": 3,
+            }
+        )
+
+        for row in old_rows:
+            self.assertIsNotNone(row["payload_sha256"])
+            self.assertEqual(row["http_status"], 200)
+
+            if row["payload"] is None:
+                self.assertIsNotNone(row["payload_purged_at"])
+
+                with self.assertRaisesRegex(LookupError, "purged"):
+                    self.read(row["response_id"])
+
+        # An identical response whose original body was purged stores its
+        # body again instead of pointing at the purged row.
+        new_players = self.run_job("players_hourly")
+
+        for row in self.raw_rows(new_players):
+            self.assertIsNotNone(row["payload"])
+            self.assertIsNone(row["is_duplicate_of"])
 
 
 if __name__ == "__main__":
