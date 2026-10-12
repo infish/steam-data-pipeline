@@ -31,6 +31,7 @@ PIPELINE_TABLES = [
     "game_developers",
     "game_publishers",
     "companies",
+    "game_price_history",
     "game_metric_snapshots",
     "games",
     "raw_api_responses",

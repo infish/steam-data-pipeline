@@ -106,6 +106,26 @@ days. A failed refresh keeps the previous values and adds a run warning; a
 game the Store no longer returns is marked `store_available = FALSE` and keeps
 its last known details.
 
+### `game_price_history` and `game_price_summary`
+
+Each catalog run checks the price of every catalog game in batches of 50
+(`filters=price_overview`, country `STEAM_STORE_COUNTRY`) and keeps a Type 2
+history: one row per price version per game and country, with `valid_from`,
+`valid_to` and `is_current`. A changed price closes the current version and
+opens a new one; an unchanged price writes nothing. `price_state` records
+`priced`, `no_price` (sold without a price, such as free to play) or
+`unavailable` (the Store returned no data), so a free-to-paid change or a
+removal from sale is a version like any other. Amounts are in the currency's
+minor unit (cents for USD) and are never compared across currencies.
+
+The `game_price_summary` view adds, per game and country: the current price
+and discount, whether the game is on sale, the lowest price recorded (in the
+latest currency), the number of discount events (a version that starts a
+discount after a full-price one), and the days since the last discount ended.
+
+Reprocessing a catalog run does not replay its price check, because price
+history only moves forward.
+
 ### `game_metric_snapshots`
 
 Append-only SteamSpy values for each pipeline run. `snapshot_time` is the
@@ -232,7 +252,7 @@ The scheduler runs three jobs, each with its own run rows
 | Job | Default schedule | Collects | Writes |
 | --- | --- | --- | --- |
 | `players_hourly` | every hour at :07 | Valve top-100 chart, direct lookups for tracked games outside it, daily-peak leaderboard | `player_observations`, `player_daily`, `most_played_daily` |
-| `catalog_daily` | 20:00 | SteamSpy catalog page, SteamSpy `appdetails` for tracked games off the page, Store details and SteamSpy tags for the stalest games | `games`, `game_metric_snapshots`, normalized dimensions |
+| `catalog_daily` | 20:00 | SteamSpy catalog page, SteamSpy `appdetails` for tracked games off the page, Store details and SteamSpy tags for the stalest games, Store prices for all catalog games | `games`, `game_metric_snapshots`, normalized dimensions, `game_price_history` |
 | `reviews_daily` | 20:30 | Steam review summaries for tracked games | `review_observations` |
 
 Times are in `PIPELINE_TIMEZONE` (default `Europe/Prague`). Hourly runs are

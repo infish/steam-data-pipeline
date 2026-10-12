@@ -34,6 +34,11 @@ SOURCE_CURRENT_PLAYERS = "valve_current_players"
 SOURCE_REVIEW_SUMMARY = "steam_review_summary"
 SOURCE_MOST_PLAYED = "valve_most_played"
 SOURCE_STORE_APPDETAILS = "store_appdetails"
+SOURCE_STORE_PRICES = "store_prices"
+
+# Batching works with filters=price_overview (docs/sources.md). The maximum
+# batch size is undocumented; 50 stays well below the ~100 worth testing.
+PRICE_BATCH_SIZE = 50
 
 # SteamSpy allows one non-"all" request per second; this is the pause
 # before each appdetails call, including the first after the page request.
@@ -169,6 +174,21 @@ def fetch_steamspy_app_details(session, store, appid):
     """SteamSpy appdetails shaped like a request=all page row."""
     details = fetch_steamspy_appdetails_payload(session, store, appid)
     return {field: details.get(field) for field in CATALOG_ROW_FIELDS}
+
+
+def fetch_store_prices(session, store, appids, country):
+    """One price_overview batch for several apps."""
+    return fetch_json(
+        session,
+        store,
+        SOURCE_STORE_PRICES,
+        STORE_APPDETAILS_URL,
+        {
+            "appids": ",".join(str(appid) for appid in appids),
+            "cc": country,
+            "filters": "price_overview",
+        }
+    )
 
 
 def fetch_store_app_details(session, store, appid, country):

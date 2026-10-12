@@ -28,7 +28,7 @@ Status values:
 | [Valve current players](#valve-current-players) | in use | none | ~8 minutes |
 | [Steam review summary](#steam-review-summary) | in use; `review_score_desc` accepted | none | 10 minutes |
 | [Store app details](#store-app-details) | in use (Phase 13) | none | 1 hour |
-| [Store price batch](#store-price-batch) | accepted (only with `filters=price_overview`) | none | 1 hour |
+| [Store price batch](#store-price-batch) | in use (only with `filters=price_overview`) | none | 1 hour |
 | [Steam review histogram](#steam-review-histogram) | accepted with caveats | bucket dates | 1 day |
 | [Valve most played (daily peak)](#valve-most-played-daily-peak) | accepted | `rollup_date` | 1 day |
 | [Steam news](#steam-news) | accepted | `date` per item | as published |
@@ -208,7 +208,9 @@ Fixtures: `store_appdetails/<appid>.json` (trimmed to the fields above).
 
 ## Store price batch
 
-**Status:** accepted (Phase 14), only with `filters=price_overview`.
+**Status:** in use: `catalog_daily` checks all catalog games in batches of
+50 and versions changes in `game_price_history`. Only with
+`filters=price_overview`.
 
 - URL: `https://store.steampowered.com/api/appdetails?appids=<a>,<b>,...&cc=us&filters=price_overview`
 - **Batching confirmed** with `filters=price_overview`: three app IDs in one
@@ -225,8 +227,8 @@ Caveats:
 - A game with no price (free to play) returns `"data": []`, **an empty list,
   not an object**. Parsers must handle both.
 - The currency follows `cc`; `cc=us` returned `USD`. Never mix currencies.
-- The maximum number of app IDs per request is not documented; test before
-  using batches larger than about 100.
+- The maximum number of app IDs per request is not documented. The pipeline
+  uses batches of 50; only batches of 3 were recorded.
 
 Fixtures: `store_price_batch/batch.json`, `batch_without_filter.json`.
 

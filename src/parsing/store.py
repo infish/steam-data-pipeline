@@ -117,3 +117,47 @@ def parse_steamspy_tags(payload):
         for name, votes in tags.items()
         if str(name).strip() and to_int(votes) is not None
     ]
+
+
+PRICE_FIELDS = ("currency", "initial_price", "final_price", "discount_percent")
+
+
+def parse_price_batch(appids, payload):
+    """Return {appid: price state} from a filters=price_overview batch.
+
+    Each state has price_state ('priced', 'no_price' or 'unavailable') and,
+    when priced, currency and amounts in minor units. A game the Store sells
+    without a price comes back as "data": [] (a list), not an object.
+    """
+    payload = payload or {}
+    states = {}
+
+    for appid in appids:
+        entry = payload.get(str(appid)) or {}
+        data = entry.get("data")
+        price = data.get("price_overview") if isinstance(data, dict) else None
+
+        if not entry.get("success"):
+            state = {"price_state": "unavailable"}
+        elif not price:
+            state = {"price_state": "no_price"}
+        else:
+            state = {
+                "price_state": "priced",
+                "currency": price.get("currency"),
+                "initial_price": to_int(price.get("initial")),
+                "final_price": to_int(price.get("final")),
+                "discount_percent": to_int(price.get("discount_percent")),
+            }
+
+            if not state["currency"] or state["final_price"] is None:
+                raise ValueError(
+                    f"Store price for app {appid} has no currency or amount"
+                )
+
+        for field in PRICE_FIELDS:
+            state.setdefault(field, None)
+
+        states[appid] = state
+
+    return states

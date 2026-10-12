@@ -131,11 +131,20 @@ class FixtureSession:
         return json.loads(path.read_text())
 
     def _price_batch(self, appids):
-        """Answer a price batch from each app's recorded store details."""
+        """Answer a price batch per app: a 'store_price:<appid>' override
+        (the batch entry itself), else the app's store details."""
         batch = {}
 
         for appid in appids:
-            details = self._fixture(f"store_appdetails:{appid}")
+            if f"store_price:{appid}" in self.overrides:
+                batch[appid] = self.overrides[f"store_price:{appid}"]
+                continue
+
+            override = self.overrides.get(f"store_appdetails:{appid}")
+            details = (
+                override if isinstance(override, dict)
+                else self._fixture(f"store_appdetails:{appid}")
+            )
 
             if details is None:
                 batch[appid] = {"success": False}

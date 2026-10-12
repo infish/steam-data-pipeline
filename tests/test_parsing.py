@@ -6,6 +6,7 @@ from pathlib import Path
 from parsing.names import split_company_names
 from parsing.store import (
     parse_languages,
+    parse_price_batch,
     parse_release_date,
     parse_steamspy_tags,
     parse_store_details,
@@ -173,6 +174,46 @@ class SteamSpyTagTests(unittest.TestCase):
     def test_apps_without_tags(self):
         self.assertEqual(parse_steamspy_tags({"tags": []}), [])
         self.assertEqual(parse_steamspy_tags({}), [])
+
+
+
+class PriceBatchTests(unittest.TestCase):
+    def test_recorded_batch(self):
+        states = parse_price_batch(
+            [427520, 620, 730],
+            fixture("store_price_batch/batch.json")
+        )
+
+        self.assertEqual(states[620], {
+            "price_state": "priced",
+            "currency": "USD",
+            "initial_price": 999,
+            "final_price": 199,
+            "discount_percent": 80,
+        })
+        self.assertEqual(states[427520]["final_price"], 3500)
+        # Free to play: "data": [] rather than an object.
+        self.assertEqual(states[730], {
+            "price_state": "no_price",
+            "currency": None,
+            "initial_price": None,
+            "final_price": None,
+            "discount_percent": None,
+        })
+
+    def test_unsuccessful_or_missing_entries_are_unavailable(self):
+        states = parse_price_batch([1, 2], {"1": {"success": False}})
+
+        self.assertEqual(states[1]["price_state"], "unavailable")
+        self.assertEqual(states[2]["price_state"], "unavailable")
+
+    def test_a_price_without_currency_is_an_error(self):
+        with self.assertRaisesRegex(ValueError, "no currency"):
+            parse_price_batch(
+                [1],
+                {"1": {"success": True,
+                       "data": {"price_overview": {"final": 100}}}}
+            )
 
 
 if __name__ == "__main__":

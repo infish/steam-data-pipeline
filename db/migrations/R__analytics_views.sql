@@ -181,3 +181,78 @@ SELECT
 FROM pipeline_runs
 WHERE status = 'SUCCESS'
 GROUP BY DATE(finished_at), job_name;
+
+-- Current price per game and Store country, with values derived from the
+-- whole price history. Amounts are compared only within one currency: the
+-- currency of the latest priced version.
+CREATE OR REPLACE VIEW game_price_summary AS
+WITH versions AS (
+    SELECT
+        history.*,
+        LAG(history.discount_percent) OVER (
+            PARTITION BY history.appid, history.country_code
+            ORDER BY history.valid_from, history.price_id
+        ) AS previous_discount_percent
+    FROM game_price_history AS history
+),
+latest_currency AS (
+    SELECT appid, country_code, currency
+    FROM (
+        SELECT
+            appid,
+            country_code,
+            currency,
+            ROW_NUMBER() OVER (
+                PARTITION BY appid, country_code
+                ORDER BY valid_from DESC, price_id DESC
+            ) AS recency
+        FROM game_price_history
+        WHERE price_state = 'priced'
+    ) AS priced
+    WHERE recency = 1
+)
+SELECT
+    current_version.appid,
+    current_version.country_code,
+    current_version.price_state,
+    current_version.currency,
+    current_version.initial_price AS current_initial_price,
+    current_version.final_price AS current_final_price,
+    current_version.discount_percent AS current_discount_percent,
+    current_version.valid_from AS current_since,
+    COALESCE(current_version.discount_percent, 0) > 0 AS on_sale,
+    latest_currency.currency AS lowest_price_currency,
+    (
+        SELECT MIN(versions.final_price)
+        FROM versions
+        WHERE versions.appid = current_version.appid
+          AND versions.country_code = current_version.country_code
+          AND versions.price_state = 'priced'
+          AND versions.currency = latest_currency.currency
+    ) AS lowest_price,
+    (
+        SELECT COUNT(*)
+        FROM versions
+        WHERE versions.appid = current_version.appid
+          AND versions.country_code = current_version.country_code
+          AND versions.discount_percent > 0
+          AND COALESCE(versions.previous_discount_percent, 0) = 0
+    ) AS discount_events,
+    CASE
+        WHEN COALESCE(current_version.discount_percent, 0) > 0 THEN 0
+        ELSE DATEDIFF(
+            UTC_TIMESTAMP(),
+            (
+                SELECT MAX(versions.valid_to)
+                FROM versions
+                WHERE versions.appid = current_version.appid
+                  AND versions.country_code = current_version.country_code
+                  AND versions.discount_percent > 0
+            )
+        )
+    END AS days_since_last_discount
+FROM game_price_history AS current_version
+LEFT JOIN latest_currency
+    ON latest_currency.appid = current_version.appid
+   AND latest_currency.country_code = current_version.country_code
+WHERE current_version.is_current;

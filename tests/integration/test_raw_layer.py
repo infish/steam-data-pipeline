@@ -61,6 +61,7 @@ class RawLayerIntegrationTests(IntegrationTestCase):
                     "steamspy_all": 1,
                     "steamspy_appdetails": 5,
                     "store_appdetails": 4,
+                    "store_prices": 1,
                 },
                 "players_hourly": {
                     "valve_top_concurrent": 1,
@@ -174,6 +175,7 @@ class RawLayerIntegrationTests(IntegrationTestCase):
             self.query("SELECT * FROM games ORDER BY appid"),
             self.query("SELECT * FROM most_played_daily ORDER BY appid"),
             self.query("SELECT * FROM game_details ORDER BY appid"),
+            self.query("SELECT * FROM game_price_history ORDER BY price_id"),
             self.query(
                 "SELECT * FROM game_genres ORDER BY appid, genre_id"
             ),
@@ -263,7 +265,12 @@ class RawLayerIntegrationTests(IntegrationTestCase):
 
         self.assertEqual(
             kept,
-            {"steamspy_all": 1, "steamspy_appdetails": 4, "store_appdetails": 4}
+            {
+                "steamspy_all": 1,
+                "steamspy_appdetails": 4,
+                "store_appdetails": 4,
+                "store_prices": 1,
+            }
         )
         self.assertEqual(
             purged,

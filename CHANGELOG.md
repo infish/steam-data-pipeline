@@ -40,6 +40,12 @@ This file records user-visible changes to the Steam data pipeline.
   `STORE_DETAILS_PER_RUN` (default 120) stalest games, new games first, paced
   within the Store and SteamSpy rate limits. `STEAM_STORE_COUNTRY` (default
   `us`) sets the Store country.
+- Price history (`V8__price_history`): each catalog run checks all catalog
+  prices in batches of 50 and keeps Type 2 versions in `game_price_history`
+  (`valid_from`, `valid_to`, `is_current`, `price_state` of `priced`,
+  `no_price` or `unavailable`); unchanged prices write nothing. The
+  `game_price_summary` view derives current price, on-sale flag, lowest price,
+  discount events and days since the last discount.
 
 ### Changed
 
