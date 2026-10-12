@@ -47,6 +47,7 @@ PIPELINE_TABLES = [
     "game_metric_snapshots",
     "games",
     "raw_api_responses",
+    "data_quality_results",
     "pipeline_runs",
 ]
 
@@ -77,13 +78,15 @@ def steamspy_game(appid, name, owners, positive, negative):
     }
 
 
-def review_summary(positive, negative):
+def review_summary(positive, negative, label="Very Positive"):
     return {
         "success": 1,
         "query_summary": {
             "total_positive": positive,
             "total_negative": negative,
             "total_reviews": positive + negative,
+            "review_score": 8,
+            "review_score_desc": label,
         },
     }
 
@@ -110,9 +113,12 @@ CHART_MEASURED_AT = datetime(2026, 10, 1, 18, 0, 0)
 # through SteamSpy appdetails; 999999 is top-100 only and is skipped.
 CANNED_RESPONSES = {
     "steamspy_all": CANNED_TOP_GAMES,
-    "steamspy_appdetails:427520": steamspy_game(
-        427520, "Factorio", "5,000,000 .. 10,000,000", 200, 5
-    ),
+    "steamspy_appdetails:427520": {
+        **steamspy_game(
+            427520, "Factorio", "5,000,000 .. 10,000,000", 200, 5
+        ),
+        "tags": {},
+    },
     "valve_top_concurrent": {
         "response": {
             "last_update": calendar.timegm(CHART_MEASURED_AT.timetuple()),

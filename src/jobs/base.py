@@ -10,6 +10,7 @@ from api.steam_api import create_session
 from database.mysql_database import get_connection
 from ingest.raw_store import RawStore
 from marts.build import build_and_test_marts
+from quality.checks import describe_failure, run_quality_checks, store_results
 
 
 ABANDONED_RUN_MESSAGE = "Abandoned: process ended before completion"
@@ -192,6 +193,33 @@ def refresh_marts(connection, cursor, ctx):
     return results
 
 
+def record_quality(connection, cursor, ctx, mart_results):
+    """Run the observability checks and store them with the mart tests.
+
+    Failed checks become run warnings; nothing is deleted.
+    """
+    checked_at = ctx.now_fn()
+
+    try:
+        results = mart_results + run_quality_checks(connection, checked_at)
+        store_results(cursor, results, ctx.run_id, checked_at)
+        failures = [
+            describe_failure(row)
+            for row in results
+            if row["status"] == "fail" and row not in mart_results
+        ]
+    except Exception as error:
+        logging.exception("Data quality checks failed")
+        connection.rollback()
+        failures = [f"Data quality checks could not run: {error}"]
+
+    if failures:
+        ctx.warn(*failures)
+        set_run_warnings(cursor, ctx.run_id, ctx.warnings)
+
+    connection.commit()
+
+
 def summarize_warnings(warnings, limit=WARNING_MESSAGE_LIMIT):
     if not warnings:
         return None
@@ -272,7 +300,8 @@ def run_job(
         connection.commit()
 
         if job.build_marts:
-            refresh_marts(connection, cursor, ctx)
+            mart_results = refresh_marts(connection, cursor, ctx)
+            record_quality(connection, cursor, ctx, mart_results)
 
         logging.info(
             "%s run %s completed: %s; raw responses %s (%s warnings)",

@@ -61,6 +61,12 @@ This file records user-visible changes to the Steam data pipeline.
   impact. They are rebuilt after every job, one transaction per mart, and
   tested in SQL (key uniqueness, non-null keys, row count, value ranges);
   failures become run warnings. `docs/marts.md` documents each mart.
+- Data observability (`V11__data_quality_results`): after every job,
+  freshness per source, daily volume against the 7-day median, unchanged
+  SteamSpy fields between catalog runs, raw duplicate rates, schema drift
+  against `docs/sources.md`, table invariants and the mart tests are stored
+  in `data_quality_results`; failures become run warnings and never delete
+  data. `docs/observability.md` documents the checks.
 
 ### Changed
 

@@ -11,8 +11,8 @@ affecting the other marts or the job.
 Every mart is then tested in SQL (`src/marts/tests.py`): key uniqueness,
 non-null key columns, at least one row (a warning when empty, for example
 before any news exists), and value ranges such as shares between 0 and 100.
-A failed test adds a run warning; from Phase 17 every result is stored in
-`data_quality_results`.
+A failed test adds a run warning, and every result is stored in
+`data_quality_results` (see [`observability.md`](observability.md)).
 
 All marts refresh **after every job**, so the hourly players job keeps them
 at most an hour old. Each transform file starts with the same notes as below.

@@ -326,6 +326,17 @@ release-year summaries, rough engagement ratios, and player averages around
 patch releases. Grain, sources, refresh and caveats for each mart are in
 [`docs/marts.md`](docs/marts.md).
 
+## Data observability
+
+After every job the pipeline checks its own data and stores every result in
+`data_quality_results`: freshness per source, daily volume against a 7-day
+median, how many SteamSpy values stayed unchanged between catalog runs (the
+September 2026 incident as a permanent monitor), raw-payload duplicate rates,
+schema drift against the fields in `docs/sources.md`, invariants for every
+table, and the mart tests. A failing check never deletes data; it adds a run
+warning that the dashboard shows. Checks and thresholds are documented in
+[`docs/observability.md`](docs/observability.md).
+
 ## SQL analytics
 
 The project includes views for:
