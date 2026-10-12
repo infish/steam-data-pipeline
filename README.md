@@ -314,6 +314,18 @@ freshness, rate limit and caveats. Recorded example responses are in
 `tests/fixtures/sources/`. Requests per job and source are budgeted in
 [`docs/request_budget.md`](docs/request_budget.md).
 
+## Analytics marts
+
+Derived metrics live in mart tables rebuilt after every job by the SQL files
+in `db/transforms/`, each in its own transaction and followed by SQL tests
+(key uniqueness, non-null keys, row count, value ranges). They cover player
+trends (rolling averages, day- and week-over-week change, top-100 entries and
+exits, volatility, typical peak hour in Prague time), review trends (new
+reviews, 30-day versus lifetime positive share), price status, genre, tag and
+release-year summaries, rough engagement ratios, and player averages around
+patch releases. Grain, sources, refresh and caveats for each mart are in
+[`docs/marts.md`](docs/marts.md).
+
 ## SQL analytics
 
 The project includes views for:
@@ -337,12 +349,15 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 .
 ├── .github/workflows/        CI: unit + integration tests, gated image publishing
 ├── db/migrations/            Flyway: versioned V*__ schema changes, repeatable views
+├── db/transforms/            SQL that rebuilds each analytics mart after every job
 ├── deploy/                   TrueNAS Custom App definition
 ├── docs/sources.md           data contract for every API source
 ├── src/
 │   ├── api/                  HTTP calls to SteamSpy and Steam, via the raw layer
 │   ├── ingest/               raw landing layer, fixture and raw replay sessions
 │   ├── jobs/                 run lifecycle (lock, run row, raw store) and jobs
+│   ├── marts/                mart build step and mart SQL tests
+│   ├── parsing/              pure parsers for API payloads
 │   ├── quality/              row-level validation
 │   ├── transform/            SteamSpy row transformation
 │   ├── database/             MySQL connection

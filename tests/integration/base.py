@@ -14,6 +14,15 @@ INTEGRATION_ENABLED = os.getenv("INTEGRATION_DB") == "1"
 
 # Children before parents, so deletes respect the foreign keys.
 PIPELINE_TABLES = [
+    "mart_player_trends",
+    "mart_player_peak_hours",
+    "mart_review_trends",
+    "mart_price_status",
+    "mart_genre_summary",
+    "mart_tag_summary",
+    "mart_release_year_summary",
+    "mart_engagement",
+    "mart_event_impact",
     "steam_game_measurements",
     "player_observations",
     "review_observations",

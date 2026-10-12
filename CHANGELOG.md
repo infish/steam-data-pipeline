@@ -55,6 +55,12 @@ This file records user-visible changes to the Steam data pipeline.
 - `python src/backfill.py --source review_histogram|news --appids …` loads
   the same data on demand as a `backfill` job; repeated runs add no
   duplicates.
+- Analytics marts (`V10__marts`, `db/transforms/`): player trends, typical
+  peak hour (Prague time), review trends with sentiment drift, price status,
+  genre/tag/release-year summaries, rough engagement and patch-release
+  impact. They are rebuilt after every job, one transaction per mart, and
+  tested in SQL (key uniqueness, non-null keys, row count, value ranges);
+  failures become run warnings. `docs/marts.md` documents each mart.
 
 ### Changed
 

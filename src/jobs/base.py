@@ -9,6 +9,7 @@ from typing import Callable, Optional
 from api.steam_api import create_session
 from database.mysql_database import get_connection
 from ingest.raw_store import RawStore
+from marts.build import build_and_test_marts
 
 
 ABANDONED_RUN_MESSAGE = "Abandoned: process ended before completion"
@@ -36,6 +37,8 @@ class Job:
     load_time_sql: Optional[str] = None
     # Older job names whose stuck RUNNING rows this job also reaps.
     reaps: tuple = ()
+    # Rebuild and test the analytics marts after a successful run.
+    build_marts: bool = True
 
     @property
     def lock_name(self):
@@ -166,6 +169,29 @@ def update_run_results(cursor, run_id, warning_message, **counters):
     )
 
 
+def set_run_warnings(cursor, run_id, warnings):
+    cursor.execute(
+        "UPDATE pipeline_runs SET warning_message = %s WHERE run_id = %s",
+        (summarize_warnings(warnings), run_id)
+    )
+
+
+def refresh_marts(connection, cursor, ctx):
+    """Rebuild the marts after a committed load; problems become warnings."""
+    try:
+        mart_warnings, results = build_and_test_marts(connection)
+    except Exception as error:
+        logging.exception("Mart build failed")
+        mart_warnings, results = [f"Mart build failed: {error}"], []
+
+    if mart_warnings:
+        ctx.warn(*mart_warnings)
+        set_run_warnings(cursor, ctx.run_id, ctx.warnings)
+        connection.commit()
+
+    return results
+
+
 def summarize_warnings(warnings, limit=WARNING_MESSAGE_LIMIT):
     if not warnings:
         return None
@@ -244,6 +270,9 @@ def run_job(
             **ctx.counters
         )
         connection.commit()
+
+        if job.build_marts:
+            refresh_marts(connection, cursor, ctx)
 
         logging.info(
             "%s run %s completed: %s; raw responses %s (%s warnings)",

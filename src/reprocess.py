@@ -18,6 +18,7 @@ from ingest.replay import RawReplaySession, ReplayRawStore
 from jobs.base import (
     RunContext,
     acquire_lock,
+    refresh_marts,
     release_lock,
     summarize_warnings,
     update_run_results,
@@ -109,6 +110,7 @@ def reprocess_run(run_id):
             **ctx.counters
         )
         connection.commit()
+        refresh_marts(connection, cursor, ctx)
         logging.info(
             "Reprocessed %s run %s: %s",
             job_name,
