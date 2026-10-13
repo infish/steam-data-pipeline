@@ -54,6 +54,38 @@ class DimensionsIntegrationTests(IntegrationTestCase):
             "Valve, Inc., Hidden Path Entertainment"
         )
 
+    def test_names_equal_under_the_collation_share_one_company(self):
+        # Real catalogs spell one company with different case or accents in
+        # the same run. MySQL treats them as one key, so the batched upsert
+        # must not touch the auto-increment column of a row it just created
+        # (error 1869 on the first live run).
+        top_games = {
+            **CANNED_TOP_GAMES,
+            "730": {
+                **CANNED_TOP_GAMES["730"],
+                "developer": "Valve",
+                "publisher": "VALVE",
+            },
+            "620": {
+                **CANNED_TOP_GAMES["620"],
+                "developer": "Ubisoft",
+                "publisher": "Ubísoft",
+            },
+        }
+
+        run_id = self.run_job("catalog_daily", {"steamspy_all": top_games})
+
+        self.assertEqual(self.run_row(run_id)["status"], "SUCCESS")
+        self.assertEqual(self.names("game_developers", 730), ["Valve"])
+        self.assertEqual(self.names("game_publishers", 730), ["Valve"])
+        self.assertEqual(self.names("game_publishers", 620), ["Ubisoft"])
+        self.assertEqual(
+            sorted(row["name"] for row in self.query(
+                "SELECT name FROM companies"
+            )),
+            ["Ubisoft", "Valve"]
+        )
+
     def test_store_details_and_tags_fill_the_bridge_tables(self):
         self.run_job("catalog_daily")
 
