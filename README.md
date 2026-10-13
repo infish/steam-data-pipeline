@@ -980,17 +980,34 @@ the app recreates containers but preserves the MySQL host-path data.
 Deployments created before the writer account existed connect the scheduler as
 the schema owner. To upgrade:
 
-1. **Before** updating the app, prepare the new YAML: start from the current
-   `deploy/truenas-compose.yml`, fill in your existing root, schema owner and
-   dashboard passwords, and replace `CHANGE_ME_WRITER` with a new value such as
+1. **Before** updating the app, copy the current YAML from the TrueNAS editor
+   as a rollback copy, then prepare the new YAML outside the repository (it
+   will hold passwords): start from the current `deploy/truenas-compose.yml`,
+   fill in your existing root, schema owner and dashboard passwords, and
+   replace `CHANGE_ME_WRITER` with a new value such as
    `openssl rand -hex 24`. The writer user and password appear in
    `db-bootstrap`, `scheduler` and `pipeline` and must match in all three.
+   Keep your existing user and database names: if the old YAML's schema owner
+   is not `pipeline` (older deployments used `steam_pipeline`), use the old
+   name for `MYSQL_USER` under `mysql`, `PIPELINE_DB_USER` under
+   `db-bootstrap` and `FLYWAY_USER` under `migrate`. MySQL reads the root and
+   schema owner passwords only when it creates a new database, so they must
+   stay exactly as they are; a mismatch shows as `Access denied` in the
+   `migrate` log, before any migration runs.
 2. Check that the dashboard password contains only letters, digits, `_` and
    `-`. If not, replace it in both `db-bootstrap` and `dashboard`; bootstrap
    applies the new value.
 3. Make sure the image tag in the YAML has been published (see
    [Releases and image tags](#releases-and-image-tags)).
-4. Save the YAML. TrueNAS recreates the containers.
+4. Save the YAML. TrueNAS recreates the containers. If the app fails to
+   start, `sudo docker logs ix-steam-data-pipeline-db-bootstrap-1` and
+   `sudo docker logs ix-steam-data-pipeline-migrate-1` in the TrueNAS shell
+   name the problem.
+
+The **Web UI** button on the app's Application Info card opens the dashboard
+(the `x-portals` block at the end of the YAML). TrueNAS reads that block only
+when the app is first installed; on an app installed earlier, open
+`http://<nas-address>:8501` directly.
 
 On start, `db-bootstrap`:
 

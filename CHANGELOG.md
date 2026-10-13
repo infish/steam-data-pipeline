@@ -2,6 +2,20 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## Unreleased
+
+### Added
+
+- TrueNAS shows a **Web UI** button for the dashboard (`x-portals` in
+  `deploy/truenas-compose.yml`) on new installs; TrueNAS ignores it when
+  added to an existing app.
+
+### Changed
+
+- README upgrade steps: keep existing user and database names (older
+  deployments use `steam_pipeline` as the schema owner), keep a rollback copy
+  of the old YAML, and where to find the bootstrap and migrate logs.
+
 ## v1.0.1 — 2026-10-13
 
 ### Fixed
