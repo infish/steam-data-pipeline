@@ -1,8 +1,9 @@
 """Visual system for the dashboard: palette, chart styling, layout pieces.
 
-Colors come from a palette validated for colour-vision deficiency in light
-and dark mode (adjacent and all-pairs checks for the first three slots, and
-the blue/red pair). Colors follow meaning: a job, a series role, or a
+The dashboard is black and orange (.streamlit/config.toml), so orange leads
+the series. Colors come from a palette validated for colour-vision
+deficiency on the dark surface (all-pairs checks for the first three slots,
+and the blue/red pair). Colors follow meaning: a job, a series role, or a
 direction. They never encode rank, and status colors are reserved for state.
 """
 
@@ -31,28 +32,15 @@ class Tokens:
     fall: str
 
 
-LIGHT = Tokens(
-    surface="#fcfcfb",
-    ink="#0b0b0b",
-    ink_secondary="#52514e",
-    muted="#898781",
-    grid="#e1e0d9",
-    axis="#c3c2b7",
-    border="rgba(11,11,11,0.10)",
-    series=("#2a78d6", "#eb6834", "#1baf7a"),
-    rise="#2a78d6",
-    fall="#e34948",
-)
-
 DARK = Tokens(
-    surface="#1a1a19",
+    surface="#141414",
     ink="#ffffff",
-    ink_secondary="#c3c2b7",
-    muted="#898781",
-    grid="#2c2c2a",
-    axis="#383835",
+    ink_secondary="#c8c3bc",
+    muted="#8c867e",
+    grid="#262321",
+    axis="#3a3632",
     border="rgba(255,255,255,0.10)",
-    series=("#3987e5", "#d95926", "#199e70"),
+    series=("#dd7516", "#3987e5", "#199e70"),
     rise="#3987e5",
     fall="#e66767",
 )
@@ -69,8 +57,9 @@ JOB_EXPECTED_HOURS = {
 
 
 def tokens():
-    theme = getattr(st.context, "theme", None)
-    return DARK if getattr(theme, "type", None) == "dark" else LIGHT
+    # One dark theme; st.context.theme.type does not reliably report a
+    # custom theme, so charts do not follow it.
+    return DARK
 
 
 def job_color(job_name):
@@ -242,8 +231,17 @@ def compact(value):
     return f"{value:,.0f}"
 
 
+ACCENT = "#ff8c1a"
+
+
 def page_header(title, description):
     st.title(title)
+    # A short orange rule under each title, the dashboard's signature.
+    st.markdown(
+        f"<div style='height:3px;width:56px;background:{ACCENT};"
+        "border-radius:2px;margin:-0.9rem 0 0.9rem'></div>",
+        unsafe_allow_html=True,
+    )
     st.markdown(
         f"<p style='font-size:1.05rem;margin-top:-0.6rem;opacity:0.75'>"
         f"{description}</p>",

@@ -336,7 +336,8 @@ bordered headline numbers and then splits its detail into tabs. Charts share
 one style (`src/dashboard_style.py`): a palette checked for colour-vision
 deficiency, where a colour always means the same job or series, blue/red only
 for rise/fall, and status always shown with an icon and a label. The theme
-is in `.streamlit/config.toml`.
+is black and orange, in `.streamlit/config.toml`; orange leads the chart
+palette.
 
 | Page | Shows |
 | --- | --- |
@@ -353,7 +354,7 @@ More screenshots: [game detail](docs/screenshots/game-detail.jpg),
 [pipeline health](docs/screenshots/pipeline-health.jpg),
 [SQL explorer](docs/screenshots/sql-explorer.jpg). They were taken on a
 throwaway stack seeded from the recorded API responses, so trends cover a
-single day, at a narrow window width where the sidebar is collapsed.
+single day.
 
 Behaviour shared by all pages:
 

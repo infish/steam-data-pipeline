@@ -109,7 +109,7 @@ latest_players = cached_read_sql(
 
 # ---- Header ---------------------------------------------------------------
 
-st.header(names[appid], divider="gray")
+st.header(names[appid], divider="orange")
 badges = []
 
 if not details.empty:

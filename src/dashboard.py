@@ -35,7 +35,7 @@ navigation = st.navigation({
 })
 
 with st.sidebar:
-    st.markdown("### :material/sports_esports: Steam Data Pipeline")
+    st.markdown("### :orange[λ] Steam Data Pipeline")
     st.caption("SteamSpy catalog, Valve players, Steam Store and reviews.")
     st.markdown("**Data status**")
 

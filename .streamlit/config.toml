@@ -1,21 +1,26 @@
-# Dashboard theme. Chart colors follow the same palette in
-# src/dashboard_style.py (validated for colour-vision deficiency).
+# Dashboard theme: black and orange.
 [theme]
-base = "light"
-primaryColor = "#2a78d6"
-backgroundColor = "#f9f9f7"
-secondaryBackgroundColor = "#f0efec"
-textColor = "#0b0b0b"
-borderColor = "#e1e0d9"
-baseRadius = "medium"
+base = "dark"
+primaryColor = "#ff8c1a"
+backgroundColor = "#0d0d0d"
+secondaryBackgroundColor = "#1a1a1a"
+textColor = "#ededed"
+borderColor = "#2e2a26"
+linkColor = "#ff9d3c"
+baseRadius = "small"
 showWidgetBorder = true
 font = "sans-serif"
+codeBackgroundColor = "#141414"
 
 [theme.sidebar]
-backgroundColor = "#16212d"
-secondaryBackgroundColor = "#223143"
-textColor = "#e6ecf2"
-borderColor = "#2c3d50"
+backgroundColor = "#050505"
+secondaryBackgroundColor = "#1f1408"
+textColor = "#ededed"
+borderColor = "#3a2410"
 
 [browser]
 gatherUsageStats = false
+
+[client]
+# Hide developer options such as Deploy; viewers only need Rerun/Settings.
+toolbarMode = "viewer"

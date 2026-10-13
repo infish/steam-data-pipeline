@@ -72,8 +72,9 @@ This file records user-visible changes to the Steam data pipeline.
   timestamp meaning; screenshots in `docs/screenshots/`.
 - Dashboard design: the sidebar groups pages into Explore and Operate and
   shows each job's latest-run status (ok, warnings, late, failed) and age;
-  pages open with bordered headline numbers and split detail into tabs; all
-  charts share one style and a colour-vision-safe palette
+  pages open with bordered headline numbers and split detail into tabs; a
+  black and orange theme; all charts share one style and a
+  colour-vision-safe palette
   (`src/dashboard_style.py`, theme in `.streamlit/config.toml`). Run warnings
   are one compact notice with the details in an expander.
 - `python src/reprocess.py --seed-fixtures` seeds an empty database from the
