@@ -2,6 +2,17 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## v1.0.1 — 2026-10-13
+
+### Fixed
+
+- `catalog_daily` no longer fails with MySQL error 1869 ("Auto-increment
+  value in UPDATE conflicts with internally generated values") when one run
+  contains company, tag or language names that MySQL's collation treats as
+  equal, such as "Valve" and "VALVE". This stopped the first live catalog run
+  before any rows were loaded, which also left the developer and publisher
+  checks failing.
+
 ## v1.0.0 — 2026-10-13
 
 ### Added

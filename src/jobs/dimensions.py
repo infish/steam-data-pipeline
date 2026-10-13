@@ -35,9 +35,13 @@ def upsert_names(cursor, table, id_column, names):
     if not names:
         return {}
 
+    # The no-op update sets name, not the id: names equal under the
+    # collation ("Valve" and "VALVE") can collide with a row inserted earlier
+    # in the same batch, and MySQL rejects touching that row's freshly
+    # generated auto-increment id (error 1869).
     cursor.executemany(
         f"INSERT INTO {table} (name) VALUES (%s)"
-        f" ON DUPLICATE KEY UPDATE {id_column} = {id_column}",
+        " ON DUPLICATE KEY UPDATE name = name",
         [(name,) for name in names]
     )
     ids = {}
