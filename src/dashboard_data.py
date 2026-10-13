@@ -139,3 +139,14 @@ def request_budget_usage(counts, windows, budget):
         })
 
     return pd.DataFrame(rows)
+
+
+def latest_values_identical(values, count=3):
+    """True when the last `count` measured values are all the same.
+
+    Missing values (runs that did not measure) are skipped, so a gap is not
+    mistaken for a repeat. This is the stale-source warning from the
+    September 2026 incident.
+    """
+    recent = pd.Series(values).dropna().tail(count)
+    return len(recent) == count and recent.nunique() == 1

@@ -280,7 +280,7 @@ row that holds the body. A long run of duplicates is therefore a cheap,
 built-in sign of a stale source.
 
 Bodies older than `RAW_RETENTION_DAYS` (default 30) are removed at the end of
-each daily run; metadata rows are kept forever. A body that a newer duplicate
+each catalog run; metadata rows are kept forever. A body that a newer duplicate
 still points to is kept until that duplicate is old enough too.
 
 ### `pipeline_runs`
@@ -449,7 +449,11 @@ The project includes views for:
 - Publisher summaries
 - Historical game trends
 - Changes between consecutive snapshots using `LAG()`
-- Daily pipeline reliability
+- Daily pipeline reliability per job
+- Current price, lowest price and discount history per game
+  (`game_price_summary`)
+
+The richer derived metrics live in the [analytics marts](#analytics-marts).
 
 Views contain reusable analytical logic. Final dashboard queries control sorting and row limits explicitly.
 
@@ -567,7 +571,8 @@ Collection settings use these defaults:
 | `PIPELINE_RUN_ON_STARTUP` | `false` | Optional immediate collection on scheduler startup |
 
 `PIPELINE_RUN_HOUR` and `PIPELINE_RUN_MINUTE` from earlier versions still set
-the catalog time when `JOB_CATALOG_TIME` is not given.
+the catalog time when `JOB_CATALOG_TIME` is not given, both in `.env` for
+Docker Compose and directly in a TrueNAS YAML.
 
 Keep `PIPELINE_RUN_ON_STARTUP=false` for persistent deployments. Container
 restarts otherwise create extra observations unrelated to the daily schedule.
@@ -699,13 +704,19 @@ FROM current_game_metrics;
 
 SELECT
     games.name,
-    measurements.collected_at,
-    measurements.source_measured_at,
-    measurements.current_players,
-    measurements.total_reviews
-FROM steam_game_measurements AS measurements
-JOIN games ON games.appid = measurements.appid
-ORDER BY measurements.collected_at DESC
+    observations.collected_at,
+    observations.source_measured_at,
+    observations.current_players,
+    observations.player_rank
+FROM player_observations AS observations
+JOIN games ON games.appid = observations.appid
+ORDER BY observations.collected_at DESC
+LIMIT 20;
+
+SELECT name, observation_date, peak_players, avg_players_7d,
+       peak_change_pct_wow
+FROM mart_player_trends
+ORDER BY observation_date DESC, peak_players DESC
 LIMIT 20;
 ```
 
@@ -857,8 +868,9 @@ Important limitations:
 - Recently released and low-ownership games may have unreliable estimates.
 - `request=all` returns 1,000 games per page and is rate-limited.
 
-The dashboard warns when the latest three values of a selected Valve metric are
-identical. Legacy SteamSpy snapshots remain queryable for audit purposes but
+The Game detail page warns when the latest three hourly player counts or daily
+review totals of a game are identical, and the pipeline-health checks track
+how many SteamSpy values stay unchanged between catalog runs. Legacy SteamSpy snapshots remain queryable for audit purposes but
 are no longer charted because their collection timestamps do not establish
 freshness.
 

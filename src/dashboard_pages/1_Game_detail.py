@@ -13,6 +13,7 @@ from dashboard_common import (
 )
 from dashboard_data import (
     build_measurement_series,
+    latest_values_identical,
     price_steps,
     with_missing_days,
 )
@@ -229,6 +230,13 @@ if hourly["current_players"].notna().any():
         "that did not measure this game leaves a gap."
     )
 
+    if latest_values_identical(hourly["current_players"]):
+        st.warning(
+            "The latest three hourly player counts are identical. The "
+            "source may be unchanged or cached; check Pipeline health before "
+            "treating them as new measurements."
+        )
+
 if not events.empty:
     with st.expander(f"Patch notes ({len(events)})"):
         shown = events.copy()
@@ -241,8 +249,9 @@ st.subheader("Reviews")
 
 reviews = cached_read_sql(
     """
-        SELECT observation_date, positive_share_lifetime, positive_share_30d,
-               sentiment_drift_points, new_reviews, review_score_desc
+        SELECT observation_date, total_reviews, positive_share_lifetime,
+               positive_share_30d, sentiment_drift_points, new_reviews,
+               review_score_desc
         FROM mart_review_trends
         WHERE appid = %s
         ORDER BY observation_date
@@ -298,6 +307,13 @@ if not reviews.empty:
         "review histogram. The two count different review sets, so compare "
         "the trend, not the absolute gap."
     )
+
+    if latest_values_identical(reviews["total_reviews"]):
+        st.warning(
+            "The latest three daily review totals are identical. The source "
+            "may be unchanged or cached; check Pipeline health before "
+            "treating them as new measurements."
+        )
 
 if not history.empty:
     figure = px.bar(

@@ -80,6 +80,15 @@ This file records user-visible changes to the Steam data pipeline.
 - README: layered architecture diagram and a "What this project
   demonstrates" section linking each practice to its files.
 
+### Fixed
+
+- The Game detail page warns again when the latest three hourly player
+  counts or daily review totals are identical; the warning had been lost in
+  the dashboard redesign.
+- `docker-compose.yml` passes `PIPELINE_RUN_HOUR`/`PIPELINE_RUN_MINUTE` from
+  an older `.env` through to the catalog schedule when `JOB_CATALOG_TIME` is
+  not set.
+
 ### Changed
 
 - The run lifecycle moved from `main.py` to `src/jobs/base.py`.

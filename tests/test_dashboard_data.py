@@ -5,6 +5,7 @@ import pandas as pd
 
 from dashboard_data import (
     build_measurement_series,
+    latest_values_identical,
     price_steps,
     request_budget_usage,
     with_missing_days,
@@ -111,7 +112,6 @@ class BuildMeasurementSeriesTests(unittest.TestCase):
         self.assertIn("measurement_time", series.columns)
 
 
-
 class MissingDaysTests(unittest.TestCase):
     def test_gap_days_become_nan_rows(self):
         daily = pd.DataFrame({
@@ -180,6 +180,20 @@ class RequestBudgetTests(unittest.TestCase):
         self.assertEqual(usage["used_pct_of_plan"], 50.0)
         self.assertEqual(usage["busiest_5_min"], 25)
         self.assertTrue(usage["within_limit"])
+
+
+
+class LatestValuesIdenticalTests(unittest.TestCase):
+    def test_three_equal_values(self):
+        self.assertTrue(latest_values_identical([5, 7, 7, 7]))
+
+    def test_gaps_are_skipped_not_counted_as_repeats(self):
+        self.assertTrue(latest_values_identical([7, None, 7, float("nan"), 7]))
+        self.assertFalse(latest_values_identical([None, None, None]))
+
+    def test_any_change_or_too_few_values(self):
+        self.assertFalse(latest_values_identical([7, 7, 8]))
+        self.assertFalse(latest_values_identical([7, 7]))
 
 
 if __name__ == "__main__":
