@@ -207,7 +207,8 @@ volumes:
   flyway_migrations:
 
 # Adds a "Web UI" button to the app's Application Info card in TrueNAS;
-# host 0.0.0.0 stands for the NAS's own address.
+# host 0.0.0.0 stands for the NAS's own address. TrueNAS reads this only when
+# the app is first installed; adding it to an existing app has no effect.
 x-portals:
   - name: Web UI
     scheme: http

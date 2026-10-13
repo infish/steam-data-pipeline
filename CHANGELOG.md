@@ -7,7 +7,8 @@ This file records user-visible changes to the Steam data pipeline.
 ### Added
 
 - TrueNAS shows a **Web UI** button for the dashboard (`x-portals` in
-  `deploy/truenas-compose.yml`).
+  `deploy/truenas-compose.yml`) on new installs; TrueNAS ignores it when
+  added to an existing app.
 
 ### Changed
 

@@ -1005,7 +1005,9 @@ the schema owner. To upgrade:
    name the problem.
 
 The **Web UI** button on the app's Application Info card opens the dashboard
-(the `x-portals` block at the end of the YAML).
+(the `x-portals` block at the end of the YAML). TrueNAS reads that block only
+when the app is first installed; on an app installed earlier, open
+`http://<nas-address>:8501` directly.
 
 On start, `db-bootstrap`:
 
