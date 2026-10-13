@@ -205,3 +205,12 @@ services:
 
 volumes:
   flyway_migrations:
+
+# Adds a "Web UI" button to the app's Application Info card in TrueNAS;
+# host 0.0.0.0 stands for the NAS's own address.
+x-portals:
+  - name: Web UI
+    scheme: http
+    host: 0.0.0.0
+    port: 8501
+    path: /
