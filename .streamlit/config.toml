@@ -1,0 +1,26 @@
+# Dashboard theme: black and orange.
+[theme]
+base = "dark"
+primaryColor = "#ff8c1a"
+backgroundColor = "#0d0d0d"
+secondaryBackgroundColor = "#1a1a1a"
+textColor = "#ededed"
+borderColor = "#2e2a26"
+linkColor = "#ff9d3c"
+baseRadius = "small"
+showWidgetBorder = true
+font = "sans-serif"
+codeBackgroundColor = "#141414"
+
+[theme.sidebar]
+backgroundColor = "#050505"
+secondaryBackgroundColor = "#1f1408"
+textColor = "#ededed"
+borderColor = "#3a2410"
+
+[browser]
+gatherUsageStats = false
+
+[client]
+# Hide developer options such as Deploy; viewers only need Rerun/Settings.
+toolbarMode = "viewer"

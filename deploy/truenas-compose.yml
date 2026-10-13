@@ -8,8 +8,6 @@ services:
       MYSQL_DATABASE: steam_pipeline
       MYSQL_USER: pipeline
       MYSQL_PASSWORD: CHANGE_ME_PIPELINE
-      DASHBOARD_DB_USER: dashboard
-      DASHBOARD_DB_PASSWORD: CHANGE_ME_DASHBOARD
 
     volumes:
       - /mnt/Apps/steam-data-pipeline/mysql:/var/lib/mysql
@@ -18,7 +16,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent",
+          'MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysqladmin ping -h 127.0.0.1 -u root --silent',
         ]
       interval: 5s
       timeout: 5s
@@ -32,26 +30,57 @@ services:
         condition: service_healthy
 
     environment:
-      MYSQL_ROOT_PASSWORD: CHANGE_ME_ROOT
+      MYSQL_PWD: CHANGE_ME_ROOT
       MYSQL_DATABASE: steam_pipeline
+      PIPELINE_DB_USER: pipeline
       DASHBOARD_DB_USER: dashboard
       DASHBOARD_DB_PASSWORD: CHANGE_ME_DASHBOARD
+      WRITER_DB_USER: writer
+      WRITER_DB_PASSWORD: CHANGE_ME_WRITER
 
     entrypoint:
       - /bin/bash
       - -c
       - |
-        mysql -h mysql -uroot -p"$${MYSQL_ROOT_PASSWORD}" <<SQL
+        set -euo pipefail
+
+        # These values are interpolated into SQL below.
+        for name in MYSQL_DATABASE DASHBOARD_DB_USER DASHBOARD_DB_PASSWORD \
+                    WRITER_DB_USER WRITER_DB_PASSWORD; do
+          if [[ ! "$${!name:-}" =~ ^[A-Za-z0-9_-]+$$ ]]; then
+            echo "db-bootstrap: $$name must be set and match ^[A-Za-z0-9_-]+\$$" >&2
+            exit 1
+          fi
+        done
+
+        if [[ "$$WRITER_DB_USER" == "$${PIPELINE_DB_USER:-}" ||
+              "$$WRITER_DB_USER" == "$$DASHBOARD_DB_USER" ]]; then
+          echo "db-bootstrap: WRITER_DB_USER must differ from the schema owner and dashboard users" >&2
+          exit 1
+        fi
+
+        mysql -h mysql -uroot <<SQL
         CREATE USER IF NOT EXISTS '$${DASHBOARD_DB_USER}'@'%'
           IDENTIFIED BY '$${DASHBOARD_DB_PASSWORD}';
-
+        ALTER USER '$${DASHBOARD_DB_USER}'@'%'
+          IDENTIFIED BY '$${DASHBOARD_DB_PASSWORD}';
         GRANT SELECT, SHOW VIEW
           ON \`$${MYSQL_DATABASE}\`.*
           TO '$${DASHBOARD_DB_USER}'@'%';
+
+        CREATE USER IF NOT EXISTS '$${WRITER_DB_USER}'@'%'
+          IDENTIFIED BY '$${WRITER_DB_PASSWORD}';
+        ALTER USER '$${WRITER_DB_USER}'@'%'
+          IDENTIFIED BY '$${WRITER_DB_PASSWORD}';
+        GRANT SELECT, INSERT, UPDATE, DELETE
+          ON \`$${MYSQL_DATABASE}\`.*
+          TO '$${WRITER_DB_USER}'@'%';
         SQL
 
+        echo "db-bootstrap: dashboard and writer accounts are up to date"
+
   migration-assets:
-    image: ghcr.io/infish/steam-data-pipeline:latest
+    image: ghcr.io/infish/steam-data-pipeline:v1.0.0
     user: "0:0"
 
     command:
@@ -86,7 +115,7 @@ services:
       - flyway_migrations:/flyway/sql:ro
 
   scheduler:
-    image: ghcr.io/infish/steam-data-pipeline:latest
+    image: ghcr.io/infish/steam-data-pipeline:v1.0.0
     restart: unless-stopped
     command: python src/scheduler.py
 
@@ -97,20 +126,26 @@ services:
     environment:
       MYSQL_HOST: mysql
       MYSQL_DATABASE: steam_pipeline
-      MYSQL_USER: pipeline
-      MYSQL_PASSWORD: CHANGE_ME_PIPELINE
+      MYSQL_USER: writer
+      MYSQL_PASSWORD: CHANGE_ME_WRITER
       STEAMSPY_MODE: all
       STEAMSPY_PAGE: "0"
       STEAM_TRACKED_APPIDS: "730,427520,620"
+      PIPELINE_MAX_REJECTED_PERCENT: "5"
+      RAW_RETENTION_DAYS: "30"
+      PLAYER_HOURLY_RETENTION_DAYS: "90"
+      STORE_DETAILS_PER_RUN: "120"
+      STEAM_STORE_COUNTRY: us
 
       PIPELINE_TIMEZONE: Europe/Prague
-      PIPELINE_RUN_HOUR: "20"
-      PIPELINE_RUN_MINUTE: "0"
+      JOB_PLAYERS_MINUTE: "7"
+      JOB_CATALOG_TIME: "20:00"
+      JOB_REVIEWS_TIME: "20:30"
       PIPELINE_RUN_ON_STARTUP: "false"
 
   pipeline:
     profiles: ["manual"]
-    image: ghcr.io/infish/steam-data-pipeline:latest
+    image: ghcr.io/infish/steam-data-pipeline:v1.0.0
 
     depends_on:
       migrate:
@@ -119,14 +154,19 @@ services:
     environment:
       MYSQL_HOST: mysql
       MYSQL_DATABASE: steam_pipeline
-      MYSQL_USER: pipeline
-      MYSQL_PASSWORD: CHANGE_ME_PIPELINE
+      MYSQL_USER: writer
+      MYSQL_PASSWORD: CHANGE_ME_WRITER
       STEAMSPY_MODE: all
       STEAMSPY_PAGE: "0"
       STEAM_TRACKED_APPIDS: "730,427520,620"
+      PIPELINE_MAX_REJECTED_PERCENT: "5"
+      RAW_RETENTION_DAYS: "30"
+      PLAYER_HOURLY_RETENTION_DAYS: "90"
+      STORE_DETAILS_PER_RUN: "120"
+      STEAM_STORE_COUNTRY: us
 
   dashboard:
-    image: ghcr.io/infish/steam-data-pipeline:latest
+    image: ghcr.io/infish/steam-data-pipeline:v1.0.0
     restart: unless-stopped
 
     command: >

@@ -1,0 +1,255 @@
+{
+  "appnews": {
+    "appid": 427520,
+    "count": 939,
+    "newsitems": [
+      {
+        "gid": "1844751498224164",
+        "title": "Friday Facts #447 - Factorio that you can touch",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1844751498224164",
+        "is_external_url": true,
+        "date": 1790334180,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "appid": 427520
+      },
+      {
+        "gid": "1844115010494549",
+        "title": "Factorio gets a full ARM64 Linux port to play anywhere - especially nice for the Steam Frame",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/GamingOnLinux/1844115010494549",
+        "is_external_url": true,
+        "date": 1789732112,
+        "feedlabel": "GamingOnLinux",
+        "feedname": "GamingOnLinux",
+        "feed_type": 0,
+        "appid": 427520
+      },
+      {
+        "gid": "1844115010494438",
+        "title": "Friday Facts #446 - An ARM and a Frame",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1844115010494438",
+        "is_external_url": true,
+        "date": 1789729249,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "appid": 427520
+      },
+      {
+        "gid": "1840310314344636",
+        "title": "Friday Facts #445 - The Biters Bite Back",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1840310314344636",
+        "is_external_url": true,
+        "date": 1786100446,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "appid": 427520
+      },
+      {
+        "gid": "1836506165553519",
+        "title": "Friday Facts #444 - 2.1 Experimental release",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1836506165553519",
+        "is_external_url": true,
+        "date": 1782471661,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "appid": 427520
+      },
+      {
+        "gid": "1835871199314748",
+        "title": "Version 2.0.77 released as stable",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1835871199314748",
+        "is_external_url": true,
+        "date": 1782197939,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 427520
+      },
+      {
+        "gid": "1835871199306735",
+        "title": "Friday Facts #443 - More Planet Deliveries",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1835871199306735",
+        "is_external_url": true,
+        "date": 1781866875,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "appid": 427520
+      },
+      {
+        "gid": "1835236783563075",
+        "title": "Friday Facts #442 - Flip, Flow, and Fresh Paint",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1835236783563075",
+        "is_external_url": true,
+        "date": 1781262209,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "appid": 427520
+      },
+      {
+        "gid": "1834602721190259",
+        "title": "Friday Facts #441 - Space logistics improvements",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1834602721190259",
+        "is_external_url": true,
+        "date": 1780657256,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "appid": 427520
+      },
+      {
+        "gid": "1833968530899781",
+        "title": "Factorio 2.1 will be the last major update as Wube Software are moving on",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/GamingOnLinux/1833968530899781",
+        "is_external_url": true,
+        "date": 1780390524,
+        "feedlabel": "GamingOnLinux",
+        "feedname": "GamingOnLinux",
+        "feed_type": 0,
+        "appid": 427520
+      },
+      {
+        "gid": "1833968530891032",
+        "title": "Friday Facts #440 - 2.1 plan",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1833968530891032",
+        "is_external_url": true,
+        "date": 1780059956,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "appid": 427520
+      },
+      {
+        "gid": "1827626365752749",
+        "title": "Version 2.0.76 released as stable",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1827626365752749",
+        "is_external_url": true,
+        "date": 1773916503,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 427520
+      },
+      {
+        "gid": "1822556746160984",
+        "title": "Version 2.0.73 released as stable",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1822556746160984",
+        "is_external_url": true,
+        "date": 1769157654,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 427520
+      },
+      {
+        "gid": "1815034432874914",
+        "title": "Version 2.0.72 released as stable",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1815034432874914",
+        "is_external_url": true,
+        "date": 1761839325,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 427520
+      },
+      {
+        "gid": "1814309641471006",
+        "title": "Friday Facts #439 - Factorio and Space Age on Nintendo Switch 2™",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1814309641471006",
+        "is_external_url": true,
+        "date": 1761303673,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "appid": 427520
+      },
+      {
+        "gid": "1811772772468213",
+        "title": "Version 2.0.69 released as stable",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1811772772468213",
+        "is_external_url": true,
+        "date": 1759390239,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 427520
+      },
+      {
+        "gid": "1809869180062806",
+        "title": "Version 2.0.66 released as stable",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1809869180062806",
+        "is_external_url": true,
+        "date": 1757067025,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 427520
+      },
+      {
+        "gid": "1805065414358128",
+        "title": "Version 2.0.60 released as stable",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1805065414358128",
+        "is_external_url": true,
+        "date": 1752566857,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 427520
+      },
+      {
+        "gid": "1801617199388391",
+        "title": "Version 2.0.55 released as stable",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1801617199388391",
+        "is_external_url": true,
+        "date": 1749119089,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 427520
+      },
+      {
+        "gid": "1798454487733842",
+        "title": "Version 2.0.47 released as stable",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1798454487733842",
+        "is_external_url": true,
+        "date": 1746455875,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 427520
+      }
+    ]
+  }
+}

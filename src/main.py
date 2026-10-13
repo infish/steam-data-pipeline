@@ -1,10 +1,14 @@
+"""Run pipeline jobs once.
+
+    python src/main.py                    # catalog_daily, players_hourly, reviews_daily
+    python src/main.py players_hourly     # one job
+"""
+
+import argparse
 import logging
-import math
-from api.steam_api import get_steam_measurements, get_top_games
-from database.mysql_database import get_connection
-from quality.data_quality import validate_games_data
-from transform.data_transformer import transform_games_data
-from datetime import datetime, timezone
+
+from jobs.base import run_job
+from jobs.registry import JOBS
 
 
 logging.basicConfig(
@@ -12,326 +16,44 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-def utc_now():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
-def start_pipeline_run(cursor, started_at):
-    query = """
-        INSERT INTO pipeline_runs (
-            started_at,
-            status
-        )
-        VALUES (%s, %s)
+def run_pipeline(job_names=None, **options):
+    """Run the named jobs (default: all) in order; return {name: run_id}.
+
+    A failing job does not stop the jobs after it; the first failure is
+    re-raised once all have run. options are passed to jobs.base.run_job.
     """
-    cursor.execute(query, (started_at, "RUNNING"))
-    return cursor.lastrowid
+    run_ids = {}
+    first_error = None
+
+    for name in job_names or JOBS:
+        try:
+            run_ids[name] = run_job(JOBS[name], **options)
+        except Exception as error:
+            first_error = first_error or error
+
+    if first_error is not None:
+        raise first_error
+
+    return run_ids
 
 
-def finish_pipeline_run(
-    cursor,
-    run_id,
-    status,
-    rows_extracted=0,
-    rows_loaded=0,
-    error_message=None
-):
-    query = """
-        UPDATE pipeline_runs
-        SET
-            finished_at = %s,
-            status = %s,
-            rows_extracted = %s,
-            rows_loaded = %s,
-            error_message = %s
-        WHERE run_id = %s
-    """
-    cursor.execute(
-        query,
-        (
-            utc_now(),
-            status,
-            rows_extracted,
-            rows_loaded,
-            error_message,
-            run_id
-        )
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Run pipeline jobs once.")
+    parser.add_argument(
+        "jobs",
+        nargs="*",
+        metavar="job",
+        help=f"one of {', '.join(JOBS)} (default: all)"
     )
+    args = parser.parse_args(argv)
+    unknown = [name for name in args.jobs if name not in JOBS]
 
+    if unknown:
+        parser.error(f"unknown job(s): {', '.join(unknown)}")
 
-def clean_value(value):
-    if value is None:
-        return None
+    run_pipeline(args.jobs or None)
 
-    if isinstance(value, float) and math.isnan(value):
-        return None
-
-    return value
-
-
-def clean_int(value):
-    value = clean_value(value)
-
-    if value is None:
-        return None
-
-    return int(value)
-
-
-def clean_float(value):
-    value = clean_value(value)
-
-    if value is None:
-        return None
-
-    return float(value)
-
-def load_games(cursor, df, observed_at):
-    query = """
-        INSERT INTO games (
-            appid,
-            name,
-            developer,
-            publisher,
-            languages,
-            genre,
-            first_seen_at,
-            last_seen_at
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-
-        ON DUPLICATE KEY UPDATE
-            name = VALUES(name),
-            developer = VALUES(developer),
-            publisher = VALUES(publisher),
-            languages = VALUES(languages),
-            genre = VALUES(genre),
-            last_seen_at = VALUES(last_seen_at)
-    """
-
-    values = [
-        (
-            int(row.appid),
-            row.name,
-            clean_value(row.developer),
-            clean_value(row.publisher),
-            clean_value(row.languages),
-            clean_value(row.genre),
-            observed_at,
-            observed_at
-        )
-        for row in df.itertuples(index=False)
-    ]
-
-    cursor.executemany(query, values)
-    return len(values)
-
-
-def load_game_metric_snapshots(cursor, df, run_id, snapshot_time):
-    query = """
-        INSERT INTO game_metric_snapshots (
-            run_id,
-            appid,
-            snapshot_time,
-            owners,
-            owners_low,
-            owners_high,
-            estimated_owners,
-            positive_reviews,
-            negative_reviews,
-            total_reviews,
-            review_score_percent,
-            average_playtime_forever_minutes,
-            average_playtime_2weeks_minutes,
-            median_playtime_forever_minutes,
-            median_playtime_2weeks_minutes,
-            ccu,
-            price_cents,
-            initial_price_cents,
-            discount_percent
-        )
-        VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s, %s, %s, %s, %s
-        )
-    """
-
-    values = [
-        (
-            run_id,
-            int(row.appid),
-            snapshot_time,
-            row.owners,
-            clean_int(row.owners_low),
-            clean_int(row.owners_high),
-            clean_int(row.estimated_owners),
-            clean_int(row.positive_reviews),
-            clean_int(row.negative_reviews),
-            clean_int(row.total_reviews),
-            clean_float(row.review_score_percent),
-            clean_int(row.average_playtime_forever_minutes),
-            clean_int(row.average_playtime_2weeks_minutes),
-            clean_int(row.median_playtime_forever_minutes),
-            clean_int(row.median_playtime_2weeks_minutes),
-            clean_int(row.ccu),
-            clean_int(row.price_cents),
-            clean_int(row.initial_price_cents),
-            clean_int(row.discount_percent)
-        )
-        for row in df.itertuples(index=False)
-    ]
-
-    cursor.executemany(query, values)
-    return len(values)
-
-
-def load_steam_measurements(cursor, measurements, run_id, collected_at):
-    query = """
-        INSERT INTO steam_game_measurements (
-            run_id,
-            appid,
-            collected_at,
-            source_measured_at,
-            current_players,
-            player_rank,
-            positive_reviews,
-            negative_reviews,
-            total_reviews,
-            review_score_percent
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """
-
-    values = [
-        (
-            run_id,
-            measurement["appid"],
-            collected_at,
-            measurement["source_measured_at"],
-            measurement["current_players"],
-            clean_int(measurement["player_rank"]),
-            clean_int(measurement["positive_reviews"]),
-            clean_int(measurement["negative_reviews"]),
-            clean_int(measurement["total_reviews"]),
-            clean_float(measurement["review_score_percent"])
-        )
-        for measurement in measurements
-    ]
-
-    cursor.executemany(query, values)
-    return len(values)
-
-
-def run_pipeline():
-    connection = None
-    cursor = None
-    run_id = None
-
-    try:
-        connection = get_connection()
-        cursor = connection.cursor()
-
-        run_id = start_pipeline_run(cursor, utc_now())
-        connection.commit()
-
-        data = get_top_games()
-        steam_measurements = get_steam_measurements()
-
-        if data is None:
-            raise RuntimeError("No API data received")
-
-        games_list = []
-
-        for game_id, game_data in data.items():
-
-            game_info = {
-                "appid": int(game_id),
-                "name": game_data.get("name"),
-                "developer": game_data.get("developer"),
-                "publisher": game_data.get("publisher"),
-                "owners": game_data.get("owners"),
-                "positive_reviews": game_data.get("positive"),
-                "negative_reviews": game_data.get("negative"),
-                "average_playtime_forever_minutes": game_data.get("average_forever"),
-                "average_playtime_2weeks_minutes": game_data.get("average_2weeks"),
-                "median_playtime_forever_minutes": game_data.get("median_forever"),
-                "median_playtime_2weeks_minutes": game_data.get("median_2weeks"),
-                "ccu": game_data.get("ccu"),
-                "price_cents": game_data.get("price"),
-                "initial_price_cents": game_data.get("initialprice"),
-                "discount_percent": game_data.get("discount"),
-                "languages": game_data.get("languages"),
-                "genre": game_data.get("genre")
-            }
-
-            games_list.append(game_info)
-
-        df = transform_games_data(games_list)
-        validate_games_data(df)
-
-        ingestion_time = utc_now()
-        rows_loaded = load_games(cursor, df, ingestion_time)
-        load_game_metric_snapshots(cursor, df, run_id, ingestion_time)
-        known_appids = set(df["appid"].astype(int))
-        loadable_measurements = [
-            measurement
-            for measurement in steam_measurements
-            if measurement["appid"] in known_appids
-        ]
-        missing_appids = sorted(
-            measurement["appid"]
-            for measurement in steam_measurements
-            if measurement["appid"] not in known_appids
-        )
-
-        if missing_appids:
-            logging.warning(
-                "Valve-measured app IDs absent from the SteamSpy page: %s",
-                missing_appids
-            )
-
-        measurements_loaded = load_steam_measurements(
-            cursor,
-            loadable_measurements,
-            run_id,
-            ingestion_time
-        )
-
-        finish_pipeline_run(
-            cursor,
-            run_id,
-            "SUCCESS",
-            rows_extracted=len(df),
-            rows_loaded=rows_loaded
-        )
-        connection.commit()
-
-        logging.info(
-            "Pipeline completed: %s games and %s Steam measurements loaded",
-            rows_loaded,
-            measurements_loaded
-        )
-
-    except Exception as error:
-        logging.exception("Pipeline failed")
-
-        if connection is not None and cursor is not None and run_id is not None:
-            connection.rollback()
-            finish_pipeline_run(
-                cursor,
-                run_id,
-                "FAILED",
-                error_message=str(error)[:1000]
-            )
-            connection.commit()
-
-        raise
-
-    finally:
-        if cursor is not None:
-            cursor.close()
-
-        if connection is not None:
-            connection.close()
 
 if __name__ == "__main__":
-    run_pipeline()
+    main()

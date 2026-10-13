@@ -1,0 +1,255 @@
+{
+  "appnews": {
+    "appid": 620,
+    "count": 798,
+    "newsitems": [
+      {
+        "gid": "1844751498235199",
+        "title": "Portal 2 - Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1844751498235199",
+        "is_external_url": true,
+        "date": 1790707799,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 620
+      },
+      {
+        "gid": "1842212951307437",
+        "title": "A massive cache of Valve data has reportedly leaked online, appearing to include Portal 2's elusive beta build and a potential weapon from Half-Life 2: Episode 3",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/PC Gamer/1842212951307437",
+        "is_external_url": true,
+        "date": 1788090071,
+        "feedlabel": "PC Gamer",
+        "feedname": "PC Gamer",
+        "feed_type": 0,
+        "appid": 620
+      },
+      {
+        "gid": "1836506165562683",
+        "title": "Portal 2 just got a Steam Frame compatibility rating, hinting at the VR headset's imminent launch",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/PCGamesN/1836506165562683",
+        "is_external_url": true,
+        "date": 1782825532,
+        "feedlabel": "PCGamesN",
+        "feedname": "PCGamesN",
+        "feed_type": 0,
+        "appid": 620
+      },
+      {
+        "gid": "1836506165561121",
+        "title": "Portal 2 - Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1836506165561121",
+        "is_external_url": true,
+        "date": 1782771997,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 620
+      },
+      {
+        "gid": "1836506165554425",
+        "title": "Portal 2 - Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1836506165554425",
+        "is_external_url": true,
+        "date": 1782489423,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 620
+      },
+      {
+        "gid": "1830163047263100",
+        "title": "Portal 2: Community Edition promises to take the game's modding potential to new heights, and it's out in open beta now",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/PC Gamer/1830163047263100",
+        "is_external_url": true,
+        "date": 1776542332,
+        "feedlabel": "PC Gamer",
+        "feedname": "PC Gamer",
+        "feed_type": 0,
+        "appid": 620
+      },
+      {
+        "gid": "1830163047263814",
+        "title": "15 years on, Portal 2 Community Edition just breathed new life into Valve's classic",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/PCGamesN/1830163047263814",
+        "is_external_url": true,
+        "date": 1776530453,
+        "feedlabel": "PCGamesN",
+        "feedname": "PCGamesN",
+        "feed_type": 0,
+        "appid": 620
+      },
+      {
+        "gid": "1828894815555653",
+        "title": "Gabe Newell stepped back from game design during Portal 2's development, because 'he always wanted to be part of the team, but being Gabe and being in his position, that never really worked'",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/PC Gamer/1828894815555653",
+        "is_external_url": true,
+        "date": 1775068633,
+        "feedlabel": "PC Gamer",
+        "feedname": "PC Gamer",
+        "feed_type": 0,
+        "appid": 620
+      },
+      {
+        "gid": "1803527891903644",
+        "title": "Stardew Valley bumps Portal 2 from top spot as highest rated game on Steam",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/PCGamesN/1803527891903644",
+        "is_external_url": true,
+        "date": 1751996561,
+        "feedlabel": "PCGamesN",
+        "feedname": "PCGamesN",
+        "feed_type": 0,
+        "appid": 620
+      },
+      {
+        "gid": "1790848102614427",
+        "title": "Portal 2 gets a compatibility update for Linux",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/GamingOnLinux/1790848102614427",
+        "is_external_url": true,
+        "date": 1738836137,
+        "feedlabel": "GamingOnLinux",
+        "feedname": "GamingOnLinux",
+        "feed_type": 0,
+        "appid": 620
+      },
+      {
+        "gid": "1790848102598476",
+        "title": "Portal 2 - Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1790848102598476",
+        "is_external_url": true,
+        "date": 1738793971,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 620
+      },
+      {
+        "gid": "1789039014477150",
+        "title": "Portal 2 - Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1789039014477150",
+        "is_external_url": true,
+        "date": 1737410247,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 620
+      },
+      {
+        "gid": "6212244583190809228",
+        "title": "Portal 2 project lead wants Valve to return to single-player games",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/GamingOnLinux/6212244583190809228",
+        "is_external_url": true,
+        "date": 1729524257,
+        "feedlabel": "GamingOnLinux",
+        "feedname": "GamingOnLinux",
+        "feed_type": 0,
+        "appid": 620
+      },
+      {
+        "gid": "6341720536504015332",
+        "title": "Here are some of the best Steam games most own but too few have played",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/PCGamesN/6341720536504015332",
+        "is_external_url": true,
+        "date": 1726779387,
+        "feedlabel": "PCGamesN",
+        "feedname": "PCGamesN",
+        "feed_type": 0,
+        "appid": 70
+      },
+      {
+        "gid": "6250522009512398740",
+        "title": "Steam Families is out of beta, letting you share games with up to five others",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/Rock, Paper, Shotgun/6250522009512398740",
+        "is_external_url": true,
+        "date": 1726128549,
+        "feedlabel": "Rock, Paper, Shotgun",
+        "feedname": "Rock, Paper, Shotgun",
+        "feed_type": 0,
+        "appid": 620
+      },
+      {
+        "gid": "5759622039992054452",
+        "title": "Portal 2 - Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/5759622039992054452",
+        "is_external_url": true,
+        "date": 1719265068,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 620
+      },
+      {
+        "gid": "5742731639345538540",
+        "title": "Portal 2 - Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/5742731639345538540",
+        "is_external_url": true,
+        "date": 1717441383,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 620
+      },
+      {
+        "gid": "7309977427452692976",
+        "title": "Good news, Steam's just introduced a better way to enjoy dodgy smut and 6/10s with your grandparents",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/VG247/7309977427452692976",
+        "is_external_url": true,
+        "date": 1710844508,
+        "feedlabel": "VG247",
+        "feedname": "VG247",
+        "feed_type": 0,
+        "appid": 70
+      },
+      {
+        "gid": "5582843074956416935",
+        "title": "Portal 2 - Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/5582843074956416935",
+        "is_external_url": true,
+        "date": 1707163674,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 620
+      },
+      {
+        "gid": "5582843074945732618",
+        "title": "Portal 2 - Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/5582843074945732618",
+        "is_external_url": true,
+        "date": 1706910417,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 620
+      }
+    ]
+  }
+}

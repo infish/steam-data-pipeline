@@ -1,0 +1,280 @@
+{
+  "appnews": {
+    "appid": 730,
+    "count": 1766,
+    "newsitems": [
+      {
+        "gid": "1845383656379136",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1845383656379136",
+        "is_external_url": true,
+        "date": 1790808379,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1844751498232642",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1844751498232642",
+        "is_external_url": true,
+        "date": 1790635105,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1844751498226015",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1844751498226015",
+        "is_external_url": true,
+        "date": 1790373294,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1844751498222773",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1844751498222773",
+        "is_external_url": true,
+        "date": 1790286698,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1844751498219795",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1844751498219795",
+        "is_external_url": true,
+        "date": 1790204844,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1844751498218029",
+        "title": "Counter-Strike 2 adds an intense fast-paced 3v3 'Rush' game mode",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/GamingOnLinux/1844751498218029",
+        "is_external_url": true,
+        "date": 1790159109,
+        "feedlabel": "GamingOnLinux",
+        "feedname": "GamingOnLinux",
+        "feed_type": 0,
+        "appid": 730
+      },
+      {
+        "gid": "1844751498217397",
+        "title": "Большое обновление для Counter-Strike 2 принесло в игру новый режим, бесшумную перезарядку и яйца",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/PlayGround.ru - официальная группа/1844751498217397",
+        "is_external_url": true,
+        "date": 1790139805,
+        "feedlabel": "PlayGround.ru - официальная группа",
+        "feedname": "PlayGround.ru - официальная группа",
+        "feed_type": 0,
+        "appid": 730
+      },
+      {
+        "gid": "1844751498216926",
+        "title": "Rush Hour",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1844751498216926",
+        "is_external_url": true,
+        "date": 1790120317,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "appid": 730
+      },
+      {
+        "gid": "1844751498216924",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1844751498216924",
+        "is_external_url": true,
+        "date": 1790120256,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1844115010499298",
+        "title": "Создатель Counter-Strike объяснил исчезновение классического режима со спасением заложников из-за киберспорта",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/PlayGround.ru - официальная группа/1844115010499298",
+        "is_external_url": true,
+        "date": 1789841729,
+        "feedlabel": "PlayGround.ru - официальная группа",
+        "feedname": "PlayGround.ru - официальная группа",
+        "feed_type": 0,
+        "appid": 730
+      },
+      {
+        "gid": "1843481262690556",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1843481262690556",
+        "is_external_url": true,
+        "date": 1788994268,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes",
+          "mod_reviewed",
+          "ModAct_487176015_1788994844_0",
+          "mod_require_rereview"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1841579228676851",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1841579228676851",
+        "is_external_url": true,
+        "date": 1787614760,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1841579228663932",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1841579228663932",
+        "is_external_url": true,
+        "date": 1787182593,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1840944183775194",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1840944183775194",
+        "is_external_url": true,
+        "date": 1786575047,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1839676055895877",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1839676055895877",
+        "is_external_url": true,
+        "date": 1785791934,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1839676055881227",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1839676055881227",
+        "is_external_url": true,
+        "date": 1785285504,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1839676055881226",
+        "title": "Cologne 2026: Ranked Series",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1839676055881226",
+        "is_external_url": true,
+        "date": 1785285490,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "appid": 730
+      },
+      {
+        "gid": "1838407329267700",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1838407329267700",
+        "is_external_url": true,
+        "date": 1784589216,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1838407329258098",
+        "title": "Call II Arms-ory",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1838407329258098",
+        "is_external_url": true,
+        "date": 1784245194,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "hide_store",
+          "hide_library_overview",
+          "patchnotes",
+          "workshop",
+          "hide_library_detail"
+        ],
+        "appid": 730
+      },
+      {
+        "gid": "1838407329252903",
+        "title": "Counter-Strike 2 Update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1838407329252903",
+        "is_external_url": true,
+        "date": 1784076120,
+        "feedlabel": "Community Announcements",
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "tags": [
+          "patchnotes"
+        ],
+        "appid": 730
+      }
+    ]
+  }
+}

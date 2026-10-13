@@ -4,19 +4,20 @@ def transform_games_data(games_list):
 
     df = pd.DataFrame(games_list)
 
-    df["owners_low"] = df["owners"].str.split(" .. ").str[0]
-    df["owners_high"] = df["owners"].str.split(" .. ").str[1]
+    # Malformed or missing owner ranges become NaN for validation to reject.
+    owners = df["owners"].where(
+        df["owners"].map(lambda value: isinstance(value, str))
+    )
+    owner_bounds = owners.str.split(" .. ", regex=False)
 
-    df["owners_low"] = (
-        df["owners_low"]
-        .str.replace(",", "")
-        .astype(int)
+    df["owners_low"] = pd.to_numeric(
+        owner_bounds.str[0].str.replace(",", "", regex=False),
+        errors="coerce"
     )
 
-    df["owners_high"] = (
-        df["owners_high"]
-        .str.replace(",", "")
-        .astype(int)
+    df["owners_high"] = pd.to_numeric(
+        owner_bounds.str[1].str.replace(",", "", regex=False),
+        errors="coerce"
     )
 
     df["estimated_owners"] = (
