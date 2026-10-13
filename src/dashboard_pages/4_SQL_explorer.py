@@ -3,12 +3,13 @@
 import streamlit as st
 
 from dashboard_common import cached_read_sql, read_sql
+from dashboard_style import card, page_header
 
 
-st.title("SQL explorer")
-st.caption(
-    "Read-only: the dashboard's database account can only SELECT, and only "
-    "the predefined examples below can be run."
+page_header(
+    "SQL explorer",
+    "Browse the tables, views and marts, and run predefined example "
+    "queries. Read-only: the dashboard's database account can only SELECT."
 )
 
 EXPLORER_OBJECTS = {
@@ -103,27 +104,47 @@ ORDER BY run_date, job_name;
 """,
 }
 
-with st.expander("Available tables, views, and columns", expanded=False):
-    objects = cached_read_sql("SHOW FULL TABLES")
-    name_column, type_column = objects.columns[0], objects.columns[1]
-    objects = objects[objects[name_column].isin(EXPLORER_OBJECTS)]
-    types = dict(zip(objects[name_column], objects[type_column]))
-    selected = st.selectbox(
-        "Database object",
-        sorted(types),
-        format_func=lambda name: f"{name} ({types[name]})"
-    )
-    columns = cached_read_sql(f"SHOW COLUMNS FROM `{selected}`")
-    st.dataframe(
-        columns[["Field", "Type", "Null", "Key"]],
-        use_container_width=True,
-        hide_index=True
-    )
+browser, examples = st.columns([2, 3], gap="medium")
 
-example = st.selectbox("Example SQL", list(EXAMPLE_QUERIES))
-query = EXAMPLE_QUERIES[example].strip()
-st.code(query, language="sql")
+with browser:
+    with card("Tables, views and marts", "Pick one to see its columns."):
+        objects = cached_read_sql("SHOW FULL TABLES")
+        name_column, type_column = objects.columns[0], objects.columns[1]
+        objects = objects[objects[name_column].isin(EXPLORER_OBJECTS)]
+        types = dict(zip(objects[name_column], objects[type_column]))
+        selected = st.selectbox(
+            "Database object",
+            sorted(types),
+            format_func=lambda name: (
+                f"{name} ({'view' if types[name] == 'VIEW' else 'table'})"
+            ),
+            label_visibility="collapsed",
+        )
+        columns = cached_read_sql(f"SHOW COLUMNS FROM `{selected}`")
+        st.dataframe(
+            columns[["Field", "Type", "Null", "Key"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.caption(
+            "Every table and column is described in docs/data_dictionary.md."
+        )
 
-if st.button("Run example"):
-    # Deliberately uncached: the result reflects the database right now.
-    st.dataframe(read_sql(query), use_container_width=True, hide_index=True)
+with examples:
+    with card("Example queries"):
+        example = st.selectbox(
+            "Example",
+            list(EXAMPLE_QUERIES),
+            label_visibility="collapsed",
+        )
+        query = EXAMPLE_QUERIES[example].strip()
+        st.code(query, language="sql")
+
+        if st.button("Run example", type="primary",
+                     icon=":material/play_arrow:"):
+            # Deliberately uncached: the result reflects the database now.
+            st.dataframe(
+                read_sql(query),
+                use_container_width=True,
+                hide_index=True,
+            )

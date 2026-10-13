@@ -1,0 +1,21 @@
+# Dashboard theme. Chart colors follow the same palette in
+# src/dashboard_style.py (validated for colour-vision deficiency).
+[theme]
+base = "light"
+primaryColor = "#2a78d6"
+backgroundColor = "#f9f9f7"
+secondaryBackgroundColor = "#f0efec"
+textColor = "#0b0b0b"
+borderColor = "#e1e0d9"
+baseRadius = "medium"
+showWidgetBorder = true
+font = "sans-serif"
+
+[theme.sidebar]
+backgroundColor = "#16212d"
+secondaryBackgroundColor = "#223143"
+textColor = "#e6ecf2"
+borderColor = "#2c3d50"
+
+[browser]
+gatherUsageStats = false

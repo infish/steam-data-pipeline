@@ -70,6 +70,12 @@ This file records user-visible changes to the Steam data pipeline.
 - Multipage dashboard: Overview, Game detail, Market explorer, Pipeline
   health and SQL explorer, every chart captioned with its source and
   timestamp meaning; screenshots in `docs/screenshots/`.
+- Dashboard design: the sidebar groups pages into Explore and Operate and
+  shows each job's latest-run status (ok, warnings, late, failed) and age;
+  pages open with bordered headline numbers and split detail into tabs; all
+  charts share one style and a colour-vision-safe palette
+  (`src/dashboard_style.py`, theme in `.streamlit/config.toml`). Run warnings
+  are one compact notice with the details in an expander.
 - `python src/reprocess.py --seed-fixtures` seeds an empty database from the
   recorded API responses.
 - `docs/data_dictionary.md`, generated from `information_schema` and

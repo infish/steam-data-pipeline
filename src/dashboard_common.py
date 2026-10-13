@@ -119,13 +119,22 @@ def latest_runs():
 
 
 def show_run_warnings(runs):
-    for _, run in runs.iterrows():
-        if pd.notna(run["warning_message"]) and run["warning_message"]:
-            st.warning(
-                f"The latest {run['job_name']} run completed with warnings."
-                " Some data may be missing from it, or a data-quality check"
-                " failed."
-            )
+    """One compact notice for every job whose latest run has warnings."""
+    warned = runs[
+        runs["warning_message"].notna() & (runs["warning_message"] != "")
+    ]
 
-            with st.expander(f"{run['job_name']} run warnings"):
-                st.text(run["warning_message"])
+    if warned.empty:
+        return
+
+    jobs = ", ".join(f"`{name}`" for name in warned["job_name"])
+    st.warning(
+        f"Latest run of {jobs} finished with warnings: some data may be "
+        "missing, or a data-quality check failed.",
+        icon=":material/warning:",
+    )
+
+    with st.expander("Show run warnings"):
+        for _, run in warned.iterrows():
+            st.markdown(f"**{run['job_name']}** (run {run['run_id']})")
+            st.text(run["warning_message"])

@@ -328,12 +328,22 @@ A Streamlit multipage app (`src/dashboard.py` and `src/dashboard_pages/`).
 Every chart has a caption saying where its numbers come from and what its
 timestamp means.
 
+The sidebar groups the pages into **Explore** (Overview, Game detail, Market
+explorer) and **Operate** (Pipeline health, SQL explorer), and shows a status
+badge for each job's latest run (ok, warnings, late, failed) with its age,
+plus a link to Pipeline health when data checks fail. Each page opens with
+bordered headline numbers and then splits its detail into tabs. Charts share
+one style (`src/dashboard_style.py`): a palette checked for colour-vision
+deficiency, where a colour always means the same job or series, blue/red only
+for rise/fall, and status always shown with an icon and a label. The theme
+is in `.streamlit/config.toml`.
+
 | Page | Shows |
 | --- | --- |
-| Overview | games in the catalog, players right now (Valve), sources healthy, latest run of each job and its warnings, top week-over-week movers, most played now |
+| Overview | players right now (Valve) with the change since the previous hour, games in the catalog, sources fresh; most played now; biggest week-over-week moves; links to the other pages |
 | Game detail | Store attributes and SteamSpy tags; daily peak, average and 7-day average players with patch-notes markers; top-100 rank; hourly players; review sentiment drift and monthly review history; price history as a step chart |
 | Market explorer | genre and tag summaries, release-year groups, free versus paid |
-| Pipeline health | run history and durations per job, freshness per source, SteamSpy staleness over time, raw duplicate rates, rejected rows, recent data-quality problems, request budget used versus planned |
+| Pipeline health | jobs healthy, sources fresh, failed checks and the busiest Store window at a glance; tabs for run history and durations per job, freshness per source, data-quality problems, SteamSpy staleness and raw duplicate rates, request budget used versus planned |
 | SQL explorer | tables, views and marts with their columns, and predefined example queries |
 
 ![Overview](docs/screenshots/overview.jpg)
@@ -343,7 +353,7 @@ More screenshots: [game detail](docs/screenshots/game-detail.jpg),
 [pipeline health](docs/screenshots/pipeline-health.jpg),
 [SQL explorer](docs/screenshots/sql-explorer.jpg). They were taken on a
 throwaway stack seeded from the recorded API responses, so trends cover a
-single day.
+single day, at a narrow window width where the sidebar is collapsed.
 
 Behaviour shared by all pages:
 
@@ -462,6 +472,7 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 ```text
 .
 ├── .github/workflows/        CI: unit + integration tests, gated image publishing
+├── .streamlit/config.toml    dashboard theme
 ├── db/migrations/            Flyway: versioned V*__ schema changes, repeatable views
 ├── db/transforms/            SQL that rebuilds each analytics mart after every job
 ├── deploy/                   TrueNAS Custom App definition
@@ -480,6 +491,7 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 │   ├── dashboard_pages/      the dashboard pages
 │   ├── dashboard_common.py   shared queries, caching and formatting
 │   ├── dashboard_data.py     pure chart shaping (gaps, price steps, budget)
+│   ├── dashboard_style.py    palette, chart style, cards and status badges
 │   ├── main.py               run the pipeline once
 │   ├── reprocess.py          rebuild a run from its stored raw responses
 │   ├── scheduler.py          in-process scheduler
