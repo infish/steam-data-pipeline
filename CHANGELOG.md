@@ -24,6 +24,13 @@ This file records user-visible changes to the Steam data pipeline.
 
 ### Changed
 
+- Rate-limited requests are paced per API instead of preceded by a fixed
+  pause: a request waits only until the API's interval (2.1 s Store, 1.1 s
+  SteamSpy) has passed since the previous request to that API started. The
+  limits are as strict as before. Measured on the live APIs,
+  `catalog_daily` went from 468.7 s to 292.8 s (−37%) with the same 261
+  requests; see docs/optimizations.md, a new log of optimisations and how
+  each was measured.
 - Data checks run after the job that produces their data, and only that
   job's runs get their failures as warnings. Before, every check ran after
   every job, so one stale catalog showed up as warnings on every hourly

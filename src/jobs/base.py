@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
-from api.steam_api import create_session
+from api.pacing import Pacer
+from api.steam_api import API_INTERVALS, create_session
 from database.mysql_database import get_connection
 from ingest.raw_store import RawStore
 from jobs.timing import StepTimer, no_step, save_steps
@@ -70,6 +71,18 @@ class RunContext:
     timer: Optional[StepTimer] = None
     warnings: list = field(default_factory=list)
     counters: dict = field(default_factory=dict)
+    # One Pacer per rate-limited API, shared by every step of the run.
+    pacers: dict = field(default_factory=dict)
+
+    def pace(self, api):
+        """Wait until api's minimum interval since its last request passed.
+
+        Call right before a request to "store" or "steamspy" (API_INTERVALS).
+        """
+        if api not in self.pacers:
+            self.pacers[api] = Pacer(API_INTERVALS[api], self.sleep_fn)
+
+        self.pacers[api].wait()
 
     def step(self, name):
         """Time a block of the job as one step: `with ctx.step("load"):`."""

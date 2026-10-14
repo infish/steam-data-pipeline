@@ -1,11 +1,11 @@
 import json
-import time
 
 import requests
 from datetime import datetime, timezone
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from api.pacing import Pacer
 from config import get_steamspy_config, get_tracked_appids
 from ingest.raw_store import MemoryRawStore
 
@@ -48,13 +48,21 @@ SOURCE_NEWS = "steam_news"
 # batch size is undocumented; 50 stays well below the ~100 worth testing.
 PRICE_BATCH_SIZE = 50
 
-# SteamSpy allows one non-"all" request per second; this is the pause
-# before each appdetails call, including the first after the page request.
+# SteamSpy allows one non-"all" request per second; this is the minimum
+# time between the starts of two SteamSpy requests, the page request
+# included (api/pacing.py).
 STEAMSPY_REQUEST_INTERVAL_SECONDS = 1.1
 
 # The Store budget is 150 requests per 5 minutes (docs/request_budget.md):
-# one request every 2 s, plus a margin.
+# one request every 2 s, plus a margin, between the starts of two paced Store
+# requests (details, price batches, review histograms).
 STORE_REQUEST_INTERVAL_SECONDS = 2.1
+
+# Minimum interval per paced API, for RunContext.pace.
+API_INTERVALS = {
+    "steamspy": STEAMSPY_REQUEST_INTERVAL_SECONDS,
+    "store": STORE_REQUEST_INTERVAL_SECONDS,
+}
 
 # The SteamSpy catalog fields run_pipeline reads from a page row.
 CATALOG_ROW_FIELDS = (
@@ -232,18 +240,21 @@ def fetch_store_app_details(session, store, appid, country):
     )
 
 
-def get_tracked_app_details(session, appids, store=None, sleep_fn=time.sleep):
+def get_tracked_app_details(session, appids, store=None, pace=None):
     """Return ({appid_str: page_row}, warnings) for apps off the page.
 
     Rows are shaped like SteamSpy request=all page rows. A failed lookup
-    becomes a warning and the app is skipped.
+    becomes a warning and the app is skipped. pace() is called before each
+    SteamSpy request (RunContext.pace); by default requests are spaced by
+    STEAMSPY_REQUEST_INTERVAL_SECONDS.
     """
     store = store or MemoryRawStore()
+    pace = pace or Pacer(STEAMSPY_REQUEST_INTERVAL_SECONDS).wait
     rows = {}
     warnings = []
 
     for appid in appids:
-        sleep_fn(STEAMSPY_REQUEST_INTERVAL_SECONDS)
+        pace()
 
         try:
             rows[str(appid)] = fetch_steamspy_app_details(

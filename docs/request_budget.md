@@ -26,15 +26,29 @@ the number of app IDs in `STEAM_TRACKED_APPIDS` (default 3).
 | --- | --- | --- | --- | --- |
 | Valve Web API (top concurrent, current players, most played, news) | ≤ 123 | ≤ 5 per hourly run | keep modest; no published keyless limit | n/a |
 | SteamSpy `request=all` | 1 | 1 per day | 1 per 60 s | ample |
-| SteamSpy other requests | ≤ 123 | 1 per 1.1 s (enforced pause) | 1 per s | pause is 10% above the limit |
-| Steam Store (`api/appdetails`, price batches, `appreviews`, `appreviewhistogram`) | ≤ 146 | 1 per 2.1 s for details, prices and histograms | 150 per 5 min | the whole day's Store requests fit inside one 5-minute budget |
+| SteamSpy other requests | ≤ 123 | at most 1 per 1.1 s (paced) | 1 per s | the interval is 10% above the limit |
+| Steam Store (`api/appdetails`, price batches, `appreviews`, `appreviewhistogram`) | ≤ 146 | at most 1 per 2.1 s for details, prices and histograms (paced) | 150 per 5 min | the whole day's Store requests fit inside one 5-minute budget |
+
+## How the limits are enforced
+
+Each rate-limited API has a pacer per run (`src/api/pacing.py`,
+`RunContext.pace`): before a request it waits until the API's interval has
+passed since the **start** of the previous request to the same API, and no
+longer. Time spent on the previous response, on parsing and loading, or on
+requests to other APIs counts towards the interval. Request starts are
+therefore never closer than 2.1 s for the Store or 1.1 s for SteamSpy, the
+same guarantee as the fixed pause before every request used before v1.1.0,
+without its extra waiting ([`optimizations.md`](optimizations.md)). The
+SteamSpy page request counts towards SteamSpy's interval, and one Store
+pacer covers details, price batches and histograms in a run. Review
+summaries (`appreviews`, 3 per day) are not paced.
 
 ## Notes
 
-- The catalog job alternates one Store request (after a 2.1 s pause) with
-  one SteamSpy request (after a 1.1 s pause) per refreshed game, so 120 games
-  take about 6.5 minutes and never exceed either limit. At 120 games per run,
-  a 1,000-game catalog is fully refreshed about every 9 days.
+- The catalog job alternates one Store request with one SteamSpy request
+  per refreshed game. The Store interval sets the pace: 120 games take about
+  4.2 minutes (2.1 s each) and never exceed either limit. At 120 games per
+  run, a 1,000-game catalog is fully refreshed about every 9 days.
   `STORE_DETAILS_PER_RUN` is capped at 140 so a run stays inside the Store
   budget.
 - The most-played leaderboard changes once a day but is fetched every hour,

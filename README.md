@@ -99,8 +99,11 @@ MySQL healthy → bootstrap and migrations complete → scheduler and dashboard 
 - **Normalization of messy inputs**: company strings with commas inside
   names, HTML language lists, free-text release dates —
   [`src/parsing/`](src/parsing/), [`tests/test_parsing.py`](tests/test_parsing.py).
-- **Request budgets**: rate limits planned per job and enforced with pauses —
-  [`docs/request_budget.md`](docs/request_budget.md).
+- **Request budgets**: rate limits planned per job and enforced by pacing
+  each API's requests — [`docs/request_budget.md`](docs/request_budget.md).
+- **Measured optimisation**: every run times its steps, and each change made
+  from those timings is recorded with before and after numbers —
+  [`docs/optimizations.md`](docs/optimizations.md).
 - **Data observability**: freshness, volume, staleness, duplicate rates,
   schema drift, table invariants and mart tests stored after every run —
   [`src/quality/checks.py`](src/quality/checks.py),
@@ -432,7 +435,9 @@ Every source, including candidates for future phases, is documented in
 [`docs/sources.md`](docs/sources.md) with its fields, timestamp meaning,
 freshness, rate limit and caveats. Recorded example responses are in
 `tests/fixtures/sources/`. Requests per job and source are budgeted in
-[`docs/request_budget.md`](docs/request_budget.md).
+[`docs/request_budget.md`](docs/request_budget.md); optimisations made from
+the run step timings are logged in
+[`docs/optimizations.md`](docs/optimizations.md).
 
 ## Analytics marts
 
@@ -490,7 +495,8 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 ├── db/transforms/            SQL that rebuilds each analytics mart after every job
 ├── deploy/                   TrueNAS Custom App definition
 ├── docs/                     sources, data dictionary, lineage, marts,
-│                             observability, budget, ADRs, screenshots
+│                             observability, budget, optimisations, ADRs,
+│                             screenshots
 ├── src/
 │   ├── api/                  HTTP calls to SteamSpy and Steam, via the raw layer
 │   ├── ingest/               raw landing layer, fixture and raw replay sessions

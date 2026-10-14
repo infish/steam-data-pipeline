@@ -11,8 +11,6 @@ import logging
 
 from api.steam_api import (
     ENRICHMENT_ERRORS,
-    STEAMSPY_REQUEST_INTERVAL_SECONDS,
-    STORE_REQUEST_INTERVAL_SECONDS,
     fetch_steamspy_appdetails_payload,
     fetch_store_app_details,
 )
@@ -322,7 +320,7 @@ def refresh_details(ctx, appids):
     unparsed_dates = []
 
     for appid in chosen:
-        ctx.sleep_fn(STORE_REQUEST_INTERVAL_SECONDS)
+        ctx.pace("store")
 
         try:
             payload = fetch_store_app_details(
@@ -346,7 +344,9 @@ def refresh_details(ctx, appids):
         except ENRICHMENT_ERRORS as error:
             store_failures.append((appid, error))
 
-        ctx.sleep_fn(STEAMSPY_REQUEST_INTERVAL_SECONDS)
+        # The Store pause above usually covers this already; pace() then
+        # returns at once instead of adding 1.1 s per game.
+        ctx.pace("steamspy")
 
         try:
             payload = fetch_steamspy_appdetails_payload(

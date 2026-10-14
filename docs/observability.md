@@ -133,6 +133,9 @@ The dashboard's **Steps** tab (Pipeline health) shows the latest run of each
 job split into working and waiting time per step, run time by phase over the
 last 14 days, and every step of the latest run.
 
+Optimisations made from these timings, with their before and after numbers,
+are logged in [`optimizations.md`](optimizations.md).
+
 ## Mart tests
 
 The Phase 16 mart tests (key uniqueness, non-null keys, non-empty, value

@@ -154,6 +154,9 @@ def build_games_list(data):
 
 def run_catalog(ctx):
     with ctx.step("fetch_catalog"):
+        # The page request counts towards SteamSpy's interval, so the first
+        # appdetails request after it is still spaced.
+        ctx.pace("steamspy")
         data = get_top_games(ctx.session, ctx.store)
 
     # Tracked apps need a games row for their observations' foreign keys.
@@ -168,7 +171,7 @@ def run_catalog(ctx):
             ctx.session,
             off_page_appids,
             store=ctx.store,
-            sleep_fn=ctx.sleep_fn
+            pace=lambda: ctx.pace("steamspy")
         )
     data = {**data, **backfilled_rows}
     ctx.warn(*backfill_warnings)

@@ -5,7 +5,6 @@ import logging
 from api.steam_api import (
     ENRICHMENT_ERRORS,
     PRICE_BATCH_SIZE,
-    STORE_REQUEST_INTERVAL_SECONDS,
     fetch_store_prices,
 )
 from config import get_store_country
@@ -101,7 +100,7 @@ def check_prices(ctx, appids):
 
     for start in range(0, len(appids), PRICE_BATCH_SIZE):
         batch = appids[start:start + PRICE_BATCH_SIZE]
-        ctx.sleep_fn(STORE_REQUEST_INTERVAL_SECONDS)
+        ctx.pace("store")
 
         try:
             payload = fetch_store_prices(
