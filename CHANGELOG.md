@@ -2,7 +2,7 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
-## Unreleased
+## v1.1.0 — 2026-10-14
 
 ### Added
 
