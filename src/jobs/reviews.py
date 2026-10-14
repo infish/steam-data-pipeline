@@ -50,20 +50,30 @@ def run_reviews(ctx):
                 appid
             )
 
-    summaries, warnings = get_review_summaries(
-        ctx.session,
-        appids,
-        ctx.store
-    )
+    with ctx.step("fetch_summaries"):
+        summaries, warnings = get_review_summaries(
+            ctx.session,
+            appids,
+            ctx.store
+        )
+
     ctx.warn(*warnings)
-    loaded = load_review_observations(
-        ctx.cursor,
-        summaries,
-        ctx.run_id,
-        ctx.load_time()
-    )
-    rollups = collect_histograms(ctx, appids, summaries)
-    collect_news(ctx, appids)
+
+    with ctx.step("load_summaries") as step:
+        loaded = load_review_observations(
+            ctx.cursor,
+            summaries,
+            ctx.run_id,
+            ctx.load_time()
+        )
+        step["rows"] = loaded
+
+    with ctx.step("histograms") as step:
+        rollups = collect_histograms(ctx, appids, summaries)
+        step["rows"] = rollups
+
+    with ctx.step("news"):
+        collect_news(ctx, appids)
 
     # New news events depend on what earlier runs stored, so they are only
     # logged; the counters stay the same when a run is reprocessed.

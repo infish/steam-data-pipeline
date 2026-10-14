@@ -172,7 +172,7 @@ class SteamSpyTests(unittest.TestCase):
             session.close()
 
     def test_tracked_app_details_are_shaped_like_page_rows(self):
-        sleeps = []
+        paced = []
         session = session_with(
             spy_details(427520),
             spy_details(620, name="Portal 2")
@@ -181,7 +181,7 @@ class SteamSpyTests(unittest.TestCase):
         rows, warnings = get_tracked_app_details(
             session,
             [427520, 620],
-            sleep_fn=sleeps.append
+            pace=lambda: paced.append("steamspy")
         )
 
         self.assertEqual(warnings, [])
@@ -190,7 +190,8 @@ class SteamSpyTests(unittest.TestCase):
         self.assertEqual(rows["427520"]["owners"], "5,000,000 .. 10,000,000")
         self.assertEqual(rows["620"]["name"], "Portal 2")
         self.assertNotIn("tags", rows["427520"])
-        self.assertEqual(sleeps, [STEAMSPY_REQUEST_INTERVAL_SECONDS] * 2)
+        # Paced before each SteamSpy request.
+        self.assertEqual(paced, ["steamspy"] * 2)
         self.assertGreaterEqual(STEAMSPY_REQUEST_INTERVAL_SECONDS, 1)
         session.get.assert_any_call(
             STEAMSPY_URL,
@@ -208,7 +209,7 @@ class SteamSpyTests(unittest.TestCase):
         rows, warnings = get_tracked_app_details(
             session,
             [111, 427520, 999],
-            sleep_fn=lambda seconds: None
+            pace=lambda: None
         )
 
         self.assertEqual(list(rows), ["427520"])
@@ -218,17 +219,17 @@ class SteamSpyTests(unittest.TestCase):
         self.assertIn("no name for app 999", warnings[1])
 
     def test_no_tracked_app_details_requests_when_nothing_is_missing(self):
-        sleeps = []
+        paced = []
         session = MagicMock()
 
         rows, warnings = get_tracked_app_details(
             session,
             [],
-            sleep_fn=sleeps.append
+            pace=lambda: paced.append("steamspy")
         )
 
         self.assertEqual((rows, warnings), ({}, []))
-        self.assertEqual(sleeps, [])
+        self.assertEqual(paced, [])
         session.get.assert_not_called()
 
 

@@ -7,7 +7,6 @@ import logging
 
 from api.steam_api import (
     ENRICHMENT_ERRORS,
-    STORE_REQUEST_INTERVAL_SECONDS,
     fetch_news,
     fetch_review_histogram,
 )
@@ -125,7 +124,7 @@ def collect_histograms(ctx, appids, summaries=None):
     loaded = 0
 
     for appid in appids:
-        ctx.sleep_fn(STORE_REQUEST_INTERVAL_SECONDS)
+        ctx.pace("store")
 
         try:
             rows = parse_histogram(

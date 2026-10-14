@@ -63,21 +63,47 @@ class QualityIntegrationTests(IntegrationTestCase):
         )
         self.assertIsNone(self.run_row(run_id)["warning_message"])
 
-    def test_stale_source_fails_freshness_and_warns_the_run(self):
+    def test_stale_source_fails_freshness_after_any_job(self):
         self.run_job("catalog_daily", now_fn=at(NOW - timedelta(hours=3)))
         self.run_job("players_hourly", now_fn=at(NOW - timedelta(hours=3)))
         run_id = self.run_job("reviews_daily", now_fn=at(NOW))
 
+        # Freshness is the watchdog: a reviews run notices that the players
+        # job stopped...
         freshness = self.results(run_id, "freshness")
         chart_freshness = freshness["valve_top_concurrent"]
         self.assertEqual(chart_freshness["status"], "fail")
         self.assertEqual(chart_freshness["observed_value"], "3.0 h")
         self.assertEqual(freshness["steam_review_summary"]["status"], "pass")
-        self.assertIn(
-            "Data quality check freshness failed on valve_top_concurrent:"
-            " observed 3.0 h",
-            self.run_row(run_id)["warning_message"]
+        # ...but does not take the warning: the reviews run is fine.
+        self.assertIsNone(self.run_row(run_id)["warning_message"])
+
+    def test_a_job_runs_only_its_own_and_the_global_checks(self):
+        self.run_job("catalog_daily", now_fn=at(NOW))
+        self.execute(
+            "UPDATE game_price_history SET is_current = FALSE,"
+            " valid_to = valid_from WHERE appid = 620"
         )
+        run_id = self.run_job("reviews_daily", now_fn=at(NOW))
+        checks = {
+            row["check_name"]
+            for row in self.query(
+                "SELECT DISTINCT check_name FROM data_quality_results"
+                " WHERE run_id = %s",
+                (run_id,)
+            )
+        }
+
+        # The broken price history is the catalog job's to report.
+        self.assertNotIn("one_current_price_version", checks)
+        self.assertNotIn("catalog_games_have_developers", checks)
+        self.assertIn("single_partial_month", checks)
+        self.assertIn("no_stuck_runs", checks)
+        self.assertEqual(len(self.results(run_id, "freshness")), 8)
+        self.assertNotIn(
+            "steamspy_all", self.results(run_id, "schema_drift")
+        )
+        self.assertIsNone(self.run_row(run_id)["warning_message"])
 
     def test_volume_outside_the_seven_day_median_warns(self):
         self.run_job("catalog_daily", now_fn=at(NOW - timedelta(days=9)))
@@ -93,7 +119,7 @@ class QualityIntegrationTests(IntegrationTestCase):
             moment = yesterday.replace(hour=hour)
             self.run_job("players_hourly", chart(moment), now_fn=at(moment))
 
-        run_id = self.run_job("reviews_daily", now_fn=at(NOW))
+        run_id = self.run_job("players_hourly", now_fn=at(NOW))
 
         volume = self.results(run_id, "volume")["player_observations"]
         self.assertEqual(volume["status"], "warn")
@@ -162,7 +188,8 @@ class QualityIntegrationTests(IntegrationTestCase):
             drift["valve_top_concurrent"]["details"],
             "response.ranks[].concurrent_in_game"
         )
-        self.assertEqual(drift["steamspy_all"]["status"], "pass")
+        # SteamSpy payloads are checked after catalog runs, not here.
+        self.assertNotIn("steamspy_all", drift)
         self.assertIn(
             "schema_drift failed on valve_top_concurrent",
             self.run_row(run_id)["warning_message"]
@@ -170,27 +197,33 @@ class QualityIntegrationTests(IntegrationTestCase):
 
     def test_a_broken_invariant_fails_without_deleting_data(self):
         self.run_job("catalog_daily", now_fn=at(NOW))
+        # An old day's rollup that cannot be right: minimum above peak.
         self.execute(
-            "UPDATE game_price_history SET is_current = FALSE,"
-            " valid_to = valid_from WHERE appid = 620"
+            "INSERT INTO player_daily (appid, observation_date,"
+            " peak_players, avg_players, min_players, observation_count,"
+            " updated_at) VALUES (730, '2026-10-01', 10, 20, 30, 1, %s)",
+            (NOW,)
         )
-        counts = {
-            table: self.count(table)
-            for table in ("games", "game_price_history",
-                          "game_metric_snapshots")
-        }
+        games = self.count("games")
 
-        run_id = self.run_job("reviews_daily", now_fn=at(NOW))
+        run_id = self.run_job("players_hourly", chart(NOW), now_fn=at(NOW))
 
         (invariant,) = self.results(
-            run_id, "one_current_price_version"
+            run_id, "consistent_daily_rollup"
         ).values()
         self.assertEqual(invariant["status"], "fail")
         self.assertEqual(invariant["observed_value"], "1")
-        self.assertEqual(
-            {table: self.count(table) for table in counts},
-            counts
+        self.assertIn(
+            "consistent_daily_rollup failed on player_daily",
+            self.run_row(run_id)["warning_message"]
         )
+        # The broken row is reported, not deleted.
+        (kept,) = self.query(
+            "SELECT COUNT(*) AS n FROM player_daily"
+            " WHERE observation_date = '2026-10-01'"
+        )
+        self.assertEqual(kept["n"], 1)
+        self.assertEqual(self.count("games"), games)
         self.assertEqual(self.run_row(run_id)["status"], "SUCCESS")
 
 

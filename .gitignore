@@ -9,3 +9,6 @@ reports/
 interview.txt
 __pycache__/
 *.pyc
+
+# Local compose overrides, such as a test-only stack without the scheduler.
+docker-compose.override.yml

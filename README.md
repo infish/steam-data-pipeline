@@ -99,8 +99,11 @@ MySQL healthy → bootstrap and migrations complete → scheduler and dashboard 
 - **Normalization of messy inputs**: company strings with commas inside
   names, HTML language lists, free-text release dates —
   [`src/parsing/`](src/parsing/), [`tests/test_parsing.py`](tests/test_parsing.py).
-- **Request budgets**: rate limits planned per job and enforced with pauses —
-  [`docs/request_budget.md`](docs/request_budget.md).
+- **Request budgets**: rate limits planned per job and enforced by pacing
+  each API's requests — [`docs/request_budget.md`](docs/request_budget.md).
+- **Measured optimisation**: every run times its steps, and each change made
+  from those timings is recorded with before and after numbers —
+  [`docs/optimizations.md`](docs/optimizations.md).
 - **Data observability**: freshness, volume, staleness, duplicate rates,
   schema drift, table invariants and mart tests stored after every run —
   [`src/quality/checks.py`](src/quality/checks.py),
@@ -299,6 +302,16 @@ Operational audit information, one row per job run:
 - Failure message, and a separate `warning_message` for runs that succeeded
   with degraded input
 
+### `run_steps`
+
+How long each step of a run took, one row per step: the run's phases
+(`setup`, `job`, `finish`, `marts`, `checks`), the job's own steps inside
+`job` (for example `fetch_catalog`, `store_details_and_tags`, `prices`), each
+mart and each group of data checks. Per step: duration, the part spent
+waiting between API requests on purpose (`wait_ms`), API requests made and,
+where reported, rows written. A failed run keeps its steps up to the one
+that failed. The dashboard's **Steps** tab on Pipeline health shows them.
+
 SteamSpy rows are validated before loading. Problems with the whole response
 fail the run: an empty response, missing columns, or duplicate app IDs.
 Problems with a single row reject only that row: a missing or empty name, a
@@ -344,7 +357,7 @@ palette.
 | Overview | players right now (Valve) with the change since the previous hour, games in the catalog, sources fresh; most played now; biggest week-over-week moves; links to the other pages |
 | Game detail | Store attributes and SteamSpy tags; daily peak, average and 7-day average players with patch-notes markers; top-100 rank; hourly players; review sentiment drift and monthly review history; price history as a step chart |
 | Market explorer | genre and tag summaries, release-year groups, free versus paid |
-| Pipeline health | jobs healthy, sources fresh, failed checks and the busiest Store window at a glance; tabs for run history and durations per job, freshness per source, data-quality problems, SteamSpy staleness and raw duplicate rates, request budget used versus planned |
+| Pipeline health | jobs healthy, sources fresh, checks failing and the busiest Store window at a glance; tabs for run history and durations per job, where each job's latest run spent its time (steps, rate-limit waiting, requests) and run time by phase over 14 days, freshness per source, checks not passing now, SteamSpy staleness and raw duplicate rates, request budget used versus planned |
 | SQL explorer | tables, views and marts with their columns, and predefined example queries |
 
 ![Overview](docs/screenshots/overview.jpg)
@@ -422,7 +435,9 @@ Every source, including candidates for future phases, is documented in
 [`docs/sources.md`](docs/sources.md) with its fields, timestamp meaning,
 freshness, rate limit and caveats. Recorded example responses are in
 `tests/fixtures/sources/`. Requests per job and source are budgeted in
-[`docs/request_budget.md`](docs/request_budget.md).
+[`docs/request_budget.md`](docs/request_budget.md); optimisations made from
+the run step timings are logged in
+[`docs/optimizations.md`](docs/optimizations.md).
 
 ## Analytics marts
 
@@ -438,14 +453,16 @@ patch releases. Grain, sources, refresh and caveats for each mart are in
 
 ## Data observability
 
-After every job the pipeline checks its own data and stores every result in
-`data_quality_results`: freshness per source, daily volume against a 7-day
-median, how many SteamSpy values stayed unchanged between catalog runs (the
-September 2026 incident as a permanent monitor), raw-payload duplicate rates,
-schema drift against the fields in `docs/sources.md`, invariants for every
-table, and the mart tests. A failing check never deletes data; it adds a run
-warning that the dashboard shows. Checks and thresholds are documented in
-[`docs/observability.md`](docs/observability.md).
+After every job the pipeline checks the data that job produced and stores
+every result in `data_quality_results`: freshness per source, daily volume
+against a 7-day median, how many SteamSpy values stayed unchanged between
+catalog runs (the September 2026 incident as a permanent monitor),
+raw-payload duplicate rates, schema drift against the fields in
+`docs/sources.md`, invariants for every table, and the mart tests. Freshness
+runs after every job as a watchdog. A failing check never deletes data; it
+adds a warning to the run of the job responsible, and the dashboard counts
+each check by its latest result. Checks, thresholds and which job runs each
+one are documented in [`docs/observability.md`](docs/observability.md).
 
 ## SQL analytics
 
@@ -478,7 +495,8 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 ├── db/transforms/            SQL that rebuilds each analytics mart after every job
 ├── deploy/                   TrueNAS Custom App definition
 ├── docs/                     sources, data dictionary, lineage, marts,
-│                             observability, budget, ADRs, screenshots
+│                             observability, budget, optimisations, ADRs,
+│                             screenshots
 ├── src/
 │   ├── api/                  HTTP calls to SteamSpy and Steam, via the raw layer
 │   ├── ingest/               raw landing layer, fixture and raw replay sessions
@@ -635,6 +653,23 @@ docker compose run --rm pipeline python src/main.py players_hourly
 The scheduler does not collect on container startup, which avoids duplicate
 observations during app restarts. Manual runs remain available for focused
 validation.
+
+### Local test stack
+
+When another deployment (such as TrueNAS) does the scheduled collection, a
+local stack can run without the scheduler, so both do not share the APIs'
+rate limits. Create `docker-compose.override.yml` (gitignored), which Docker
+Compose loads automatically:
+
+```yaml
+services:
+  scheduler:
+    profiles: ["collect"]
+```
+
+`docker compose up -d` then starts the database, migrations and dashboard
+only; run jobs by hand as above. `docker compose --profile collect up -d`
+starts the scheduler again.
 
 ## Backfill review history or news
 
@@ -955,7 +990,7 @@ The TrueNAS deployment runs:
 The application image is pinned to a release tag:
 
 ```text
-ghcr.io/infish/steam-data-pipeline:v1.0.1
+ghcr.io/infish/steam-data-pipeline:v1.1.0
 ```
 
 Deploy only a tag whose image has been published (see

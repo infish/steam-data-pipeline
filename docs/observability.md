@@ -1,7 +1,7 @@
 # Data observability
 
 After every successful job, the pipeline rebuilds the analytics marts, runs
-the checks below, and stores every result in `data_quality_results`
+that job's checks below, and stores every result in `data_quality_results`
 (`check_name`, `target`, `run_id`, `status`, `observed_value`, `threshold`,
 `details`, `checked_at`). Status is `pass`, `warn` or `fail`.
 
@@ -10,6 +10,26 @@ A `fail` **never deletes or blocks data**. It adds a line to the run's
 the pipeline-health page, but does not touch the run. The code is in
 `src/quality/checks.py`; the thresholds are heuristics chosen for this
 pipeline and can be tuned there.
+
+## Which job runs which check
+
+Every check belongs to the job that produces its data, and runs only after
+that job: catalog checks after `catalog_daily`, player checks after
+`players_hourly`, review checks after `reviews_daily`. A few checks guard
+the pipeline as a whole and run after every job: volume of
+`raw_api_responses` and `data_quality_results`, and `no_stuck_runs`.
+
+**Freshness** is the exception. It runs after every job as a watchdog, so a
+job that stops running is noticed by the others. A stale source of another
+job is stored, but it does not become a warning on the current run: the
+hourly players run should not report "warnings" because the catalog is
+stale.
+
+So one problem is reported once per run of the job responsible, not by every
+run. The dashboard counts a check as failing when its **latest** result is
+`fail`, not by counting stored rows. The owner of each source is
+`SOURCE_JOBS` in `src/quality/checks.py`, and the owner of each invariant is
+listed in `INVARIANTS`.
 
 ## Freshness
 
@@ -64,20 +84,57 @@ in `tests/fixtures/sources/` satisfy the same rules.
 Every table added in Part 2 has at least one check; a unit test enforces this
 for every `CREATE TABLE` in migrations V5 and later.
 
-| Check | Target | Status on violation |
-| --- | --- | --- |
-| `consistent_daily_rollup`: min ≤ average ≤ peak, at least one observation | `player_daily` | fail |
-| `recent_leaderboard_day`: newest leaderboard day at most 2 days old | `most_played_daily` | warn |
-| `catalog_games_have_developers` / `_publishers` | `game_developers`, `game_publishers` | fail |
-| `named_companies`, `described_genres`, `described_categories`, `named_languages`, `named_tags` | lookup tables | fail |
-| `available_details_have_type` | `game_details` | fail |
-| `genre_/category_/language_links_from_details`: links only for games with details | bridge tables | fail |
-| `tag_links_have_fetch_time` | `game_tags` | fail |
-| `one_current_price_version`, `ordered_price_versions` | `game_price_history` | fail |
-| `single_partial_month` | `review_rollups` | fail |
-| `latest_reconciliation_within_tolerance` | `review_reconciliation` | warn |
-| `valid_events`: a title, and not more than a day in the future | `game_events` | fail |
-| `no_stuck_runs`: no run `RUNNING` for more than 6 hours | `pipeline_runs` | fail |
+| Check | Target | Status on violation | Runs after |
+| --- | --- | --- | --- |
+| `consistent_daily_rollup`: min ≤ average ≤ peak, at least one observation | `player_daily` | fail | `players_hourly` |
+| `recent_leaderboard_day`: newest leaderboard day at most 2 days old | `most_played_daily` | warn | `players_hourly` |
+| `catalog_games_have_developers` / `_publishers` | `game_developers`, `game_publishers` | fail | `catalog_daily` |
+| `named_companies`, `described_genres`, `described_categories`, `named_languages`, `named_tags` | lookup tables | fail | `catalog_daily` |
+| `available_details_have_type` | `game_details` | fail | `catalog_daily` |
+| `genre_/category_/language_links_from_details`: links only for games with details | bridge tables | fail | `catalog_daily` |
+| `tag_links_have_fetch_time` | `game_tags` | fail | `catalog_daily` |
+| `one_current_price_version`, `ordered_price_versions` | `game_price_history` | fail | `catalog_daily` |
+| `single_partial_month` | `review_rollups` | fail | `reviews_daily` |
+| `latest_reconciliation_within_tolerance` | `review_reconciliation` | warn | `reviews_daily` |
+| `valid_events`: a title, and not more than a day in the future | `game_events` | fail | `reviews_daily` |
+| `no_stuck_runs`: no run `RUNNING` for more than 6 hours | `pipeline_runs` | fail | every job |
+
+## Run step timing
+
+Every run stores how long each of its steps took in `run_steps`, to find slow
+or redundant work. The phases are `setup` (lock, run row, connections),
+`job`, `finish` (writing the run row), `marts` and `checks`. Inside `job` are
+the job's own steps, for example:
+
+| Job | Steps |
+| --- | --- |
+| `catalog_daily` | `fetch_catalog`, `backfill_tracked`, `validate`, `load_games`, `load_snapshots`, `load_company_links`, `store_details_and_tags`, `prices`, `raw_retention` |
+| `players_hourly` | `fetch_players`, `load_observations`, `daily_rollup`, `most_played`, `hourly_retention` |
+| `reviews_daily` | `fetch_summaries`, `load_summaries`, `histograms`, `news` |
+
+Inside `marts` is one step per mart file plus `mart_tests`; inside `checks`
+one step per check group (`freshness`, `volume`, `staleness`,
+`schema_drift`, `invariants`).
+
+For each step the timer stores:
+- `duration_ms`, wall time from a monotonic clock;
+- `wait_ms`, the part spent in deliberate pauses between API requests (the
+  rate-limit intervals in [`request_budget.md`](request_budget.md));
+- `requests`, the API responses recorded during the step;
+- `rows_affected`, where the step reports it;
+- `status`, `failed` for the steps an error passed through.
+
+A failed run keeps its steps up to the failure. Storing the timings never
+fails a run. The run log line also ends with the phase times, for example
+`took 412.3 s: setup 0.1 s, job 408.9 s, finish 0.0 s, marts 2.1 s,
+checks 1.2 s`.
+
+The dashboard's **Steps** tab (Pipeline health) shows the latest run of each
+job split into working and waiting time per step, run time by phase over the
+last 14 days, and every step of the latest run.
+
+Optimisations made from these timings, with their before and after numbers,
+are logged in [`optimizations.md`](optimizations.md).
 
 ## Mart tests
 

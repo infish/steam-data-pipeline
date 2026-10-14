@@ -153,7 +153,11 @@ def build_games_list(data):
 
 
 def run_catalog(ctx):
-    data = get_top_games(ctx.session, ctx.store)
+    with ctx.step("fetch_catalog"):
+        # The page request counts towards SteamSpy's interval, so the first
+        # appdetails request after it is still spaced.
+        ctx.pace("steamspy")
+        data = get_top_games(ctx.session, ctx.store)
 
     # Tracked apps need a games row for their observations' foreign keys.
     off_page_appids = [
@@ -161,12 +165,14 @@ def run_catalog(ctx):
         for appid in get_tracked_appids()
         if str(appid) not in data
     ]
-    backfilled_rows, backfill_warnings = get_tracked_app_details(
-        ctx.session,
-        off_page_appids,
-        store=ctx.store,
-        sleep_fn=ctx.sleep_fn
-    )
+
+    with ctx.step("backfill_tracked"):
+        backfilled_rows, backfill_warnings = get_tracked_app_details(
+            ctx.session,
+            off_page_appids,
+            store=ctx.store,
+            pace=lambda: ctx.pace("steamspy")
+        )
     data = {**data, **backfilled_rows}
     ctx.warn(*backfill_warnings)
 
@@ -177,9 +183,10 @@ def run_catalog(ctx):
             ", ".join(backfilled_rows)
         )
 
-    df = transform_games_data(build_games_list(data))
-    rows_extracted = len(df)
-    df, rejected = validate_games_data(df, get_max_rejected_percent())
+    with ctx.step("validate"):
+        df = transform_games_data(build_games_list(data))
+        rows_extracted = len(df)
+        df, rejected = validate_games_data(df, get_max_rejected_percent())
 
     if rejected:
         logging.warning(
@@ -198,11 +205,25 @@ def run_catalog(ctx):
         )
 
     ingestion_time = ctx.load_time()
-    rows_loaded = load_games(ctx.cursor, df, ingestion_time)
-    load_game_metric_snapshots(ctx.cursor, df, ctx.run_id, ingestion_time)
-    load_company_links(ctx.cursor, df)
-    refresh_details(ctx, df["appid"].astype(int).tolist())
-    check_prices(ctx, df["appid"].astype(int).tolist())
+
+    with ctx.step("load_games") as step:
+        rows_loaded = load_games(ctx.cursor, df, ingestion_time)
+        step["rows"] = rows_loaded
+
+    with ctx.step("load_snapshots") as step:
+        load_game_metric_snapshots(
+            ctx.cursor, df, ctx.run_id, ingestion_time
+        )
+        step["rows"] = len(df)
+
+    with ctx.step("load_company_links"):
+        load_company_links(ctx.cursor, df)
+
+    with ctx.step("store_details_and_tags"):
+        refresh_details(ctx, df["appid"].astype(int).tolist())
+
+    with ctx.step("prices"):
+        check_prices(ctx, df["appid"].astype(int).tolist())
 
     ctx.counters.update(
         rows_extracted=rows_extracted,
@@ -211,7 +232,8 @@ def run_catalog(ctx):
     )
 
     if not ctx.replay:
-        purge_expired_payloads(ctx)
+        with ctx.step("raw_retention"):
+            purge_expired_payloads(ctx)
 
 
 def purge_expired_payloads(ctx):

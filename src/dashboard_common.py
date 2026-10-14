@@ -102,19 +102,54 @@ def cache_note():
     )
 
 
+# Jobs the scheduler runs today. Older job names (daily_legacy, from before
+# the split into jobs) stay in the run history but get no status badge.
+CURRENT_JOBS = ("catalog_daily", "players_hourly", "reviews_daily")
+
+
 def latest_runs():
-    """The latest run of every job, newest first."""
-    return cached_read_sql("""
+    """The latest run of every current job, newest first."""
+    return cached_read_sql(f"""
         SELECT runs.run_id, runs.job_name, runs.status, runs.rows_loaded,
                runs.started_at, runs.finished_at, runs.warning_message
         FROM pipeline_runs AS runs
         JOIN (
             SELECT job_name, MAX(run_id) AS run_id
             FROM pipeline_runs
+            WHERE job_name IN ({", ".join(["%s"] * len(CURRENT_JOBS))})
             GROUP BY job_name
         ) AS latest
             ON latest.run_id = runs.run_id
         ORDER BY runs.run_id DESC
+    """, CURRENT_JOBS)
+
+
+def current_check_results():
+    """The latest result of every data check and target.
+
+    Checks run after the job that owns them, so their latest result is their
+    current state; counting rows instead would count one problem once per
+    run.
+    """
+    return cached_read_sql("""
+        SELECT results.check_name, results.target, results.status,
+               results.observed_value, results.threshold, results.details,
+               results.run_id, results.checked_at,
+               (SELECT COUNT(*) FROM data_quality_results AS earlier
+                WHERE earlier.check_name = results.check_name
+                  AND earlier.target = results.target
+                  AND earlier.status = results.status
+                  AND earlier.checked_at
+                      >= UTC_TIMESTAMP() - INTERVAL 7 DAY) AS times_7d
+        FROM data_quality_results AS results
+        JOIN (
+            SELECT check_name, target, MAX(result_id) AS result_id
+            FROM data_quality_results
+            GROUP BY check_name, target
+        ) AS latest
+            ON latest.result_id = results.result_id
+        ORDER BY FIELD(results.status, 'fail', 'warn', 'pass'),
+                 results.check_name, results.target
     """)
 
 

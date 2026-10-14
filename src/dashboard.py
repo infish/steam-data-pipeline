@@ -7,7 +7,7 @@ Streamlit would also pick up on its own).
 import pandas as pd
 import streamlit as st
 
-from dashboard_common import cached_read_sql, latest_runs
+from dashboard_common import current_check_results, latest_runs
 from dashboard_style import run_badge, time_ago
 
 
@@ -62,17 +62,13 @@ with st.sidebar:
                 unsafe_allow_html=True,
             )
 
-    failing = cached_read_sql("""
-        SELECT COUNT(*) AS failing
-        FROM data_quality_results
-        WHERE status = 'fail'
-          AND run_id = (SELECT MAX(run_id) FROM data_quality_results)
-    """)
+    checks = current_check_results()
+    failing = 0 if checks.empty else int((checks["status"] == "fail").sum())
 
-    if not failing.empty and int(failing.iloc[0]["failing"] or 0):
+    if failing:
         st.page_link(
             "dashboard_pages/3_Pipeline_health.py",
-            label=f"{int(failing.iloc[0]['failing'])} failing data check(s)",
+            label=f"{failing} failing data check(s)",
             icon=":material/error:",
         )
 

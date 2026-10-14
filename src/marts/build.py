@@ -8,6 +8,7 @@ failing mart does not block the others. Files run in name order.
 import logging
 from pathlib import Path
 
+from jobs.timing import no_step
 from marts.tests import run_mart_tests
 
 
@@ -48,18 +49,22 @@ def split_statements(sql):
     return statements
 
 
-def build_marts(connection, directory=TRANSFORM_DIR):
-    """Run every transform; return [(mart file, error)] for failures."""
+def build_marts(connection, directory=TRANSFORM_DIR, step=no_step):
+    """Run every transform; return [(mart file, error)] for failures.
+
+    step times each mart (jobs.timing); a failed mart does not raise.
+    """
     failures = []
     cursor = connection.cursor()
 
     try:
         for path in transform_paths(directory):
             try:
-                for statement in split_statements(path.read_text()):
-                    cursor.execute(statement)
+                with step(path.stem):
+                    for statement in split_statements(path.read_text()):
+                        cursor.execute(statement)
 
-                connection.commit()
+                    connection.commit()
             except Exception as error:
                 connection.rollback()
                 logging.exception("Mart transform %s failed", path.name)
@@ -70,10 +75,12 @@ def build_marts(connection, directory=TRANSFORM_DIR):
     return failures
 
 
-def build_and_test_marts(connection):
+def build_and_test_marts(connection, step=no_step):
     """Rebuild and test the marts; return (warnings, test results)."""
-    failures = build_marts(connection)
-    results = run_mart_tests(connection)
+    failures = build_marts(connection, step=step)
+
+    with step("mart_tests"):
+        results = run_mart_tests(connection)
     warnings = [
         f"Mart transform {name} failed, previous contents kept: {error}"
         for name, error in failures
