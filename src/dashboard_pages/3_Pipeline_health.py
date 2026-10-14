@@ -7,6 +7,7 @@ from dashboard_common import (
     REQUEST_BUDGET,
     cache_note,
     cached_read_sql,
+    current_check_results,
     latest_runs,
     show_run_warnings,
     to_prague,
@@ -32,29 +33,11 @@ page_header(
 runs_now = latest_runs()
 show_run_warnings(runs_now)
 
-freshness = cached_read_sql("""
-    SELECT results.target AS source, results.status,
-           results.observed_value AS age, results.threshold,
-           results.checked_at
-    FROM data_quality_results AS results
-    JOIN (
-        SELECT target, MAX(result_id) AS result_id
-        FROM data_quality_results
-        WHERE check_name = 'freshness'
-        GROUP BY target
-    ) AS latest
-        ON latest.result_id = results.result_id
-    ORDER BY FIELD(results.status, 'fail', 'warn', 'pass'), results.target
-""")
-problems = cached_read_sql("""
-    SELECT checked_at, status, check_name, target, observed_value,
-           threshold, details, run_id
-    FROM data_quality_results
-    WHERE status <> 'pass'
-      AND checked_at >= UTC_TIMESTAMP() - INTERVAL 7 DAY
-    ORDER BY checked_at DESC, FIELD(status, 'fail', 'warn')
-    LIMIT 300
-""")
+current_checks = current_check_results()
+freshness = current_checks[current_checks["check_name"] == "freshness"][
+    ["target", "status", "observed_value", "threshold", "checked_at"]
+].rename(columns={"target": "source", "observed_value": "age"})
+problems = current_checks[current_checks["status"] != "pass"]
 requests = cached_read_sql("""
     SELECT source,
            FLOOR(UNIX_TIMESTAMP(fetched_at) / 300) AS window_5_min,
@@ -79,12 +62,7 @@ healthy_jobs = (
     ((runs_now["status"] == "SUCCESS") & no_warnings).sum()
     if not runs_now.empty else 0
 )
-fails_24h = cached_read_sql("""
-    SELECT COUNT(*) AS failed
-    FROM data_quality_results
-    WHERE status = 'fail'
-      AND checked_at >= UTC_TIMESTAMP() - INTERVAL 24 HOUR
-""").iloc[0]["failed"]
+failing_now = int((current_checks["status"] == "fail").sum())
 store_peak = int(
     usage.loc[usage["budget"] == "Steam Store", "busiest_5_min"].iloc[0]
 )
@@ -105,10 +83,12 @@ fresh.metric(
          "interval.",
 )
 checks.metric(
-    "Failed checks",
-    f"{int(fails_24h or 0)}",
+    "Checks failing",
+    f"{failing_now} / {len(current_checks)}",
     border=True,
-    help="Data-quality checks with status fail in the last 24 hours.",
+    help="Data-quality checks whose latest result is fail. Each check runs "
+         "after the job that produces its data; freshness runs after every "
+         "job.",
 )
 budget.metric(
     "Store peak, 5 min",
@@ -238,13 +218,14 @@ with fresh_tab:
 
 with quality_tab:
     with card(
-        "Checks that did not pass, last 7 days",
-        "Stored after every run. A failure never deletes data; it adds a "
-        "warning to the run."
+        "Checks not passing now",
+        "Each check's latest result. Checks run after the job that produces "
+        "their data, and a failure adds a warning to that job's run; it "
+        "never deletes data. \"Times, 7 d\" counts results with this status "
+        "in the last 7 days."
     ):
         if problems.empty:
-            st.success("Every check passed in the last 7 days.",
-                       icon=":material/check_circle:")
+            st.success("Every check passes.", icon=":material/check_circle:")
         else:
             show_warnings = st.toggle("Include warnings", value=False)
             shown = problems if show_warnings else (
@@ -267,6 +248,7 @@ with quality_tab:
                     "threshold": "Expected",
                     "details": "Details",
                     "run_id": "Run",
+                    "times_7d": "Times, 7 d",
                 },
             )
 

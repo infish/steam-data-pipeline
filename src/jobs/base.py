@@ -10,7 +10,12 @@ from api.steam_api import create_session
 from database.mysql_database import get_connection
 from ingest.raw_store import RawStore
 from marts.build import build_and_test_marts
-from quality.checks import describe_failure, run_quality_checks, store_results
+from quality.checks import (
+    describe_failure,
+    reported_by,
+    run_quality_checks,
+    store_results,
+)
 
 
 ABANDONED_RUN_MESSAGE = "Abandoned: process ended before completion"
@@ -58,6 +63,8 @@ class RunContext:
     # Reprocessing reuses the original load time; live runs leave it None.
     loaded_at: Optional[datetime] = None
     replay: bool = False
+    # The job being run; its own data checks run after it.
+    job_name: Optional[str] = None
     warnings: list = field(default_factory=list)
     counters: dict = field(default_factory=dict)
 
@@ -194,19 +201,24 @@ def refresh_marts(connection, cursor, ctx):
 
 
 def record_quality(connection, cursor, ctx, mart_results):
-    """Run the observability checks and store them with the mart tests.
+    """Run the job's observability checks and store them with the mart tests.
 
-    Failed checks become run warnings; nothing is deleted.
+    Failed checks the run is responsible for become run warnings; nothing is
+    deleted.
     """
     checked_at = ctx.now_fn()
 
     try:
-        results = mart_results + run_quality_checks(connection, checked_at)
+        results = mart_results + run_quality_checks(
+            connection, checked_at, ctx.job_name
+        )
         store_results(cursor, results, ctx.run_id, checked_at)
         failures = [
             describe_failure(row)
             for row in results
-            if row["status"] == "fail" and row not in mart_results
+            if row["status"] == "fail"
+            and row not in mart_results
+            and reported_by(row, ctx.job_name)
         ]
     except Exception as error:
         logging.exception("Data quality checks failed")
@@ -284,7 +296,8 @@ def run_job(
             session=session,
             store=RawStore(raw_connection, run_id, now_fn),
             now_fn=now_fn,
-            sleep_fn=sleep_fn
+            sleep_fn=sleep_fn,
+            job_name=job.name
         )
 
         job.body(ctx)

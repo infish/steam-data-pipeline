@@ -1,9 +1,16 @@
-"""Data observability checks, run after every job.
+"""Data observability checks, run after each job.
 
 Each check returns result dicts (check_name, target, status, observed_value,
-threshold, details). Status is pass, warn or fail. A failure never deletes
-data: run_job turns it into a run warning and every result is stored in
-data_quality_results. Thresholds are documented in docs/observability.md.
+threshold, details, job). Status is pass, warn or fail. A failure never
+deletes data: every result is stored in data_quality_results, and run_job
+turns failures of the run's own checks into run warnings. Thresholds are
+documented in docs/observability.md.
+
+Every check belongs to the job that produces its data (job), or to no job
+(None) when it guards the pipeline as a whole. After a job, only its own
+checks and the global ones run, so one stale source is not re-reported by
+every other job's runs. Freshness is the exception: it runs after every job
+as a watchdog, so a job that stops running is still noticed.
 """
 
 import json
@@ -29,13 +36,28 @@ EXPECTED_INTERVAL_HOURS = {
 }
 FRESHNESS_FACTOR = 1.5
 
-# Tables whose daily row counts are compared with the previous 7 days.
+# The job that fetches each source.
+SOURCE_JOBS = {
+    "steamspy_all": "catalog_daily",
+    "steamspy_appdetails": "catalog_daily",
+    "store_appdetails": "catalog_daily",
+    "store_prices": "catalog_daily",
+    "valve_top_concurrent": "players_hourly",
+    "valve_most_played": "players_hourly",
+    "valve_current_players": "players_hourly",
+    "steam_review_summary": "reviews_daily",
+    "steam_review_histogram": "reviews_daily",
+    "steam_news": "reviews_daily",
+}
+
+# Tables whose daily row counts are compared with the previous 7 days:
+# table -> (time column, owning job; None checks after every job).
 VOLUME_TABLES = {
-    "player_observations": "collected_at",
-    "review_observations": "collected_at",
-    "game_metric_snapshots": "snapshot_time",
-    "raw_api_responses": "fetched_at",
-    "data_quality_results": "checked_at",
+    "player_observations": ("collected_at", "players_hourly"),
+    "review_observations": ("collected_at", "reviews_daily"),
+    "game_metric_snapshots": ("snapshot_time", "catalog_daily"),
+    "raw_api_responses": ("fetched_at", None),
+    "data_quality_results": ("checked_at", None),
 }
 VOLUME_TOLERANCE_PERCENT = 30
 VOLUME_MIN_HISTORY_DAYS = 3
@@ -119,10 +141,11 @@ REQUIRED_FIELDS = {
     ],
 }
 
-# Invariants: SQL counting violating rows (%(now)s is the check time).
+# Invariants: (check, target, failing status, owning job, SQL counting
+# violating rows; %(now)s is the check time).
 INVARIANTS = [
     (
-        "consistent_daily_rollup", "player_daily", "fail",
+        "consistent_daily_rollup", "player_daily", "fail", "players_hourly",
         """SELECT COUNT(*) FROM player_daily
            WHERE NOT (min_players <= avg_players
                       AND avg_players <= peak_players
@@ -130,12 +153,14 @@ INVARIANTS = [
     ),
     (
         "recent_leaderboard_day", "most_played_daily", "warn",
+        "players_hourly",
         """SELECT IF(MAX(rollup_date) IS NULL, 0,
                      DATEDIFF(%(now)s, MAX(rollup_date)) > 2)
            FROM most_played_daily""",
     ),
     (
         "catalog_games_have_developers", "game_developers", "fail",
+        "catalog_daily",
         """SELECT COUNT(*) FROM current_game_metrics AS games
            WHERE TRIM(COALESCE(games.developer, '')) <> ''
              AND NOT EXISTS (SELECT 1 FROM game_developers AS links
@@ -143,62 +168,66 @@ INVARIANTS = [
     ),
     (
         "catalog_games_have_publishers", "game_publishers", "fail",
+        "catalog_daily",
         """SELECT COUNT(*) FROM current_game_metrics AS games
            WHERE TRIM(COALESCE(games.publisher, '')) <> ''
              AND NOT EXISTS (SELECT 1 FROM game_publishers AS links
                              WHERE links.appid = games.appid)""",
     ),
     (
-        "named_companies", "companies", "fail",
+        "named_companies", "companies", "fail", "catalog_daily",
         "SELECT COUNT(*) FROM companies WHERE TRIM(name) = ''",
     ),
     (
-        "available_details_have_type", "game_details", "fail",
+        "available_details_have_type", "game_details", "fail", "catalog_daily",
         """SELECT COUNT(*) FROM game_details
            WHERE store_available AND app_type IS NULL""",
     ),
     (
-        "described_genres", "genres", "fail",
+        "described_genres", "genres", "fail", "catalog_daily",
         "SELECT COUNT(*) FROM genres WHERE TRIM(description) = ''",
     ),
     (
-        "described_categories", "categories", "fail",
+        "described_categories", "categories", "fail", "catalog_daily",
         "SELECT COUNT(*) FROM categories WHERE TRIM(description) = ''",
     ),
     (
-        "named_languages", "languages", "fail",
+        "named_languages", "languages", "fail", "catalog_daily",
         "SELECT COUNT(*) FROM languages WHERE TRIM(name) = ''",
     ),
     (
-        "named_tags", "tags", "fail",
+        "named_tags", "tags", "fail", "catalog_daily",
         "SELECT COUNT(*) FROM tags WHERE TRIM(name) = ''",
     ),
     (
-        "genre_links_from_details", "game_genres", "fail",
+        "genre_links_from_details", "game_genres", "fail", "catalog_daily",
         """SELECT COUNT(*) FROM game_genres AS links
            WHERE NOT EXISTS (SELECT 1 FROM game_details AS details
                              WHERE details.appid = links.appid)""",
     ),
     (
         "category_links_from_details", "game_categories", "fail",
+        "catalog_daily",
         """SELECT COUNT(*) FROM game_categories AS links
            WHERE NOT EXISTS (SELECT 1 FROM game_details AS details
                              WHERE details.appid = links.appid)""",
     ),
     (
         "language_links_from_details", "game_languages", "fail",
+        "catalog_daily",
         """SELECT COUNT(*) FROM game_languages AS links
            WHERE NOT EXISTS (SELECT 1 FROM game_details AS details
                              WHERE details.appid = links.appid)""",
     ),
     (
-        "tag_links_have_fetch_time", "game_tags", "fail",
+        "tag_links_have_fetch_time", "game_tags", "fail", "catalog_daily",
         """SELECT COUNT(DISTINCT links.appid) FROM game_tags AS links
            JOIN game_details AS details ON details.appid = links.appid
            WHERE details.tags_fetched_at IS NULL""",
     ),
     (
         "one_current_price_version", "game_price_history", "fail",
+        "catalog_daily",
         """SELECT COUNT(*) FROM (
                SELECT appid, country_code
                FROM game_price_history
@@ -208,11 +237,12 @@ INVARIANTS = [
     ),
     (
         "ordered_price_versions", "game_price_history", "fail",
+        "catalog_daily",
         """SELECT COUNT(*) FROM game_price_history
            WHERE valid_to < valid_from""",
     ),
     (
-        "single_partial_month", "review_rollups", "fail",
+        "single_partial_month", "review_rollups", "fail", "reviews_daily",
         """SELECT COUNT(*) FROM (
                SELECT appid FROM review_rollups
                WHERE rollup_type = 'month' AND is_partial
@@ -221,20 +251,20 @@ INVARIANTS = [
     ),
     (
         "latest_reconciliation_within_tolerance", "review_reconciliation",
-        "warn",
+        "warn", "reviews_daily",
         """SELECT COUNT(*) FROM review_reconciliation AS rec
            WHERE NOT rec.within_tolerance
              AND rec.run_id = (SELECT MAX(run_id) FROM review_reconciliation
                                WHERE appid = rec.appid)""",
     ),
     (
-        "valid_events", "game_events", "fail",
+        "valid_events", "game_events", "fail", "reviews_daily",
         """SELECT COUNT(*) FROM game_events
            WHERE TRIM(title) = ''
               OR event_time > %(now)s + INTERVAL 1 DAY""",
     ),
     (
-        "no_stuck_runs", "pipeline_runs", "fail",
+        "no_stuck_runs", "pipeline_runs", "fail", None,
         """SELECT COUNT(*) FROM pipeline_runs
            WHERE status = 'RUNNING'
              AND started_at < %(now)s - INTERVAL 6 HOUR""",
@@ -242,7 +272,8 @@ INVARIANTS = [
 ]
 
 
-def result(check_name, target, status, observed, threshold, details=None):
+def result(check_name, target, status, observed, threshold, details=None,
+           job=None):
     return {
         "check_name": check_name,
         "target": target,
@@ -250,7 +281,16 @@ def result(check_name, target, status, observed, threshold, details=None):
         "observed_value": None if observed is None else str(observed),
         "threshold": threshold,
         "details": details,
+        "job": job,
     }
+
+
+def runs_after(owner, job_name):
+    """Whether a check owned by owner runs after job_name.
+
+    Global checks (owner None) always run; job_name None runs everything.
+    """
+    return owner is None or job_name is None or owner == job_name
 
 
 def scalar(cursor, sql, params=None):
@@ -266,16 +306,21 @@ def evaluate_freshness(source, newest, now):
     limit_hours = interval * FRESHNESS_FACTOR
     threshold = f"newest success younger than {limit_hours:g} h"
 
+    job = SOURCE_JOBS[source]
+
     if newest is None:
         return result(
             "freshness", source, "warn", "never fetched", threshold,
             "No successful response yet; expected after the first run of"
-            " the job that collects this source."
+            " the job that collects this source.",
+            job
         )
 
     age_hours = round((now - newest).total_seconds() / 3600, 2)
     status = "pass" if age_hours <= limit_hours else "fail"
-    return result("freshness", source, status, f"{age_hours} h", threshold)
+    return result(
+        "freshness", source, status, f"{age_hours} h", threshold, job=job
+    )
 
 
 def freshness_checks(cursor, now):
@@ -296,7 +341,7 @@ def freshness_checks(cursor, now):
 
 # ---- Volume ----------------------------------------------------------------
 
-def evaluate_volume(table, day, counts):
+def evaluate_volume(table, day, counts, job=None):
     """Compare a complete day's rows with the median of the 7 days before.
 
     Returns None when fewer than VOLUME_MIN_HISTORY_DAYS earlier days have
@@ -328,16 +373,19 @@ def evaluate_volume(table, day, counts):
 
     return result(
         "volume", table, status, f"{observed} rows ({deviation:+}%)",
-        threshold, f"UTC day {day.isoformat()}"
+        threshold, f"UTC day {day.isoformat()}", job
     )
 
 
-def volume_checks(cursor, now):
+def volume_checks(cursor, now, job_name=None):
     # The last complete UTC day: today's partial count would always look low.
     day = now.date() - timedelta(days=1)
     results = []
 
-    for table, column in VOLUME_TABLES.items():
+    for table, (column, owner) in VOLUME_TABLES.items():
+        if not runs_after(owner, job_name):
+            continue
+
         cursor.execute(
             f"""
             SELECT DATE({column}), COUNT(*)
@@ -348,7 +396,7 @@ def volume_checks(cursor, now):
             (day - timedelta(days=7), day + timedelta(days=1))
         )
         counts = dict(cursor.fetchall())
-        checked = evaluate_volume(table, day, counts)
+        checked = evaluate_volume(table, day, counts, owner)
 
         if checked is not None:
             results.append(checked)
@@ -376,12 +424,17 @@ def evaluate_staleness(compared_values, unchanged_values):
         "steamspy_unchanged_fields", "game_metric_snapshots", status,
         f"{percent}%", threshold,
         f"{unchanged_values} of {compared_values} values unchanged since the"
-        " previous catalog run"
+        " previous catalog run",
+        "catalog_daily"
     )
 
 
-def staleness_checks(cursor, now):
+def staleness_checks(cursor, now, job_name=None):
     results = []
+
+    if not runs_after("catalog_daily", job_name):
+        return results + duplicate_rate_checks(cursor, now, job_name)
+
     cursor.execute(
         """
         SELECT run_id FROM pipeline_runs
@@ -416,6 +469,11 @@ def staleness_checks(cursor, now):
                 int(unchanged)
             ))
 
+    return results + duplicate_rate_checks(cursor, now, job_name)
+
+
+def duplicate_rate_checks(cursor, now, job_name=None):
+    results = []
     cursor.execute(
         """
         SELECT source, COUNT(*), SUM(is_duplicate_of IS NOT NULL)
@@ -427,6 +485,11 @@ def staleness_checks(cursor, now):
     )
 
     for source, total, duplicates in cursor.fetchall():
+        owner = SOURCE_JOBS.get(source)
+
+        if not runs_after(owner, job_name):
+            continue
+
         rate = round(int(duplicates) / int(total) * 100, 1)
         limit = DUPLICATE_WARN_PERCENT.get(source)
         status = "warn" if limit is not None and rate > limit else "pass"
@@ -434,7 +497,8 @@ def staleness_checks(cursor, now):
             "raw_duplicate_rate", source, status,
             f"{rate}% of {total}",
             f"warn above {limit}%" if limit is not None
-            else "informational; repeats are normal for this source"
+            else "informational; repeats are normal for this source",
+            job=owner
         ))
 
     return results
@@ -472,10 +536,13 @@ def path_present(value, parts):
     )
 
 
-def schema_drift_checks(connection, cursor):
+def schema_drift_checks(connection, cursor, job_name=None):
     results = []
 
     for source, paths in REQUIRED_FIELDS.items():
+        if not runs_after(SOURCE_JOBS[source], job_name):
+            continue
+
         cursor.execute(
             """
             SELECT response_id FROM raw_api_responses
@@ -497,7 +564,7 @@ def schema_drift_checks(connection, cursor):
         except (LookupError, ValueError) as error:
             results.append(result(
                 "schema_drift", source, "fail", "unreadable",
-                "newest payload parses", str(error)
+                "newest payload parses", str(error), SOURCE_JOBS[source]
             ))
             continue
 
@@ -505,7 +572,7 @@ def schema_drift_checks(connection, cursor):
         results.append(result(
             "schema_drift", source, "fail" if missing else "pass",
             f"{len(missing)} missing", "0 required fields missing",
-            ", ".join(missing) or None
+            ", ".join(missing) or None, SOURCE_JOBS[source]
         ))
 
     return results
@@ -513,15 +580,18 @@ def schema_drift_checks(connection, cursor):
 
 # ---- Invariants ------------------------------------------------------------
 
-def invariant_checks(cursor, now):
+def invariant_checks(cursor, now, job_name=None):
     results = []
 
-    for check_name, target, failing_status, sql in INVARIANTS:
+    for check_name, target, failing_status, owner, sql in INVARIANTS:
+        if not runs_after(owner, job_name):
+            continue
+
         violations = int(scalar(cursor, sql, {"now": now}) or 0)
         results.append(result(
             check_name, target,
             "pass" if violations == 0 else failing_status,
-            violations, "0 violating rows"
+            violations, "0 violating rows", job=owner
         ))
 
     return results
@@ -529,16 +599,20 @@ def invariant_checks(cursor, now):
 
 # ---- Running and storing ---------------------------------------------------
 
-def run_quality_checks(connection, now):
+def run_quality_checks(connection, now, job_name=None):
+    """Run the checks for job_name: its own, the global ones and freshness.
+
+    job_name None runs every check.
+    """
     cursor = connection.cursor()
 
     try:
         return (
             freshness_checks(cursor, now)
-            + volume_checks(cursor, now)
-            + staleness_checks(cursor, now)
-            + schema_drift_checks(connection, cursor)
-            + invariant_checks(cursor, now)
+            + volume_checks(cursor, now, job_name)
+            + staleness_checks(cursor, now, job_name)
+            + schema_drift_checks(connection, cursor, job_name)
+            + invariant_checks(cursor, now, job_name)
         )
     finally:
         cursor.close()
@@ -566,6 +640,19 @@ def store_results(cursor, results, run_id, checked_at):
             )
             for row in results
         ]
+    )
+
+
+def reported_by(row, job_name):
+    """Whether a failed result becomes a warning on job_name's run.
+
+    Freshness of another job's source is stored but not reported: the run
+    did not cause it, and the dashboard shows it as a failing check.
+    """
+    return runs_after(row.get("job"), job_name) and not (
+        row["check_name"] == "freshness"
+        and job_name is not None
+        and row.get("job") != job_name
     )
 
 

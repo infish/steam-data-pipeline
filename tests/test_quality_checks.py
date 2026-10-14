@@ -5,15 +5,20 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from marts.tests import MART_TESTS
+from jobs.registry import JOBS
 from quality.checks import (
     EXPECTED_INTERVAL_HOURS,
     INVARIANTS,
     REQUIRED_FIELDS,
+    SOURCE_JOBS,
     VOLUME_TABLES,
     evaluate_freshness,
     evaluate_staleness,
     evaluate_volume,
     missing_paths,
+    reported_by,
+    result,
+    runs_after,
 )
 
 
@@ -154,11 +159,52 @@ class CoverageTests(unittest.TestCase):
 
         covered = (
             set(VOLUME_TABLES)
-            | {target for _, target, _, _ in INVARIANTS}
+            | {target for _, target, _, _, _ in INVARIANTS}
             | set(MART_TESTS)
         )
         self.assertEqual(sorted(created - covered), [])
         self.assertTrue(set(EXPECTED_INTERVAL_HOURS) <= set(REQUIRED_FIELDS))
+
+
+class OwnershipTests(unittest.TestCase):
+    def test_every_check_belongs_to_a_job_or_to_none(self):
+        owners = (
+            {job for _, job in VOLUME_TABLES.values()}
+            | {job for _, _, _, job, _ in INVARIANTS}
+            | set(SOURCE_JOBS.values())
+        )
+        self.assertTrue(owners - {None} <= set(JOBS))
+        self.assertTrue(
+            set(EXPECTED_INTERVAL_HOURS) | set(REQUIRED_FIELDS)
+            <= set(SOURCE_JOBS)
+        )
+
+    def test_a_job_runs_its_own_and_the_global_checks(self):
+        self.assertTrue(runs_after("catalog_daily", "catalog_daily"))
+        self.assertTrue(runs_after(None, "players_hourly"))
+        self.assertFalse(runs_after("catalog_daily", "players_hourly"))
+        # Reprocessing and tests run every check.
+        self.assertTrue(runs_after("catalog_daily", None))
+
+    def test_only_the_runs_own_failures_become_warnings(self):
+        catalog_check = result(
+            "catalog_games_have_developers", "game_developers", "fail", 3,
+            "0 violating rows", job="catalog_daily"
+        )
+        stale_catalog = result(
+            "freshness", "steamspy_all", "fail", "40 h", "< 36 h",
+            job="catalog_daily"
+        )
+        stuck_runs = result(
+            "no_stuck_runs", "pipeline_runs", "fail", 1, "0 violating rows"
+        )
+
+        self.assertTrue(reported_by(catalog_check, "catalog_daily"))
+        self.assertFalse(reported_by(catalog_check, "players_hourly"))
+        # Freshness runs after every job but warns only its own job's runs.
+        self.assertFalse(reported_by(stale_catalog, "players_hourly"))
+        self.assertTrue(reported_by(stale_catalog, "catalog_daily"))
+        self.assertTrue(reported_by(stuck_runs, "reviews_daily"))
 
 
 if __name__ == "__main__":

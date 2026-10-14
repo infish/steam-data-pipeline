@@ -12,6 +12,19 @@ This file records user-visible changes to the Steam data pipeline.
 
 ### Changed
 
+- Data checks run after the job that produces their data, and only that
+  job's runs get their failures as warnings. Before, every check ran after
+  every job, so one stale catalog showed up as warnings on every hourly
+  players run and as dozens of failed checks a day. Freshness still runs
+  after every job as a watchdog, but a stale source of another job is only
+  stored, not added to the run's warnings.
+- The dashboard counts a data check as failing when its latest result is
+  `fail` ("Checks failing" on Pipeline health and in the sidebar), instead of
+  counting stored failures. The Data quality tab lists each check that is
+  not passing now, with how often it had that status in the last 7 days.
+- The sidebar status badges and "Jobs healthy" cover the current jobs only;
+  `daily_legacy`, the name of runs from before the job split, stays in the
+  run history.
 - README upgrade steps: keep existing user and database names (older
   deployments use `steam_pipeline` as the schema owner), keep a rollback copy
   of the old YAML, and where to find the bootstrap and migrate logs.
