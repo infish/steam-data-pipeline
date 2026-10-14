@@ -91,4 +91,5 @@ flowchart LR
 | `review_observations`, `review_reconciliation` | review summaries (and histograms) | `reviews_daily` | Steam review summary, Steam review histogram |
 | `review_rollups` | review histograms | `reviews_daily`, `backfill` | Steam review histogram |
 | `game_events` | news items | `reviews_daily`, `backfill` | Steam news |
-| `data_quality_results` | all of the above, after every job | every job | — |
+| `data_quality_results` | all of the above, after the job that owns each check | every job | — |
+| `run_steps` | timing of each run's steps | every job | — |

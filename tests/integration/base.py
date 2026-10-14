@@ -48,6 +48,7 @@ PIPELINE_TABLES = [
     "games",
     "raw_api_responses",
     "data_quality_results",
+    "run_steps",
     "pipeline_runs",
 ]
 

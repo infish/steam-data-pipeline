@@ -99,6 +99,40 @@ for every `CREATE TABLE` in migrations V5 and later.
 | `valid_events`: a title, and not more than a day in the future | `game_events` | fail | `reviews_daily` |
 | `no_stuck_runs`: no run `RUNNING` for more than 6 hours | `pipeline_runs` | fail | every job |
 
+## Run step timing
+
+Every run stores how long each of its steps took in `run_steps`, to find slow
+or redundant work. The phases are `setup` (lock, run row, connections),
+`job`, `finish` (writing the run row), `marts` and `checks`. Inside `job` are
+the job's own steps, for example:
+
+| Job | Steps |
+| --- | --- |
+| `catalog_daily` | `fetch_catalog`, `backfill_tracked`, `validate`, `load_games`, `load_snapshots`, `load_company_links`, `store_details_and_tags`, `prices`, `raw_retention` |
+| `players_hourly` | `fetch_players`, `load_observations`, `daily_rollup`, `most_played`, `hourly_retention` |
+| `reviews_daily` | `fetch_summaries`, `load_summaries`, `histograms`, `news` |
+
+Inside `marts` is one step per mart file plus `mart_tests`; inside `checks`
+one step per check group (`freshness`, `volume`, `staleness`,
+`schema_drift`, `invariants`).
+
+For each step the timer stores:
+- `duration_ms`, wall time from a monotonic clock;
+- `wait_ms`, the part spent in deliberate pauses between API requests (the
+  rate-limit intervals in [`request_budget.md`](request_budget.md));
+- `requests`, the API responses recorded during the step;
+- `rows_affected`, where the step reports it;
+- `status`, `failed` for the steps an error passed through.
+
+A failed run keeps its steps up to the failure. Storing the timings never
+fails a run. The run log line also ends with the phase times, for example
+`took 412.3 s: setup 0.1 s, job 408.9 s, finish 0.0 s, marts 2.1 s,
+checks 1.2 s`.
+
+The dashboard's **Steps** tab (Pipeline health) shows the latest run of each
+job split into working and waiting time per step, run time by phase over the
+last 14 days, and every step of the latest run.
+
 ## Mart tests
 
 The Phase 16 mart tests (key uniqueness, non-null keys, non-empty, value

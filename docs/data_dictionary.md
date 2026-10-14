@@ -723,7 +723,7 @@ One row per job run, with status, counters and messages.
 
 ### `data_quality_results` (table)
 
-Every data-quality check and mart test result, stored after every run (see observability.md).
+Every data-quality check and mart test result, stored after the runs of the job that owns each check (freshness after every run; see observability.md).
 
 | Column | Type | Null | Key | Description |
 | --- | --- | --- | --- | --- |
@@ -731,11 +731,29 @@ Every data-quality check and mart test result, stored after every run (see obser
 | `check_name` | varchar(60) | no | index |  |
 | `target` | varchar(150) | no |  | The source, table or table.column checked. |
 | `run_id` | bigint unsigned | yes | index |  |
-| `status` | varchar(4) | no | index | `pass`, `warn` or `fail`; a fail adds a run warning and never deletes data. |
+| `status` | varchar(4) | no | index | `pass`, `warn` or `fail`; a fail adds a warning to the owning job's run and never deletes data. |
 | `observed_value` | varchar(100) | yes |  |  |
 | `threshold` | varchar(150) | yes |  |  |
 | `details` | text | yes |  |  |
 | `checked_at` | datetime(6) | no |  | When the check ran. |
+
+### `run_steps` (table)
+
+How long each step of a pipeline run took, for finding slow or redundant work (see observability.md). Written at the end of every run, for a failed run up to the failing step; reprocessing writes none.
+
+| Column | Type | Null | Key | Description |
+| --- | --- | --- | --- | --- |
+| `step_id` | bigint unsigned | no | PK |  |
+| `run_id` | bigint unsigned | no | index |  |
+| `position` | smallint unsigned | no |  | Order in which the step started within the run. |
+| `step` | varchar(100) | no | index | Step name: a run phase (`setup`, `job`, `finish`, `marts`, `checks`), a step of the job such as `fetch_catalog`, a mart file or a check group. |
+| `parent_step` | varchar(100) | yes |  | The step this one ran inside; NULL for the run's phases. |
+| `status` | varchar(10) | no |  | `ok`, or `failed` for the steps the run's error passed through. |
+| `started_at` | datetime(6) | no |  | When the step started. |
+| `duration_ms` | int unsigned | no |  | Wall time of the step, from a monotonic clock. |
+| `wait_ms` | int unsigned | no |  | Part of `duration_ms` spent in deliberate pauses between API requests (rate limits, see request_budget.md). |
+| `requests` | int unsigned | no |  | API responses recorded in raw_api_responses during the step. |
+| `rows_affected` | int unsigned | yes |  | Rows the step wrote, where the step reports it. |
 
 ### `flyway_schema_history` (table)
 

@@ -6,6 +6,18 @@ This file records user-visible changes to the Steam data pipeline.
 
 ### Added
 
+- Run step timing (`V12__run_steps`): every run stores how long each step
+  took in `run_steps`. Steps are the run's phases, the job's own steps, each
+  mart and each check group. Per step it records the duration, the time
+  spent waiting between API requests on purpose, the API requests made and
+  rows written. A failed run keeps its steps up to the failure. The run log
+  line ends with the phase times. See docs/observability.md.
+- Dashboard: a **Steps** tab on Pipeline health shows where the latest run
+  of each job spent its time (working versus waiting for rate limits), run
+  time by phase over 14 days, and every step of the latest run.
+- README: running the local stack without the scheduler
+  (`docker-compose.override.yml`) when another deployment collects.
+
 - TrueNAS shows a **Web UI** button for the dashboard (`x-portals` in
   `deploy/truenas-compose.yml`) on new installs; TrueNAS ignores it when
   added to an existing app.

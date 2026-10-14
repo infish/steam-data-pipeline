@@ -18,6 +18,7 @@ import statistics
 from datetime import timedelta
 
 from ingest.raw_store import read_payload
+from jobs.timing import no_step
 
 
 # Expected interval between successful fetches, in hours. Freshness fails at
@@ -58,6 +59,7 @@ VOLUME_TABLES = {
     "game_metric_snapshots": ("snapshot_time", "catalog_daily"),
     "raw_api_responses": ("fetched_at", None),
     "data_quality_results": ("checked_at", None),
+    "run_steps": ("started_at", None),
 }
 VOLUME_TOLERANCE_PERCENT = 30
 VOLUME_MIN_HISTORY_DAYS = 3
@@ -599,21 +601,31 @@ def invariant_checks(cursor, now, job_name=None):
 
 # ---- Running and storing ---------------------------------------------------
 
-def run_quality_checks(connection, now, job_name=None):
+def run_quality_checks(connection, now, job_name=None, step=no_step):
     """Run the checks for job_name: its own, the global ones and freshness.
 
-    job_name None runs every check.
+    job_name None runs every check. step times each group (jobs.timing).
     """
     cursor = connection.cursor()
+    results = []
 
     try:
-        return (
-            freshness_checks(cursor, now)
-            + volume_checks(cursor, now, job_name)
-            + staleness_checks(cursor, now, job_name)
-            + schema_drift_checks(connection, cursor, job_name)
-            + invariant_checks(cursor, now, job_name)
-        )
+        with step("freshness"):
+            results += freshness_checks(cursor, now)
+
+        with step("volume"):
+            results += volume_checks(cursor, now, job_name)
+
+        with step("staleness"):
+            results += staleness_checks(cursor, now, job_name)
+
+        with step("schema_drift"):
+            results += schema_drift_checks(connection, cursor, job_name)
+
+        with step("invariants"):
+            results += invariant_checks(cursor, now, job_name)
+
+        return results
     finally:
         cursor.close()
 

@@ -122,7 +122,11 @@ def delete_expired_observations(cursor, retention_days, now):
 
 
 def run_players(ctx):
-    measurements, warnings = get_player_measurements(ctx.session, ctx.store)
+    with ctx.step("fetch_players"):
+        measurements, warnings = get_player_measurements(
+            ctx.session, ctx.store
+        )
+
     ctx.warn(*warnings)
 
     known = known_appids(ctx.cursor, [row["appid"] for row in measurements])
@@ -144,19 +148,29 @@ def run_players(ctx):
             )
 
     collected_at = ctx.load_time()
-    loaded = load_player_observations(
-        ctx.cursor,
-        loadable,
-        ctx.run_id,
-        collected_at
-    )
-    rebuild_player_daily(ctx.cursor, ctx.run_id, collected_at)
 
-    try:
-        rollup_date, leaderboard = get_most_played(ctx.session, ctx.store)
-        load_most_played(ctx.cursor, rollup_date, leaderboard, ctx.run_id)
-    except ENRICHMENT_ERRORS as error:
-        ctx.warn(f"Valve most-played leaderboard unavailable: {error}")
+    with ctx.step("load_observations") as step:
+        loaded = load_player_observations(
+            ctx.cursor,
+            loadable,
+            ctx.run_id,
+            collected_at
+        )
+        step["rows"] = loaded
+
+    with ctx.step("daily_rollup"):
+        rebuild_player_daily(ctx.cursor, ctx.run_id, collected_at)
+
+    with ctx.step("most_played"):
+        try:
+            rollup_date, leaderboard = get_most_played(
+                ctx.session, ctx.store
+            )
+            load_most_played(
+                ctx.cursor, rollup_date, leaderboard, ctx.run_id
+            )
+        except ENRICHMENT_ERRORS as error:
+            ctx.warn(f"Valve most-played leaderboard unavailable: {error}")
 
     ctx.counters.update(
         rows_extracted=len(measurements),
@@ -166,11 +180,14 @@ def run_players(ctx):
 
     if not ctx.replay:
         retention_days = get_player_hourly_retention_days()
-        deleted = delete_expired_observations(
-            ctx.cursor,
-            retention_days,
-            ctx.now_fn()
-        )
+
+        with ctx.step("hourly_retention") as step:
+            deleted = delete_expired_observations(
+                ctx.cursor,
+                retention_days,
+                ctx.now_fn()
+            )
+            step["rows"] = deleted
 
         if deleted:
             logging.info(

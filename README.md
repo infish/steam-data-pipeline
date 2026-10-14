@@ -299,6 +299,16 @@ Operational audit information, one row per job run:
 - Failure message, and a separate `warning_message` for runs that succeeded
   with degraded input
 
+### `run_steps`
+
+How long each step of a run took, one row per step: the run's phases
+(`setup`, `job`, `finish`, `marts`, `checks`), the job's own steps inside
+`job` (for example `fetch_catalog`, `store_details_and_tags`, `prices`), each
+mart and each group of data checks. Per step: duration, the part spent
+waiting between API requests on purpose (`wait_ms`), API requests made and,
+where reported, rows written. A failed run keeps its steps up to the one
+that failed. The dashboard's **Steps** tab on Pipeline health shows them.
+
 SteamSpy rows are validated before loading. Problems with the whole response
 fail the run: an empty response, missing columns, or duplicate app IDs.
 Problems with a single row reject only that row: a missing or empty name, a
@@ -344,7 +354,7 @@ palette.
 | Overview | players right now (Valve) with the change since the previous hour, games in the catalog, sources fresh; most played now; biggest week-over-week moves; links to the other pages |
 | Game detail | Store attributes and SteamSpy tags; daily peak, average and 7-day average players with patch-notes markers; top-100 rank; hourly players; review sentiment drift and monthly review history; price history as a step chart |
 | Market explorer | genre and tag summaries, release-year groups, free versus paid |
-| Pipeline health | jobs healthy, sources fresh, failed checks and the busiest Store window at a glance; tabs for run history and durations per job, freshness per source, data-quality problems, SteamSpy staleness and raw duplicate rates, request budget used versus planned |
+| Pipeline health | jobs healthy, sources fresh, checks failing and the busiest Store window at a glance; tabs for run history and durations per job, where each job's latest run spent its time (steps, rate-limit waiting, requests) and run time by phase over 14 days, freshness per source, checks not passing now, SteamSpy staleness and raw duplicate rates, request budget used versus planned |
 | SQL explorer | tables, views and marts with their columns, and predefined example queries |
 
 ![Overview](docs/screenshots/overview.jpg)
@@ -637,6 +647,23 @@ docker compose run --rm pipeline python src/main.py players_hourly
 The scheduler does not collect on container startup, which avoids duplicate
 observations during app restarts. Manual runs remain available for focused
 validation.
+
+### Local test stack
+
+When another deployment (such as TrueNAS) does the scheduled collection, a
+local stack can run without the scheduler, so both do not share the APIs'
+rate limits. Create `docker-compose.override.yml` (gitignored), which Docker
+Compose loads automatically:
+
+```yaml
+services:
+  scheduler:
+    profiles: ["collect"]
+```
+
+`docker compose up -d` then starts the database, migrations and dashboard
+only; run jobs by hand as above. `docker compose --profile collect up -d`
+starts the scheduler again.
 
 ## Backfill review history or news
 

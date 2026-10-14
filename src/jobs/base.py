@@ -9,6 +9,7 @@ from typing import Callable, Optional
 from api.steam_api import create_session
 from database.mysql_database import get_connection
 from ingest.raw_store import RawStore
+from jobs.timing import StepTimer, no_step, save_steps
 from marts.build import build_and_test_marts
 from quality.checks import (
     describe_failure,
@@ -65,8 +66,14 @@ class RunContext:
     replay: bool = False
     # The job being run; its own data checks run after it.
     job_name: Optional[str] = None
+    # Times the run's steps (run_steps); reprocessing runs without one.
+    timer: Optional[StepTimer] = None
     warnings: list = field(default_factory=list)
     counters: dict = field(default_factory=dict)
+
+    def step(self, name):
+        """Time a block of the job as one step: `with ctx.step("load"):`."""
+        return self.timer.step(name) if self.timer else no_step(name)
 
     def warn(self, *messages):
         for message in messages:
@@ -187,7 +194,7 @@ def set_run_warnings(cursor, run_id, warnings):
 def refresh_marts(connection, cursor, ctx):
     """Rebuild the marts after a committed load; problems become warnings."""
     try:
-        mart_warnings, results = build_and_test_marts(connection)
+        mart_warnings, results = build_and_test_marts(connection, ctx.step)
     except Exception as error:
         logging.exception("Mart build failed")
         mart_warnings, results = [f"Mart build failed: {error}"], []
@@ -210,7 +217,7 @@ def record_quality(connection, cursor, ctx, mart_results):
 
     try:
         results = mart_results + run_quality_checks(
-            connection, checked_at, ctx.job_name
+            connection, checked_at, ctx.job_name, ctx.step
         )
         store_results(cursor, results, ctx.run_id, checked_at)
         failures = [
@@ -230,6 +237,19 @@ def record_quality(connection, cursor, ctx, mart_results):
         set_run_warnings(cursor, ctx.run_id, ctx.warnings)
 
     connection.commit()
+
+
+def describe_timing(timer):
+    """'took 12.3 s: setup 0.1 s, job 10.9 s, ...' for the run log."""
+    phases = [
+        record for record in timer.finished_records()
+        if record["parent_step"] is None
+    ]
+    total = sum(record["duration_ms"] for record in phases) / 1000
+    return f"took {total:.1f} s: " + ", ".join(
+        f"{record['step']} {record['duration_ms'] / 1000:.1f} s"
+        for record in phases
+    )
 
 
 def summarize_warnings(warnings, limit=WARNING_MESSAGE_LIMIT):
@@ -260,64 +280,78 @@ def run_job(
     lock_acquired = False
     raw_connection = None
     session = None
+    timer = StepTimer(now_fn)
 
     try:
-        connection = get_connection()
-        cursor = connection.cursor()
+        with timer.step("setup"):
+            connection = get_connection()
+            cursor = connection.cursor()
 
-        if not acquire_lock(cursor, job.lock_name):
-            logging.warning(
-                "Another %s run is active; skipping this run",
-                job.name
+            if not acquire_lock(cursor, job.lock_name):
+                logging.warning(
+                    "Another %s run is active; skipping this run",
+                    job.name
+                )
+                return None
+
+            lock_acquired = True
+
+            abandoned_runs = reap_abandoned_runs(
+                cursor, (job.name, *job.reaps)
             )
-            return None
+            connection.commit()
 
-        lock_acquired = True
+            if abandoned_runs:
+                logging.warning(
+                    "Marked %s abandoned RUNNING %s run(s) as FAILED",
+                    abandoned_runs,
+                    job.name
+                )
 
-        abandoned_runs = reap_abandoned_runs(cursor, (job.name, *job.reaps))
-        connection.commit()
+            run_id = start_pipeline_run(cursor, now_fn(), job.name)
+            connection.commit()
 
-        if abandoned_runs:
-            logging.warning(
-                "Marked %s abandoned RUNNING %s run(s) as FAILED",
-                abandoned_runs,
-                job.name
+            raw_connection = get_connection()
+            session = session_factory()
+            store = RawStore(raw_connection, run_id, now_fn)
+            timer.requests_fn = lambda: sum(store.stats.values())
+            ctx = RunContext(
+                connection=connection,
+                cursor=cursor,
+                run_id=run_id,
+                session=session,
+                store=store,
+                now_fn=now_fn,
+                sleep_fn=timer.wrap_sleep(sleep_fn),
+                job_name=job.name,
+                timer=timer
             )
 
-        run_id = start_pipeline_run(cursor, now_fn(), job.name)
-        connection.commit()
+        with timer.step("job"):
+            job.body(ctx)
 
-        raw_connection = get_connection()
-        session = session_factory()
-        ctx = RunContext(
-            connection=connection,
-            cursor=cursor,
-            run_id=run_id,
-            session=session,
-            store=RawStore(raw_connection, run_id, now_fn),
-            now_fn=now_fn,
-            sleep_fn=sleep_fn,
-            job_name=job.name
-        )
-
-        job.body(ctx)
-
-        finish_pipeline_run(
-            cursor,
-            run_id,
-            "SUCCESS",
-            now_fn(),
-            warning_message=summarize_warnings(ctx.warnings),
-            **ctx.counters
-        )
-        connection.commit()
+        with timer.step("finish"):
+            finish_pipeline_run(
+                cursor,
+                run_id,
+                "SUCCESS",
+                now_fn(),
+                warning_message=summarize_warnings(ctx.warnings),
+                **ctx.counters
+            )
+            connection.commit()
 
         if job.build_marts:
-            mart_results = refresh_marts(connection, cursor, ctx)
-            record_quality(connection, cursor, ctx, mart_results)
+            with timer.step("marts"):
+                mart_results = refresh_marts(connection, cursor, ctx)
 
+            with timer.step("checks"):
+                record_quality(connection, cursor, ctx, mart_results)
+
+        save_steps(connection, cursor, run_id, timer)
         logging.info(
-            "%s run %s completed: %s; raw responses %s (%s warnings)",
+            "%s run %s completed: %s; raw responses %s (%s warnings);"
+            " %s",
             job.name,
             run_id,
             ", ".join(
@@ -325,7 +359,8 @@ def run_job(
                 for name in RUN_COUNTERS
             ),
             dict(ctx.store.stats),
-            len(ctx.warnings)
+            len(ctx.warnings),
+            describe_timing(timer)
         )
         return run_id
 
@@ -348,6 +383,9 @@ def run_job(
                     "Could not record pipeline run %s as FAILED",
                     run_id
                 )
+
+            # The steps up to the failure show where it happened.
+            save_steps(connection, cursor, run_id, timer)
 
         raise error
 
