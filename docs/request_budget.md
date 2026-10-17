@@ -12,7 +12,7 @@ the number of app IDs in `STEAM_TRACKED_APPIDS` (default 3).
 | | | Valve current players | tracked apps outside the top 100 (≤ 3) | ≤ 72 |
 | | | Valve most played (daily peak) | 1 | 24 |
 | `catalog_daily` | 1 | SteamSpy `request=all` | 1 | 1 |
-| | | SteamSpy `request=appdetails` | tracked apps off the catalog page (≤ 3), plus tags for `STORE_DETAILS_PER_RUN` games (120) | ≤ 123 |
+| | | SteamSpy `request=appdetails` | tracked apps off the catalog page (≤ 3), plus tags for the refreshed games whose tags are missing or older than `TAG_REFRESH_DAYS` (30): about 120 × 9 / 30 ≈ 36 a day once every game has tags | ≤ 123, typically ≈ 40 |
 | | | Steam Store `api/appdetails` | `STORE_DETAILS_PER_RUN` (120) | 120 |
 | | | Steam Store price batch | catalog games ÷ 50 (≈ 20) | ≈ 20 |
 | `reviews_daily` | 1 | Steam review summary | tracked apps (3) | 3 |

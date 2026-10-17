@@ -88,13 +88,24 @@ metadata, not as a time series.
 Caveats: `owners` is a range string (`"100,000,000 .. 200,000,000"`); prices
 are US cents as strings; `ccu` is not a reliable current-player count.
 
+**Frozen (checked 2026-10-17).** Daily snapshots from 2026-09-01 to
+2026-10-14 had 100% unchanged owner ranges, review counts, two-week playtime
+and `ccu` on every run. Only prices changed, following Steam sales. The page
+held the same 1,000 app IDs throughout. Names predate 2023: app 730 is still
+"Counter-Strike: Global Offensive", with a `ccu` of 1,013,936 while Valve
+reported about 500,000. The pipeline therefore treats SteamSpy as a frozen
+reference (`steamspy_unchanged_fields` in observability.md) and takes every
+current figure from Valve or the Store. [ADR 5](adr/0005-replace-steamspy-as-catalog-source.md)
+proposes replacing it as the source of the game list.
+
 Fixture: `steamspy_all/page0_tracked.json` (the three tracked apps out of the
 1,000 rows). All three were on page 0 at recording time.
 
 ## SteamSpy app details
 
 **Status:** in use: backfill of tracked apps missing from the page, and
-`tags` for the games whose Store details are refreshed.
+`tags` for the games whose Store details are refreshed and whose tags are
+missing or older than `TAG_REFRESH_DAYS` (default 30).
 
 - URL: `https://steamspy.com/api.php?request=appdetails&appid=<appid>`
 - Fields: everything in a page row, plus `genre` (comma-separated),
@@ -106,7 +117,9 @@ Timestamps: none. Freshness: `Cache-Control: max-age=86400`; one recording had
 
 Caveats: an unknown app returns an object without a usable `name`; the Phase 6
 backfill treats that as a failure. Tag vote counts are SteamSpy's, not
-Valve's, and inherit SteamSpy's staleness. At 1 request per second, fetching
+Valve's, and inherit SteamSpy's staleness. Frozen like the page: for 240 of
+240 games fetched in October 2026, every page field was identical to the
+page. At 1 request per second, fetching
 all 1,000 catalog games takes about 17 minutes.
 
 Fixtures: `steamspy_appdetails/<appid>.json`.

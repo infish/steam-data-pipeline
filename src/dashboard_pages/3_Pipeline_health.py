@@ -471,8 +471,9 @@ with stale_tab:
 
     with card(
         "SteamSpy values unchanged between catalog runs",
-        "The September 2026 stale-data incident would sit near 100%. "
-        "Lines mark the warning (95%) and failure (99%) levels."
+        "SteamSpy has served a frozen snapshot since at least September "
+        "2026. At 95% or more (the line) it is reported as frozen; a drop "
+        "below means SteamSpy is updating again."
     ):
         if staleness.empty:
             st.info("This needs two catalog runs to compare.")
@@ -491,14 +492,13 @@ with stale_tab:
                               "<extra></extra>",
             ))
 
-            for level, label in ((95, "warn"), (99, "fail")):
-                figure.add_hline(
-                    y=level,
-                    line_width=1,
-                    line_color=t.muted,
-                    annotation_text=label,
-                    annotation_font_color=t.muted,
-                )
+            figure.add_hline(
+                y=95,
+                line_width=1,
+                line_color=t.muted,
+                annotation_text="frozen",
+                annotation_font_color=t.muted,
+            )
 
             style(figure, height=300, legend=False,
                   y_title="Values unchanged (%)")

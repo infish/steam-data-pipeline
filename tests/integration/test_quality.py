@@ -126,19 +126,22 @@ class QualityIntegrationTests(IntegrationTestCase):
         self.assertEqual(volume["observed_value"], "9 rows (+200.0%)")
         self.assertIn("median (3)", volume["threshold"])
 
-    def test_unchanged_steamspy_values_fail_staleness(self):
+    def test_unchanged_steamspy_values_are_reported_as_frozen(self):
+        self.run_job("catalog_daily", now_fn=at(NOW - timedelta(days=2)))
         self.run_job("catalog_daily", now_fn=at(NOW - timedelta(days=1)))
         run_id = self.run_job("catalog_daily", now_fn=at(NOW))
 
         (staleness,) = self.results(
             run_id, "steamspy_unchanged_fields"
         ).values()
-        self.assertEqual(staleness["status"], "fail")
+        # A frozen SteamSpy is reported, not a run failure: the pipeline
+        # cannot fix it.
+        self.assertEqual(staleness["status"], "warn")
         self.assertEqual(staleness["observed_value"], "100.0%")
         self.assertIn(
-            "steamspy_unchanged_fields failed",
-            self.run_row(run_id)["warning_message"]
+            "frozen since at least 2026-10-11", staleness["details"]
         )
+        self.assertIsNone(self.run_row(run_id)["warning_message"])
 
         changed = {
             appid: {**row, "positive": row["positive"] + 1, "ccu": 1}
@@ -152,7 +155,12 @@ class QualityIntegrationTests(IntegrationTestCase):
         (staleness,) = self.results(
             run_id, "steamspy_unchanged_fields"
         ).values()
+        # SteamSpy updating again is noticed.
         self.assertEqual(staleness["status"], "pass")
+        self.assertIn(
+            "changing again after being frozen since 2026-10-11",
+            staleness["details"]
+        )
 
     def test_repeated_chart_payloads_warn_on_duplicate_rate(self):
         self.run_job("catalog_daily", now_fn=at(NOW - timedelta(hours=3)))

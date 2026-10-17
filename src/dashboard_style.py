@@ -63,8 +63,12 @@ def tokens():
 
 
 def job_color(job_name):
-    series = tokens().series
-    return series[JOB_SLOTS.get(job_name, 0) % len(series)]
+    """A current job's series color; older job names (daily_legacy) are
+    muted so they never share a color with a current job."""
+    if job_name not in JOB_SLOTS:
+        return tokens().muted
+
+    return tokens().series[JOB_SLOTS[job_name]]
 
 
 def style(figure, height=340, legend=True, y_title=None, x_title=None):
@@ -247,6 +251,16 @@ def page_header(title, description):
         f"{description}</p>",
         unsafe_allow_html=True,
     )
+
+
+def frozen_note(text):
+    """A status line for data from a frozen source: icon, label, text."""
+    if text:
+        st.markdown(
+            f":orange-badge[:material/ac_unit: Frozen source] "
+            f"<span style='font-size:0.85rem;opacity:0.8'>{text}</span>",
+            unsafe_allow_html=True,
+        )
 
 
 def card(title, caption=None):

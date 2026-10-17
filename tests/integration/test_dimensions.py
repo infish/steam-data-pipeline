@@ -160,6 +160,44 @@ class DimensionsIntegrationTests(IntegrationTestCase):
             )
         )
 
+    def tag_requests(self, run_id):
+        return sorted(
+            int(row["appid"])
+            for row in self.query(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(request_params, '$.appid'))"
+                " AS appid FROM raw_api_responses"
+                " WHERE run_id = %s AND source = 'steamspy_appdetails'",
+                (run_id,)
+            )
+        )
+
+    def test_tags_are_fetched_again_only_after_tag_refresh_days(self):
+        # Day 1 fetches every game's tags; day 2 refreshes Store details
+        # again but keeps tags younger than TAG_REFRESH_DAYS.
+        with patch.dict(os.environ, {"TAG_REFRESH_DAYS": "30"}):
+            first = self.run_job("catalog_daily", now_fn=at(1))
+            second = self.run_job("catalog_daily", now_fn=at(2))
+
+        # 427520 is tracked but off the catalog page, so every run also looks
+        # it up on SteamSpy for its games row; that lookup is not a tag fetch.
+        self.assertEqual(
+            self.tag_requests(first), [570, 620, 730, 427520, 427520]
+        )
+        self.assertEqual(self.refreshed(second), [570, 620, 730, 427520])
+        self.assertEqual(self.tag_requests(second), [427520])
+        (fetched,) = self.query(
+            "SELECT tags_fetched_at FROM game_details WHERE appid = 730"
+        )
+        self.assertEqual(fetched["tags_fetched_at"].day, 1)
+
+        # 0 restores fetching tags with every Store refresh.
+        with patch.dict(os.environ, {"TAG_REFRESH_DAYS": "0"}):
+            third = self.run_job("catalog_daily", now_fn=at(3))
+
+        self.assertEqual(
+            self.tag_requests(third), [570, 620, 730, 427520, 427520]
+        )
+
     def test_each_run_refreshes_the_stalest_games(self):
         with patch.dict(os.environ, {"STORE_DETAILS_PER_RUN": "2"}):
             first = self.run_job("catalog_daily", now_fn=at(1))
@@ -173,7 +211,10 @@ class DimensionsIntegrationTests(IntegrationTestCase):
         self.assertEqual(second_set, [730, 427520])
         self.assertEqual(self.refreshed(third), [570, 620])
 
+    @patch.dict(os.environ, {"TAG_REFRESH_DAYS": "0"})
     def test_a_failed_refresh_keeps_previous_details(self):
+        # Tags are fetched with every refresh here (TAG_REFRESH_DAYS 0), so
+        # a failed Store request is seen next to a successful tag refresh.
         self.run_job("catalog_daily", now_fn=at(1))
         (before,) = self.query("SELECT * FROM game_details WHERE appid = 620")
 

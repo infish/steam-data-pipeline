@@ -14,7 +14,11 @@ from api.steam_api import (
     fetch_steamspy_appdetails_payload,
     fetch_store_app_details,
 )
-from config import get_store_country, get_store_details_per_run
+from config import (
+    get_store_country,
+    get_store_details_per_run,
+    get_tag_refresh_days,
+)
 from parsing.names import split_company_names
 from parsing.store import parse_steamspy_tags, parse_store_details
 
@@ -153,6 +157,41 @@ def refreshed_in_run(cursor, run_id):
         (run_id,)
     )
     return [int(row[0]) for row in cursor.fetchall()]
+
+
+def tags_due(cursor, appids, refresh_days, now):
+    """The games whose SteamSpy tags are missing or older than refresh_days.
+
+    refresh_days 0 refreshes every game, as before TAG_REFRESH_DAYS existed.
+    """
+    appids = list(appids)
+
+    if not appids or refresh_days == 0:
+        return set(appids)
+
+    cursor.execute(
+        f"""
+        SELECT appid FROM game_details
+        WHERE appid IN ({placeholders(appids)})
+          AND tags_fetched_at >= %s - INTERVAL %s DAY
+        """,
+        (*appids, now, refresh_days)
+    )
+    fresh = {row[0] for row in cursor.fetchall()}
+    return set(appids) - fresh
+
+
+def tags_fetched_in_run(cursor, run_id):
+    """The games a past run fetched SteamSpy appdetails for (reprocessing)."""
+    cursor.execute(
+        """
+        SELECT JSON_UNQUOTE(JSON_EXTRACT(request_params, '$.appid'))
+        FROM raw_api_responses
+        WHERE run_id = %s AND source = 'steamspy_appdetails'
+        """,
+        (run_id,)
+    )
+    return {int(row[0]) for row in cursor.fetchall()}
 
 
 def load_store_details(cursor, details, run_id, fetched_at):
@@ -303,14 +342,20 @@ def describe_failures(failures):
 
 
 def refresh_details(ctx, appids):
-    """13b: refresh Store details and SteamSpy tags for the stalest games."""
+    """13b: refresh Store details for the stalest games, and SteamSpy tags
+    for those of them whose tags are missing or older than TAG_REFRESH_DAYS.
+    """
     if ctx.replay:
         chosen = refreshed_in_run(ctx.cursor, ctx.run_id)
+        with_tags = tags_fetched_in_run(ctx.cursor, ctx.run_id)
     else:
         chosen = select_stalest(
             ctx.cursor,
             appids,
             get_store_details_per_run()
+        )
+        with_tags = tags_due(
+            ctx.cursor, chosen, get_tag_refresh_days(), ctx.now_fn()
         )
 
     country = get_store_country()
@@ -343,6 +388,9 @@ def refresh_details(ctx, appids):
                 )
         except ENRICHMENT_ERRORS as error:
             store_failures.append((appid, error))
+
+        if appid not in with_tags:
+            continue
 
         # The Store pause above usually covers this already; pace() then
         # returns at once instead of adding 1.1 s per game.
@@ -383,8 +431,9 @@ def refresh_details(ctx, appids):
         )
 
     logging.info(
-        "Refreshed Store details for %s of %s game(s)",
+        "Refreshed Store details for %s of %s game(s), SteamSpy tags for %s",
         len(chosen) - len(store_failures),
-        len(chosen)
+        len(chosen),
+        len(with_tags & set(chosen)) - len(tag_failures)
     )
     return len(chosen) - len(store_failures)

@@ -9,6 +9,7 @@ from dashboard_common import (
     cached_read_sql,
     format_number,
     format_prague_time,
+    steamspy_frozen_note,
     to_prague,
 )
 from dashboard_data import (
@@ -21,6 +22,7 @@ from dashboard_style import (
     card,
     compact,
     count_ticks,
+    frozen_note,
     line,
     page_header,
     show,
@@ -536,6 +538,8 @@ with about_tab:
 
         with tag_list:
             with card("Top user tags", "SteamSpy user tags by votes."):
+                frozen_note(steamspy_frozen_note())
+
                 if tags.empty:
                     st.caption("No tags yet.")
                 else:

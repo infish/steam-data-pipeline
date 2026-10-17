@@ -61,8 +61,15 @@ baseline, and no result is stored.
 - **SteamSpy fields unchanged** (`game_metric_snapshots`): the share of 12
   SteamSpy values per game (owner range, reviews, playtimes, `ccu`, prices)
   that did not change between the last two catalog runs. 95% or more is a
-  `warn`, 99% or more a `fail`. During the September 2026 incident this was
-  effectively 100%; this check makes that incident a permanent monitor.
+  `warn`: SteamSpy is frozen, and `details` says since when ("frozen since
+  at least 2026-09-01"), dated from the oldest result in the current run of
+  frozen results. When the share drops below 95% after a frozen run, the
+  result passes and `details` notes that SteamSpy is changing again.
+  SteamSpy has been frozen since at least September 2026
+  ([sources.md](sources.md#steamspy-catalog-page)). The pipeline cannot fix
+  that, so since v1.2.0 the check no longer has a `fail` level, which used
+  to add a warning to every catalog run. The dashboard labels SteamSpy
+  figures as frozen while the latest result is not `pass`.
 - **Raw duplicate rate** (per source): the share of the last 24 hours'
   successful responses that repeated the previous body byte for byte
   (`raw_api_responses.is_duplicate_of`). Above 50% is a `warn` for

@@ -79,8 +79,11 @@ SNAPSHOT_FIELDS = (
     "initial_price_cents",
     "discount_percent",
 )
+# 95% or more unchanged is a warn: SteamSpy is frozen. It has served the
+# same snapshot since at least September 2026 (docs/sources.md), which the
+# pipeline cannot fix, so the check no longer fails runs; it reports since
+# when SteamSpy has been frozen and notices when its values change again.
 STALENESS_WARN_PERCENT = 95
-STALENESS_FAIL_PERCENT = 99
 
 # Share of the last 24 hours' responses that repeated the previous body.
 # Sources not listed are recorded for information: repeats are normal for
@@ -408,27 +411,55 @@ def volume_checks(cursor, now, job_name=None):
 
 # ---- Staleness -------------------------------------------------------------
 
-def evaluate_staleness(compared_values, unchanged_values):
+def evaluate_staleness(compared_values, unchanged_values, frozen_since=None):
+    """frozen_since: when the current run of frozen results began, if the
+    previous result was frozen too (None otherwise)."""
     percent = round(unchanged_values / compared_values * 100, 2)
-    threshold = (
-        f"warn at {STALENESS_WARN_PERCENT}%, fail at"
-        f" {STALENESS_FAIL_PERCENT}% unchanged"
+    threshold = f"warn at {STALENESS_WARN_PERCENT}% unchanged (frozen)"
+    status = "warn" if percent >= STALENESS_WARN_PERCENT else "pass"
+    details = (
+        f"{unchanged_values} of {compared_values} values unchanged since the"
+        " previous catalog run"
     )
 
-    if percent >= STALENESS_FAIL_PERCENT:
-        status = "fail"
-    elif percent >= STALENESS_WARN_PERCENT:
-        status = "warn"
-    else:
-        status = "pass"
+    if status == "warn" and frozen_since is not None:
+        details += f"; frozen since at least {frozen_since:%Y-%m-%d}"
+    elif status == "warn":
+        details += "; frozen"
+    elif frozen_since is not None:
+        details += (
+            f"; changing again after being frozen since"
+            f" {frozen_since:%Y-%m-%d}"
+        )
 
     return result(
         "steamspy_unchanged_fields", "game_metric_snapshots", status,
-        f"{percent}%", threshold,
-        f"{unchanged_values} of {compared_values} values unchanged since the"
-        " previous catalog run",
-        "catalog_daily"
+        f"{percent}%", threshold, details, "catalog_daily"
     )
+
+
+def frozen_since(cursor):
+    """When the latest unbroken run of frozen staleness results began.
+
+    None when the latest stored result passed or there is none.
+    """
+    cursor.execute(
+        """
+        SELECT status, checked_at FROM data_quality_results
+        WHERE check_name = 'steamspy_unchanged_fields'
+        ORDER BY result_id DESC
+        LIMIT 1000
+        """
+    )
+    since = None
+
+    for status, checked_at in cursor.fetchall():
+        if status == "pass":
+            break
+
+        since = checked_at
+
+    return since
 
 
 def staleness_checks(cursor, now, job_name=None):
@@ -468,7 +499,8 @@ def staleness_checks(cursor, now, job_name=None):
         if games:
             results.append(evaluate_staleness(
                 int(games) * len(SNAPSHOT_FIELDS),
-                int(unchanged)
+                int(unchanged),
+                frozen_since(cursor)
             ))
 
     return results + duplicate_rate_checks(cursor, now, job_name)

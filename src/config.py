@@ -132,6 +132,25 @@ def get_store_details_per_run():
     return value
 
 
+def get_tag_refresh_days():
+    """Days before a game's SteamSpy tags are fetched again (0 = every time).
+
+    SteamSpy has served a frozen snapshot since at least September 2026
+    (docs/sources.md), so refetching tags daily only repeats old data.
+    """
+    raw_value = get_env("TAG_REFRESH_DAYS", "30")
+
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise ValueError("TAG_REFRESH_DAYS must be a whole number") from error
+
+    if value < 0:
+        raise ValueError("TAG_REFRESH_DAYS must be 0 or more")
+
+    return value
+
+
 def get_store_country():
     value = get_env("STEAM_STORE_COUNTRY", "us").strip().lower()
 
