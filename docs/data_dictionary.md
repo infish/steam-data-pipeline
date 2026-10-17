@@ -37,18 +37,20 @@ Loaded by `catalog_daily` from the SteamSpy catalog page and the Steam Store.
 
 ### `games` (table)
 
-One row per app ID seen in the SteamSpy catalog or tracked. Name and companies come from the newest catalog run.
+One row per game in the catalog: the SteamSpy page (frozen, see sources.md), tracked apps, and games seen in Valve's top-100 or most-played charts (ADR 5). The name is the Store's once Store details arrive.
 
 | Column | Type | Null | Key | Description |
 | --- | --- | --- | --- | --- |
 | `appid` | int unsigned | no | PK |  |
 | `name` | varchar(255) | no |  |  |
-| `developer` | varchar(500) | yes |  | Raw SteamSpy developer string; normalized links are in game_developers. |
+| `developer` | varchar(500) | yes |  | Raw SteamSpy developer string; normalized links are in game_developers (from the Store once its details are known). |
 | `publisher` | varchar(500) | yes |  | Raw SteamSpy publisher string; normalized links are in game_publishers. |
 | `languages` | text | yes |  | Raw SteamSpy languages; empty for catalog-page games (use game_languages). |
 | `genre` | varchar(500) | yes |  | Raw SteamSpy genre; empty for catalog-page games (use game_genres). |
 | `first_seen_at` | datetime(6) | no |  | Load time of the first catalog run that included the game. |
-| `last_seen_at` | datetime(6) | no |  | Load time of the latest catalog run that included the game. |
+| `last_seen_at` | datetime(6) | no |  | When the game was last seen: on the SteamSpy page, or in Valve's charts for games added from them. |
+| `catalog_source` | varchar(20) | no | index | How the game entered the catalog: `steamspy` (the SteamSpy page or a tracked-app backfill), `valve_chart` (Valve's top-100 or most-played charts) or `tracked` (STEAM_TRACKED_APPIDS). |
+| `name_source` | varchar(20) | no |  | Where `name` comes from: `store` (Store details, preferred), `steamspy`, or `placeholder` ("App <appid>" until the Store details arrive). |
 
 ### `game_metric_snapshots` (table)
 
@@ -107,7 +109,7 @@ Links games to their publishers.
 
 ### `game_details` (table)
 
-Steam Store details per game, refreshed for the `STORE_DETAILS_PER_RUN` stalest games each catalog run. NULL means the Store did not return the value.
+Steam Store details per game, refreshed for the `STORE_DETAILS_PER_RUN` stalest catalog games each catalog run (games without details first). NULL means the Store did not return the value.
 
 | Column | Type | Null | Key | Description |
 | --- | --- | --- | --- | --- |
@@ -127,6 +129,7 @@ Steam Store details per game, refreshed for the `STORE_DETAILS_PER_RUN` stalest 
 | `details_fetched_at` | datetime(6) | no | index | Load time of the run that last refreshed the Store details. |
 | `tags_fetched_at` | datetime(6) | yes |  | Load time of the run that last refreshed the SteamSpy tags. |
 | `run_id` | bigint unsigned | no | index | The catalog run that last refreshed the details. |
+| `companies_from_store` | tinyint(1) | no |  | TRUE once the developer and publisher links come from the Store details; SteamSpy strings then no longer replace them. |
 
 ### `genres` (table)
 
@@ -272,7 +275,7 @@ Valve's daily-peak leaderboard (top 100 by peak players). Not limited to catalog
 
 ### `review_observations` (table)
 
-Steam review summary per tracked game per reviews run (all languages and purchase types).
+Steam review summary per game per reviews run (all languages and purchase types): the tracked games every run, other catalog games on a rotation of `REVIEW_SUMMARIES_PER_RUN`.
 
 | Column | Type | Null | Key | Description |
 | --- | --- | --- | --- | --- |
@@ -418,7 +421,7 @@ Per game and Store country: current price, discount, on-sale flag, lowest record
 
 ### `mart_genre_summary` (table)
 
-Per Store genre: games, average SteamSpy review score and Metacritic, top-100 presence, release-year groups, platform and free/paid counts.
+Per Store genre: games, average Steam review score (latest summary per game) and Metacritic, top-100 presence, release-year groups, platform and free/paid counts.
 
 | Column | Type | Null | Key | Description |
 | --- | --- | --- | --- | --- |
@@ -441,7 +444,7 @@ Per Store genre: games, average SteamSpy review score and Metacritic, top-100 pr
 
 ### `mart_tag_summary` (table)
 
-Per SteamSpy tag: games, total votes, average SteamSpy review score, top-100 presence, release-year groups and platform counts.
+Per SteamSpy tag: games, total votes, average Steam review score (latest summary per game), top-100 presence, release-year groups and platform counts.
 
 | Column | Type | Null | Key | Description |
 | --- | --- | --- | --- | --- |
@@ -513,7 +516,7 @@ Defined in `db/migrations/R__analytics_views.sql`.
 
 ### `latest_successful_run` (view)
 
-The latest successful catalog run (`catalog_daily`, or `daily_legacy` before the job split).
+The latest successful catalog run that loaded SteamSpy snapshots (`catalog_daily`, or `daily_legacy` before the job split). Since ADR 5 the SteamSpy page is fetched every `STEAMSPY_PAGE_INTERVAL_DAYS`.
 
 | Column | Type | Null | Key | Description |
 | --- | --- | --- | --- | --- |
@@ -521,7 +524,7 @@ The latest successful catalog run (`catalog_daily`, or `daily_legacy` before the
 
 ### `current_game_metrics` (view)
 
-games joined with their SteamSpy snapshot from the latest successful catalog run.
+games joined with their SteamSpy snapshot from the latest catalog run that loaded one. SteamSpy is frozen; games added from Valve's charts have no snapshot.
 
 | Column | Type | Null | Key | Description |
 | --- | --- | --- | --- | --- |

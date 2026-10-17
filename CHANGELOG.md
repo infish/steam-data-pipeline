@@ -6,6 +6,29 @@ This file records user-visible changes to the Steam data pipeline.
 
 ### Added
 
+- The game list no longer comes only from frozen SteamSpy (ADR 5,
+  `V13__catalog_sources`):
+  - `players_hourly` adds every game in Valve's top-100 chart and
+    most-played leaderboard to `games` (`catalog_source = 'valve_chart'`) and
+    measures it, instead of skipping games missing from SteamSpy's list
+    (about 30 of the top 100 every hour). `CATALOG_FROM_VALVE_CHARTS`
+    (default true) switches this.
+  - Tracked apps always get a games row (`catalog_source = 'tracked'`).
+  - Store details supply each game's name and developer and publisher links
+    (`games.name_source`, `game_details.companies_from_store`); a later
+    SteamSpy page never overwrites them. Counter-Strike 2 is no longer
+    "Counter-Strike: Global Offensive".
+  - `reviews_daily` fetches Steam review summaries for
+    `REVIEW_SUMMARIES_PER_RUN` (default 120) other catalog games a day,
+    oldest first, paced with the Store limit.
+- Data check `new_games_have_store_details`: warns when a game added from the
+  charts or tracked still has no Store details after 3 days.
+- Store details go first to games added from the charts or tracked, then to
+  other games without details, then to games whose name is not from the
+  Store yet.
+- Games that SteamSpy does not know (released after it froze) get "no tags"
+  instead of a run warning, and are asked again after `TAG_REFRESH_DAYS`.
+
 - `TAG_REFRESH_DAYS` (default 30): SteamSpy tags are fetched only for
   refreshed games whose tags are missing or older than this; 0 restores
   fetching them with every Store refresh.
@@ -17,6 +40,16 @@ This file records user-visible changes to the Steam data pipeline.
 
 ### Changed
 
+- The SteamSpy page is fetched every `STEAMSPY_PAGE_INTERVAL_DAYS` (default
+  7; 1 = every catalog run). Store details and prices run every day for the
+  whole catalog. `latest_successful_run` is now the latest catalog run with
+  SteamSpy snapshots, so `current_game_metrics` keeps working between
+  fetches. SteamSpy's freshness interval follows the setting, and the daily
+  snapshot volume check was removed.
+- The genre, tag and release-year marts take their review score from Steam
+  review summaries instead of SteamSpy's frozen counts. The dashboard calls
+  it "Steam review score", and its catalog counts cover the whole game list,
+  with how many came from Valve's charts.
 - SteamSpy is treated as a frozen reference. Daily snapshots showed its
   owner ranges, review counts, playtimes and `ccu` unchanged on every run
   since at least 2026-09-01, with the same 1,000 games and names from before

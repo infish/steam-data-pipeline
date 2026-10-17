@@ -20,7 +20,7 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             runs = self.run_pipeline()
 
         logged = "\n".join(logs.output)
-        self.assertIn("1 top-100 games not in catalog page; skipped", logged)
+        self.assertIn("1 top-100 games not in the catalog; skipped", logged)
         self.assertNotIn("WARNING", logged)
 
         for job_name, run_id in runs.items():
@@ -278,16 +278,17 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
         self.assertTrue(catalog_run["warning_message"].startswith(
             "SteamSpy appdetails failed for tracked app 427520, skipped: 503"
         ))
+        # Since ADR 5 a tracked app gets a games row even when SteamSpy has
+        # no row for it, so it is still measured; its name and details come
+        # from the Store.
         self.assertEqual(
             self.run_row(runs["players_hourly"])["measurements_loaded"],
-            2
+            3
         )
-        self.assertEqual(
-            self.query(
-                "SELECT appid FROM player_observations WHERE appid = 427520"
-            ),
-            []
+        (game,) = self.query(
+            "SELECT catalog_source FROM games WHERE appid = 427520"
         )
+        self.assertEqual(game["catalog_source"], "tracked")
 
 
 if __name__ == "__main__":

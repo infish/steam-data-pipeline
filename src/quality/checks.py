@@ -17,6 +17,7 @@ import json
 import statistics
 from datetime import timedelta
 
+from config import get_steamspy_page_interval_days
 from ingest.raw_store import read_payload
 from jobs.timing import no_step
 
@@ -37,6 +38,15 @@ EXPECTED_INTERVAL_HOURS = {
 }
 FRESHNESS_FACTOR = 1.5
 
+
+def expected_interval_hours(source):
+    """A source's expected interval; the SteamSpy page follows
+    STEAMSPY_PAGE_INTERVAL_DAYS (weekly by default, ADR 5)."""
+    if source == "steamspy_all":
+        return 24 * get_steamspy_page_interval_days()
+
+    return EXPECTED_INTERVAL_HOURS[source]
+
 # The job that fetches each source.
 SOURCE_JOBS = {
     "steamspy_all": "catalog_daily",
@@ -53,10 +63,10 @@ SOURCE_JOBS = {
 
 # Tables whose daily row counts are compared with the previous 7 days:
 # table -> (time column, owning job; None checks after every job).
+# game_metric_snapshots is not here: SteamSpy is fetched weekly (ADR 5).
 VOLUME_TABLES = {
     "player_observations": ("collected_at", "players_hourly"),
     "review_observations": ("collected_at", "reviews_daily"),
-    "game_metric_snapshots": ("snapshot_time", "catalog_daily"),
     "raw_api_responses": ("fetched_at", None),
     "data_quality_results": ("checked_at", None),
     "run_steps": ("started_at", None),
@@ -168,6 +178,9 @@ INVARIANTS = [
         "catalog_daily",
         """SELECT COUNT(*) FROM current_game_metrics AS games
            WHERE TRIM(COALESCE(games.developer, '')) <> ''
+             AND NOT EXISTS (SELECT 1 FROM game_details AS details
+                             WHERE details.appid = games.appid
+                               AND details.companies_from_store)
              AND NOT EXISTS (SELECT 1 FROM game_developers AS links
                              WHERE links.appid = games.appid)""",
     ),
@@ -176,8 +189,21 @@ INVARIANTS = [
         "catalog_daily",
         """SELECT COUNT(*) FROM current_game_metrics AS games
            WHERE TRIM(COALESCE(games.publisher, '')) <> ''
+             AND NOT EXISTS (SELECT 1 FROM game_details AS details
+                             WHERE details.appid = games.appid
+                               AND details.companies_from_store)
              AND NOT EXISTS (SELECT 1 FROM game_publishers AS links
                              WHERE links.appid = games.appid)""",
+    ),
+    (
+        # Games added from Valve's charts or tracked get their Store details
+        # (and real name) from catalog_daily within a few days.
+        "new_games_have_store_details", "games", "warn", "catalog_daily",
+        """SELECT COUNT(*) FROM games
+           WHERE catalog_source <> 'steamspy'
+             AND first_seen_at < %(now)s - INTERVAL 3 DAY
+             AND NOT EXISTS (SELECT 1 FROM game_details AS details
+                             WHERE details.appid = games.appid)""",
     ),
     (
         "named_companies", "companies", "fail", "catalog_daily",
@@ -307,7 +333,7 @@ def scalar(cursor, sql, params=None):
 # ---- Freshness -------------------------------------------------------------
 
 def evaluate_freshness(source, newest, now):
-    interval = EXPECTED_INTERVAL_HOURS[source]
+    interval = expected_interval_hours(source)
     limit_hours = interval * FRESHNESS_FACTOR
     threshold = f"newest success younger than {limit_hours:g} h"
 

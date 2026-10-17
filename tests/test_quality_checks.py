@@ -1,8 +1,10 @@
 import json
+import os
 import re
 import unittest
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from marts.tests import MART_TESTS
 from jobs.registry import JOBS
@@ -51,10 +53,27 @@ class FreshnessTests(unittest.TestCase):
 
     def test_older_fails(self):
         row = evaluate_freshness(
-            "steamspy_all", NOW - timedelta(hours=37), NOW
+            "store_appdetails", NOW - timedelta(hours=37), NOW
         )
         self.assertEqual(row["status"], "fail")
         self.assertEqual(row["threshold"], "newest success younger than 36 h")
+
+    def test_the_steamspy_page_follows_its_fetch_interval(self):
+        # Weekly by default (ADR 5): 1.5 weeks before it is stale.
+        weekly = evaluate_freshness(
+            "steamspy_all", NOW - timedelta(days=8), NOW
+        )
+        self.assertEqual(weekly["status"], "pass")
+        self.assertEqual(
+            weekly["threshold"], "newest success younger than 252 h"
+        )
+
+        with patch.dict(os.environ, {"STEAMSPY_PAGE_INTERVAL_DAYS": "1"}):
+            daily = evaluate_freshness(
+                "steamspy_all", NOW - timedelta(hours=37), NOW
+            )
+
+        self.assertEqual(daily["status"], "fail")
 
     def test_never_fetched_is_a_warning(self):
         row = evaluate_freshness("steam_news", None, NOW)

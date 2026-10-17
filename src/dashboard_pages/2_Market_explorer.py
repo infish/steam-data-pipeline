@@ -24,10 +24,10 @@ page_header(
 
 coverage = cached_read_sql("""
     SELECT
-        (SELECT COUNT(*) FROM current_game_metrics) AS catalog_games,
-        (SELECT COUNT(*) FROM game_details
-         WHERE appid IN (SELECT appid FROM current_game_metrics))
-            AS with_details,
+        (SELECT COUNT(*) FROM games) AS catalog_games,
+        (SELECT COUNT(*) FROM games WHERE catalog_source = 'valve_chart')
+            AS from_charts,
+        (SELECT COUNT(*) FROM game_details) AS with_details,
         (SELECT COUNT(*) FROM game_details WHERE is_free) AS free_games,
         (SELECT COUNT(*) FROM mart_price_status WHERE on_sale) AS on_sale
 """).iloc[0]
@@ -35,7 +35,16 @@ catalog_games = int(coverage["catalog_games"] or 0)
 with_details = int(coverage["with_details"] or 0)
 
 games, covered, free, sale = st.columns(4)
-games.metric("Catalog games", f"{catalog_games:,}", border=True)
+from_charts = int(coverage["from_charts"] or 0)
+games.metric(
+    "Catalog games",
+    f"{catalog_games:,}",
+    delta=f"{from_charts:,} from Valve's charts" if from_charts else None,
+    delta_color="off",
+    border=True,
+    help="SteamSpy's frozen list, tracked games, and every game that has "
+         "appeared in Valve's top-100 or most-played charts.",
+)
 covered.metric(
     "With Store details",
     f"{with_details:,}",
@@ -54,8 +63,6 @@ free.metric("Free to play", f"{int(coverage['free_games'] or 0):,}",
 sale.metric("On sale now", f"{int(coverage['on_sale'] or 0):,}",
             border=True, help="Games whose current Store price is discounted.")
 
-frozen_note(steamspy_frozen_note())
-
 genre_tab, tag_tab, year_tab, price_tab = st.tabs([
     ":material/category: Genres",
     ":material/sell: Tags",
@@ -64,9 +71,10 @@ genre_tab, tag_tab, year_tab, price_tab = st.tabs([
 ])
 
 score_column = st.column_config.ProgressColumn(
-    "SteamSpy score",
-    help="Average SteamSpy positive share (latest snapshot); broad "
-         "comparison only, and frozen while SteamSpy is frozen.",
+    "Steam review score",
+    help="Average Steam positive share, from each game's latest review "
+         "summary. Summaries rotate through the catalog (about 120 games a "
+         "day), so games without one yet are left out.",
     format="%.1f%%",
     min_value=0,
     max_value=100,
@@ -129,6 +137,8 @@ with tag_tab:
     if tags.empty:
         st.info("No tag data yet.")
     else:
+        frozen_note(steamspy_frozen_note())
+
         with card(
             "Most common user tags",
             "The 25 SteamSpy user tags on the most games."
@@ -219,7 +229,7 @@ with price_tab:
             END AS model,
             COUNT(*) AS games,
             SUM(COALESCE(prices.on_sale, 0)) AS on_sale_now
-        FROM current_game_metrics AS games
+        FROM games
         LEFT JOIN game_details AS details ON details.appid = games.appid
         LEFT JOIN mart_price_status AS prices ON prices.appid = games.appid
         GROUP BY model

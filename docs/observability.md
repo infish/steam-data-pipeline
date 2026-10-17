@@ -40,7 +40,8 @@ fetched successfully is a `warn` (normal right after a fresh install).
 | Source | Expected interval | Fails after |
 | --- | --- | --- |
 | `valve_top_concurrent`, `valve_most_played` | 1 h | 1.5 h |
-| `steamspy_all`, `store_appdetails`, `store_prices`, `steam_review_summary`, `steam_review_histogram`, `steam_news` | 24 h | 36 h |
+| `store_appdetails`, `store_prices`, `steam_review_summary`, `steam_review_histogram`, `steam_news` | 24 h | 36 h |
+| `steamspy_all` | `STEAMSPY_PAGE_INTERVAL_DAYS` × 24 h (7 days) | 1.5 × that (10.5 days) |
 
 `valve_current_players` and `steamspy_appdetails` are fetched only when
 needed (tracked games outside the top 100, backfills, tag refreshes), so
@@ -48,8 +49,8 @@ their freshness is not checked.
 
 ## Volume
 
-For `player_observations`, `review_observations`, `game_metric_snapshots`,
-`raw_api_responses` and `data_quality_results`, the row count of the last
+For `player_observations`, `review_observations`, `raw_api_responses`,
+`data_quality_results` and `run_steps`, the row count of the last
 **complete** UTC day is compared with the median of the 7 days before it.
 Outside ±30% is a `warn`; zero rows when the baseline is not zero is a
 `fail`. Today's partial count is never used, because it would always look
@@ -98,6 +99,7 @@ for every `CREATE TABLE` in migrations V5 and later.
 | `catalog_games_have_developers` / `_publishers` | `game_developers`, `game_publishers` | fail | `catalog_daily` |
 | `named_companies`, `described_genres`, `described_categories`, `named_languages`, `named_tags` | lookup tables | fail | `catalog_daily` |
 | `available_details_have_type` | `game_details` | fail | `catalog_daily` |
+| `new_games_have_store_details`: games added from Valve's charts or tracked have Store details within 3 days | `games` | warn | `catalog_daily` |
 | `genre_/category_/language_links_from_details`: links only for games with details | bridge tables | fail | `catalog_daily` |
 | `tag_links_have_fetch_time` | `game_tags` | fail | `catalog_daily` |
 | `one_current_price_version`, `ordered_price_versions` | `game_price_history` | fail | `catalog_daily` |

@@ -1,9 +1,15 @@
--- The latest successful catalog run: snapshots come only from catalog runs.
+-- The latest successful catalog run that loaded SteamSpy snapshots. Since
+-- ADR 5 the SteamSpy page is fetched only every STEAMSPY_PAGE_INTERVAL_DAYS,
+-- so the latest catalog run may have none.
 CREATE OR REPLACE VIEW latest_successful_run AS
-SELECT MAX(run_id) AS run_id
-FROM pipeline_runs
-WHERE status = 'SUCCESS'
-  AND job_name IN ('catalog_daily', 'daily_legacy');
+SELECT MAX(runs.run_id) AS run_id
+FROM pipeline_runs AS runs
+WHERE runs.status = 'SUCCESS'
+  AND runs.job_name IN ('catalog_daily', 'daily_legacy')
+  AND EXISTS (
+      SELECT 1 FROM game_metric_snapshots AS snapshots
+      WHERE snapshots.run_id = runs.run_id
+  );
 
 
 CREATE OR REPLACE VIEW current_game_metrics AS

@@ -395,9 +395,9 @@ The scheduler runs three jobs, each with its own run rows
 
 | Job | Default schedule | Collects | Writes |
 | --- | --- | --- | --- |
-| `players_hourly` | every hour at :07 | Valve top-100 chart, direct lookups for tracked games outside it, daily-peak leaderboard | `player_observations`, `player_daily`, `most_played_daily` |
-| `catalog_daily` | 20:00 | SteamSpy catalog page, SteamSpy `appdetails` for tracked games off the page, Store details for the stalest games and SteamSpy tags for those of them whose tags are missing or older than `TAG_REFRESH_DAYS`, Store prices for all catalog games | `games`, `game_metric_snapshots`, normalized dimensions, `game_price_history` |
-| `reviews_daily` | 20:30 | Steam review summaries, review histograms and news for tracked games | `review_observations`, `review_rollups`, `review_reconciliation`, `game_events` |
+| `players_hourly` | every hour at :07 | Valve top-100 chart, direct lookups for tracked games outside it, daily-peak leaderboard; games in the chart or leaderboard join the catalog (`CATALOG_FROM_VALVE_CHARTS`) | `player_observations`, `player_daily`, `most_played_daily`, `games` |
+| `catalog_daily` | 20:00 | SteamSpy catalog page and `appdetails` for tracked games off it, every `STEAMSPY_PAGE_INTERVAL_DAYS`; Store details (names, companies, genres, …) for the stalest catalog games and SteamSpy tags for those whose tags are missing or older than `TAG_REFRESH_DAYS`; Store prices for all catalog games | `games`, `game_metric_snapshots`, normalized dimensions, `game_price_history` |
+| `reviews_daily` | 20:30 | Steam review summaries for tracked games and a rotation of `REVIEW_SUMMARIES_PER_RUN` other catalog games; review histograms and news for tracked games | `review_observations`, `review_rollups`, `review_reconciliation`, `game_events` |
 
 Times are in `PIPELINE_TIMEZONE` (default `Europe/Prague`). Hourly runs are
 scheduled in UTC, so they stay exactly one hour apart across DST changes;
@@ -595,6 +595,9 @@ Collection settings use these defaults:
 | `RAW_RETENTION_DAYS` | `30` | Days to keep raw response bodies; metadata is kept forever |
 | `STORE_DETAILS_PER_RUN` | `120` | Games whose Store details each catalog run refreshes (0–140) |
 | `TAG_REFRESH_DAYS` | `30` | Days before a refreshed game's SteamSpy tags are fetched again; 0 fetches them with every Store refresh |
+| `CATALOG_FROM_VALVE_CHARTS` | `true` | Games that appear in Valve's top-100 or most-played charts join the catalog; `false` skips them as before v1.2.0 |
+| `STEAMSPY_PAGE_INTERVAL_DAYS` | `7` | Days between SteamSpy catalog page fetches; 1 fetches it on every catalog run |
+| `REVIEW_SUMMARIES_PER_RUN` | `120` | Catalog games, beyond the tracked ones, whose Steam review summary each reviews run refreshes, oldest first (0–140) |
 | `STEAM_STORE_COUNTRY` | `us` | Store country code; sets the price currency |
 | `PLAYER_HOURLY_RETENTION_DAYS` | `90` | Days to keep hourly player observations; daily rollups are kept forever |
 | `PIPELINE_TIMEZONE` | `Europe/Prague` | Timezone of the job schedule |
@@ -900,8 +903,14 @@ Store. Since v1.2.0 the pipeline treats SteamSpy as a frozen reference:
 - the staleness check reports the freeze, and when SteamSpy changes again,
   instead of failing every catalog run.
 
-Replacing SteamSpy as the source of the game list is proposed in
-[ADR 5](docs/adr/0005-replace-steamspy-as-catalog-source.md).
+Since v1.2.0 SteamSpy no longer decides which games exist
+([ADR 5](docs/adr/0005-replace-steamspy-as-catalog-source.md)):
+- every game that appears in Valve's top-100 or most-played charts joins the
+  catalog and is measured;
+- names and companies come from the Store;
+- review scores come from Steam review summaries on a daily rotation;
+- the SteamSpy page is fetched weekly as a check for whether it has come
+  back.
 
 Duplicate observations had two scheduling causes. The scheduler originally ran
 on container startup, and its single long sleep could wake fractionally before

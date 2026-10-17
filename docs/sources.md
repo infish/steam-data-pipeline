@@ -115,8 +115,12 @@ missing or older than `TAG_REFRESH_DAYS` (default 30).
 Timestamps: none. Freshness: `Cache-Control: max-age=86400`; one recording had
 `Age: 8353` (served from a cache refreshed about 2.3 hours earlier).
 
-Caveats: an unknown app returns an object without a usable `name`; the Phase 6
-backfill treats that as a failure. Tag vote counts are SteamSpy's, not
+Caveats: an unknown app returns an object without a usable `name`. The Phase 6
+backfill of tracked apps treats that as a failure. The tag refresh treats it
+as "no tags", because games released after SteamSpy froze, such as most
+games added from Valve's charts, are unknown to it: it stores no tags, sets
+`tags_fetched_at`, and asks again after `TAG_REFRESH_DAYS`, without a run
+warning. Tag vote counts are SteamSpy's, not
 Valve's, and inherit SteamSpy's staleness. Frozen like the page: for 240 of
 240 games fetched in October 2026, every page field was identical to the
 page. At 1 request per second, fetching
@@ -126,7 +130,10 @@ Fixtures: `steamspy_appdetails/<appid>.json`.
 
 ## Valve top concurrent players
 
-**Status:** in use.
+**Status:** in use. Since v1.2.0 every game in it joins the catalog
+(`games.catalog_source = 'valve_chart'`, ADR 5), as do the games in the
+most-played leaderboard; before, games missing from SteamSpy's list were
+skipped.
 
 - URL: `https://api.steampowered.com/ISteamChartsService/GetGamesByConcurrentPlayers/v1/`
 - Fields used: `response.last_update`, `response.ranks[].rank`, `appid`,
@@ -162,7 +169,10 @@ Fixtures: `current_players/<appid>.json`.
 
 ## Steam review summary
 
-**Status:** in use; `review_score_desc` accepted.
+**Status:** in use; `review_score_desc` accepted. `reviews_daily` fetches it
+for the tracked games every day and for `REVIEW_SUMMARIES_PER_RUN` other
+catalog games on a rotation (oldest summary first, ADR 5); the catalog marts'
+review score comes from it.
 
 - URL: `https://store.steampowered.com/appreviews/<appid>`
 - Parameters: `json=1`, `filter=recent`, `language=all`, `review_type=all`,
@@ -185,8 +195,12 @@ Fixtures: `review_summary/<appid>.json` (the review text is removed).
 ## Store app details
 
 **Status:** in use: `catalog_daily` refreshes the `STORE_DETAILS_PER_RUN`
-stalest games per run into `game_details` and the genre, category and
-language tables.
+stalest catalog games per run into `game_details` and the genre, category
+and language tables: games added from Valve's charts or tracked without
+details first, then other games without details, then games whose name is
+not from the Store yet, then the oldest refresh. Since v1.2.0 (ADR 5) its `name`, `developers` and
+`publishers` are the catalog's names and company links: they are current,
+where SteamSpy's are frozen.
 
 - URL: `https://store.steampowered.com/api/appdetails?appids=<appid>&cc=us&l=english`
 - One app ID per request.

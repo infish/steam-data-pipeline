@@ -46,7 +46,7 @@ kpis = cached_read_sql("""
         ORDER BY run_id DESC LIMIT 2
     )
     SELECT
-        (SELECT COUNT(*) FROM current_game_metrics) AS games_tracked,
+        (SELECT COUNT(*) FROM games) AS games_tracked,
         (SELECT COUNT(*) FROM game_details) AS games_with_details,
         (SELECT SUM(current_players) FROM player_observations
          WHERE run_id = (SELECT MAX(run_id) FROM player_runs))
@@ -95,8 +95,8 @@ games.metric(
     "Games in catalog",
     format_number(kpis["games_tracked"]),
     border=True,
-    help="The latest SteamSpy catalog page plus tracked games. While "
-         "SteamSpy is frozen this is a fixed list of games.",
+    help="SteamSpy's frozen list, tracked games, and every game that has "
+         "appeared in Valve's top-100 or most-played charts.",
 )
 details.metric(
     "With Store details",

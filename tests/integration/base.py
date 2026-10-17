@@ -177,7 +177,20 @@ class IntegrationTestCase(unittest.TestCase):
                 "MYSQL_DATABASE must end in '_test'"
             )
 
+    # The catalog settings these tests were written for: the SteamSpy page on
+    # every catalog run, no games added from Valve's charts, review
+    # summaries for tracked games only. Tests of the ADR 5 catalog
+    # (test_catalog_sources.py) switch each of them on explicitly.
+    BASELINE_SETTINGS = {
+        "STEAMSPY_PAGE_INTERVAL_DAYS": "1",
+        "CATALOG_FROM_VALVE_CHARTS": "false",
+        "REVIEW_SUMMARIES_PER_RUN": "0",
+    }
+
     def setUp(self):
+        settings = patch.dict(os.environ, self.BASELINE_SETTINGS)
+        settings.start()
+        self.addCleanup(settings.stop)
         self.reset_tables()
 
     def query(self, sql, params=()):
