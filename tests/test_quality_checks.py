@@ -106,9 +106,23 @@ class VolumeTests(unittest.TestCase):
 
 class StalenessTests(unittest.TestCase):
     def test_thresholds(self):
+        # A frozen SteamSpy is reported, but never fails the run.
         self.assertEqual(evaluate_staleness(1000, 600)["status"], "pass")
         self.assertEqual(evaluate_staleness(1000, 960)["status"], "warn")
-        self.assertEqual(evaluate_staleness(1000, 1000)["status"], "fail")
+        self.assertEqual(evaluate_staleness(1000, 1000)["status"], "warn")
+
+    def test_reports_since_when_steamspy_is_frozen(self):
+        since = datetime(2026, 9, 1, 18, 0)
+
+        frozen = evaluate_staleness(1000, 1000, since)
+        back = evaluate_staleness(1000, 400, since)
+
+        self.assertIn("frozen since at least 2026-09-01", frozen["details"])
+        self.assertEqual(back["status"], "pass")
+        self.assertIn(
+            "changing again after being frozen since 2026-09-01",
+            back["details"]
+        )
 
 
 class SchemaDriftTests(unittest.TestCase):

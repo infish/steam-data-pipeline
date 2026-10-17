@@ -396,7 +396,7 @@ The scheduler runs three jobs, each with its own run rows
 | Job | Default schedule | Collects | Writes |
 | --- | --- | --- | --- |
 | `players_hourly` | every hour at :07 | Valve top-100 chart, direct lookups for tracked games outside it, daily-peak leaderboard | `player_observations`, `player_daily`, `most_played_daily` |
-| `catalog_daily` | 20:00 | SteamSpy catalog page, SteamSpy `appdetails` for tracked games off the page, Store details and SteamSpy tags for the stalest games, Store prices for all catalog games | `games`, `game_metric_snapshots`, normalized dimensions, `game_price_history` |
+| `catalog_daily` | 20:00 | SteamSpy catalog page, SteamSpy `appdetails` for tracked games off the page, Store details for the stalest games and SteamSpy tags for those of them whose tags are missing or older than `TAG_REFRESH_DAYS`, Store prices for all catalog games | `games`, `game_metric_snapshots`, normalized dimensions, `game_price_history` |
 | `reviews_daily` | 20:30 | Steam review summaries, review histograms and news for tracked games | `review_observations`, `review_rollups`, `review_reconciliation`, `game_events` |
 
 Times are in `PIPELINE_TIMEZONE` (default `Europe/Prague`). Hourly runs are
@@ -456,7 +456,8 @@ patch releases. Grain, sources, refresh and caveats for each mart are in
 After every job the pipeline checks the data that job produced and stores
 every result in `data_quality_results`: freshness per source, daily volume
 against a 7-day median, how many SteamSpy values stayed unchanged between
-catalog runs (the September 2026 incident as a permanent monitor),
+catalog runs (SteamSpy is frozen; the check reports since when, and notices
+when it updates again),
 raw-payload duplicate rates, schema drift against the fields in
 `docs/sources.md`, invariants for every table, and the mart tests. Freshness
 runs after every job as a watchdog. A failing check never deletes data; it
@@ -592,7 +593,8 @@ Collection settings use these defaults:
 | `STEAM_TRACKED_APPIDS` | `730,427520,620` | App IDs enriched with reviews and direct player fallback |
 | `PIPELINE_MAX_REJECTED_PERCENT` | `5` | Fail the run if more than this % of SteamSpy rows fail validation |
 | `RAW_RETENTION_DAYS` | `30` | Days to keep raw response bodies; metadata is kept forever |
-| `STORE_DETAILS_PER_RUN` | `120` | Games whose Store details and tags each catalog run refreshes (0–140) |
+| `STORE_DETAILS_PER_RUN` | `120` | Games whose Store details each catalog run refreshes (0–140) |
+| `TAG_REFRESH_DAYS` | `30` | Days before a refreshed game's SteamSpy tags are fetched again; 0 fetches them with every Store refresh |
 | `STEAM_STORE_COUNTRY` | `us` | Store country code; sets the price currency |
 | `PLAYER_HOURLY_RETENTION_DAYS` | `90` | Days to keep hourly player observations; daily rollups are kept forever |
 | `PIPELINE_TIMEZONE` | `Europe/Prague` | Timezone of the job schedule |
@@ -883,6 +885,23 @@ same misleading flat series. The completed correction:
 - excludes stale SteamSpy player, review, and price fields from regular
   dashboard analyses and the in-dashboard SQL Explorer;
 - avoids fabricating or backfilling historical Valve values.
+
+**Follow-up, October 2026: SteamSpy is frozen.** Daily snapshots since
+1 September 2026 showed that SteamSpy no longer updates at all. Owner
+estimates, review counts, two-week playtime and `ccu` were 100% unchanged on
+every catalog run. The 1,000 games stayed the same, with not one added, and
+names predate 2023 (Counter-Strike 2 is still "Counter-Strike: Global
+Offensive"). The per-game `appdetails` endpoint returns the same values as
+the page. Only SteamSpy's prices move, and the pipeline takes prices from the
+Store. Since v1.2.0 the pipeline treats SteamSpy as a frozen reference:
+- the dashboard labels SteamSpy figures while the staleness check sees them
+  frozen;
+- tags are fetched only when missing or older than `TAG_REFRESH_DAYS`;
+- the staleness check reports the freeze, and when SteamSpy changes again,
+  instead of failing every catalog run.
+
+Replacing SteamSpy as the source of the game list is proposed in
+[ADR 5](docs/adr/0005-replace-steamspy-as-catalog-source.md).
 
 Duplicate observations had two scheduling causes. The scheduler originally ran
 on container startup, and its single long sleep could wake fractionally before

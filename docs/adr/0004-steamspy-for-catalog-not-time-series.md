@@ -33,3 +33,14 @@ also lacks genres and languages (`docs/sources.md`).
 - A SteamSpy outage still fails the catalog job, because the catalog defines
   the games every other job relies on; Valve and Store failures only degrade
   runs.
+
+## Update 2026-10-17
+
+SteamSpy turned out to be frozen, not slow: owner ranges, review counts,
+playtimes and `ccu` did not change from one run to the next between
+2026-09-01 and 2026-10-14, and only prices moved (`docs/sources.md`). The
+staleness check now reports this as a warning with a "frozen since" date
+instead of failing every catalog run. Tags are refetched only after
+`TAG_REFRESH_DAYS`, and the dashboard labels SteamSpy figures as frozen.
+[ADR 5](0005-replace-steamspy-as-catalog-source.md) proposes replacing
+SteamSpy as the source of the game list.

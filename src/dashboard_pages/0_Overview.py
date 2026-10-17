@@ -95,7 +95,8 @@ games.metric(
     "Games in catalog",
     format_number(kpis["games_tracked"]),
     border=True,
-    help="The latest SteamSpy catalog page plus tracked games.",
+    help="The latest SteamSpy catalog page plus tracked games. While "
+         "SteamSpy is frozen this is a fixed list of games.",
 )
 details.metric(
     "With Store details",

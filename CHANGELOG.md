@@ -2,6 +2,35 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## Unreleased (planned v1.2.0)
+
+### Added
+
+- `TAG_REFRESH_DAYS` (default 30): SteamSpy tags are fetched only for
+  refreshed games whose tags are missing or older than this; 0 restores
+  fetching them with every Store refresh.
+- Dashboard: a "Frozen source" notice next to SteamSpy figures (Market
+  explorer, the Game detail tags) while the staleness check sees SteamSpy
+  frozen. It goes away by itself once SteamSpy's values change again.
+- ADR 5 (proposed): replacing SteamSpy as the source of the game list, with
+  what changes, what is lost, the request budget and open questions.
+
+### Changed
+
+- SteamSpy is treated as a frozen reference. Daily snapshots showed its
+  owner ranges, review counts, playtimes and `ccu` unchanged on every run
+  since at least 2026-09-01, with the same 1,000 games and names from before
+  2023 (docs/sources.md). The `steamspy_unchanged_fields` check now warns
+  with "frozen since at least <date>" instead of failing every catalog run,
+  and notes when SteamSpy starts changing again.
+- docs/optimizations.md entry 2: about 33 SteamSpy tag requests a day instead
+  of 120.
+
+### Fixed
+
+- The run-duration chart showed `daily_legacy` runs in the same orange as
+  `catalog_daily`; older job names are now grey.
+
 ## v1.1.0 — 2026-10-14
 
 ### Added

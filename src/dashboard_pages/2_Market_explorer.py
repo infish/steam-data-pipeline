@@ -3,10 +3,11 @@
 import plotly.graph_objects as go
 import streamlit as st
 
-from dashboard_common import cache_note, cached_read_sql
+from dashboard_common import cache_note, cached_read_sql, steamspy_frozen_note
 from dashboard_style import (
     card,
     count_ticks,
+    frozen_note,
     hbar,
     page_header,
     show,
@@ -53,6 +54,8 @@ free.metric("Free to play", f"{int(coverage['free_games'] or 0):,}",
 sale.metric("On sale now", f"{int(coverage['on_sale'] or 0):,}",
             border=True, help="Games whose current Store price is discounted.")
 
+frozen_note(steamspy_frozen_note())
+
 genre_tab, tag_tab, year_tab, price_tab = st.tabs([
     ":material/category: Genres",
     ":material/sell: Tags",
@@ -63,7 +66,7 @@ genre_tab, tag_tab, year_tab, price_tab = st.tabs([
 score_column = st.column_config.ProgressColumn(
     "SteamSpy score",
     help="Average SteamSpy positive share (latest snapshot); broad "
-         "comparison only.",
+         "comparison only, and frozen while SteamSpy is frozen.",
     format="%.1f%%",
     min_value=0,
     max_value=100,

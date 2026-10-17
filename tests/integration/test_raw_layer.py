@@ -107,7 +107,10 @@ class RawLayerIntegrationTests(IntegrationTestCase):
             {"page": 0, "request": "all"}
         )
 
+    @patch.dict(os.environ, {"TAG_REFRESH_DAYS": "0"})
     def test_an_identical_payload_is_stored_once(self):
+        # TAG_REFRESH_DAYS 0: the second run repeats every request, tags
+        # included, so every response can be compared with the first run's.
         self.run_pipeline()
         first_rows = self.raw_rows()
         # Body holders by request; a request repeated within the first run

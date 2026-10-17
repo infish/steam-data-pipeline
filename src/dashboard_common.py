@@ -1,5 +1,7 @@
 """Database access and formatting shared by the dashboard pages."""
 
+import re
+
 import pandas as pd
 import streamlit as st
 
@@ -173,3 +175,27 @@ def show_run_warnings(runs):
         for _, run in warned.iterrows():
             st.markdown(f"**{run['job_name']}** (run {run['run_id']})")
             st.text(run["warning_message"])
+
+
+def steamspy_frozen_note():
+    """Text for SteamSpy figures while SteamSpy is frozen, else None.
+
+    Follows the latest steamspy_unchanged_fields check, so the note goes away
+    by itself once SteamSpy's values change again.
+    """
+    checks = current_check_results()
+    latest = checks[checks["check_name"] == "steamspy_unchanged_fields"]
+
+    if latest.empty or latest.iloc[0]["status"] == "pass":
+        return None
+
+    since = re.search(
+        r"frozen since at least (\d{4}-\d{2}-\d{2})",
+        latest.iloc[0]["details"] or ""
+    )
+    when = f" since at least {since.group(1)}" if since else ""
+    return (
+        f"SteamSpy has served the same values{when}. Its figures here "
+        "(owner estimates, playtime, its review score and user tags) are a "
+        "frozen reference, not current data."
+    )

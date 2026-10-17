@@ -60,3 +60,35 @@ average 2.10 s apart (2.00 s at least, measured at response time, which
 jitters with latency), and at most 140 fell into any 5-minute window against
 the limit of 150. A 2.1 s interval allows at most 143 in any 5 minutes,
 whatever `STORE_DETAILS_PER_RUN` is set to.
+
+## 2. Fetch SteamSpy tags only when they are due (v1.2.0)
+
+**Found:** SteamSpy is frozen (see [`sources.md`](sources.md#steamspy-catalog-page)).
+Its per-game `appdetails`, which the catalog job called for every game whose
+Store details it refreshed, returned the same values as the frozen page for
+240 of 240 games. Each game's Store details are refreshed about every 8–9
+days (1,000 games, 120 a day), so its tags were fetched again every 8–9 days
+with nothing new in them.
+
+**Changed:** tags are fetched only for refreshed games whose tags are missing
+or older than `TAG_REFRESH_DAYS` (default 30; 0 restores fetching them with
+every refresh). Reprocessing a run fetches tags for the same games the run
+did.
+
+**Measured:** this saves requests, not time. In the details loop each SteamSpy
+request already ran inside the Store's 2.1 s interval (entry 1), so skipping
+it shortens the run by at most its response time, about 0.1–0.3 s per game.
+Requests per day, once every game has tags:
+
+| | Before | After |
+| --- | --- | --- |
+| SteamSpy `appdetails` for tags | 120 a day | about 33 a day (120 refreshes × 9 / 30) |
+
+The first run with the change (local stack, run 67) still fetched 120 tags,
+because its 120 games had none yet. `integration/test_dimensions.py` checks
+that a second refresh within `TAG_REFRESH_DAYS` makes no tag requests.
+
+**Why it is safe:** games without tags get them on their first refresh as
+before, and every game's tags are refreshed at least every
+`TAG_REFRESH_DAYS`, so SteamSpy updating again would reach every game's tags
+within 30 days, and the staleness check would show it.
