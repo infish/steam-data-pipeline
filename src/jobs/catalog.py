@@ -181,8 +181,11 @@ def steamspy_page_due(ctx):
 
     With STEAMSPY_PAGE_INTERVAL_DAYS 1, every catalog run fetches it, as
     before v1.2.0. Otherwise it is due when the newest SteamSpy snapshot is
-    at least that many calendar days old (or there is none). Reprocessing
-    does what the original run did.
+    at least that many calendar days old, when there is none, or when the
+    run that loaded it did not ask for every page STEAMSPY_PAGE and
+    STEAMSPY_PAGES now cover (the setting was raised, so the larger catalog
+    arrives with the next run, not a week later). Reprocessing does what
+    the original run did.
     """
     if ctx.replay:
         ctx.cursor.execute(
@@ -197,10 +200,28 @@ def steamspy_page_due(ctx):
     if interval_days == 1:
         return True
 
-    ctx.cursor.execute("SELECT MAX(snapshot_time) FROM game_metric_snapshots")
-    newest = ctx.cursor.fetchall()[0][0]
+    # The newest snapshot, and the last page its run asked SteamSpy for
+    # (request metadata stays after payloads are purged).
+    ctx.cursor.execute(
+        """
+        SELECT
+            (SELECT MAX(snapshot_time) FROM game_metric_snapshots),
+            (SELECT MAX(CAST(JSON_UNQUOTE(
+                        JSON_EXTRACT(request_params, '$.page')) AS UNSIGNED))
+             FROM raw_api_responses
+             WHERE source = 'steamspy_all'
+               AND run_id = (SELECT MAX(run_id) FROM game_metric_snapshots))
+        """
+    )
+    newest, last_page = ctx.cursor.fetchall()[0]
 
     if newest is None:
+        return True
+
+    config = get_steamspy_config()
+    wanted_last_page = config["page"] + get_steamspy_pages() - 1
+
+    if last_page is None or last_page < wanted_last_page:
         return True
 
     return (ctx.now_fn().date() - newest.date()).days >= interval_days

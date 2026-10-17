@@ -94,5 +94,32 @@ class RefreshIntegrationTests(IntegrationTestCase):
         self.assertEqual(run["rows_loaded"], len(CANNED_TOP_GAMES) + 1)
 
 
+class SteamSpyPagesDueIntegrationTests(IntegrationTestCase):
+    def page_requests(self, run_id):
+        (row,) = self.query(
+            "SELECT COUNT(*) AS n FROM raw_api_responses"
+            " WHERE run_id = %s AND source = 'steamspy_all'",
+            (run_id,)
+        )
+        return row["n"]
+
+    @patch.dict(os.environ, {"STEAMSPY_PAGE_INTERVAL_DAYS": "7"})
+    def test_raising_the_page_count_fetches_the_pages_at_once(self):
+        with patch.dict(os.environ, {"STEAMSPY_PAGES": "1"}):
+            self.run_job("catalog_daily", now_fn=at(1))
+            same = self.run_job("catalog_daily", now_fn=at(2))
+
+        # Two pages wanted now; the last fetch asked only for page 0.
+        with patch.dict(os.environ, {"STEAMSPY_PAGES": "2"}):
+            raised = self.run_job(
+                "catalog_daily", {"steamspy_all:1": {}}, now_fn=at(3)
+            )
+            after = self.run_job("catalog_daily", now_fn=at(4))
+
+        self.assertEqual(self.page_requests(same), 0)
+        self.assertEqual(self.page_requests(raised), 2)
+        self.assertEqual(self.page_requests(after), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

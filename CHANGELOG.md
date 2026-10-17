@@ -2,7 +2,7 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
-## Unreleased (planned v1.2.0)
+## v1.2.0 — 2026-10-17
 
 ### Added
 
@@ -53,6 +53,9 @@ This file records user-visible changes to the Steam data pipeline.
 
 ### Changed
 
+- Raising `STEAMSPY_PAGES` (or moving `STEAMSPY_PAGE`) makes the SteamSpy
+  pages due at the next catalog run, instead of waiting for
+  `STEAMSPY_PAGE_INTERVAL_DAYS`.
 - `catalog_daily` keeps the game list and the prices for every game; Store
   details and tags moved to `refresh_hourly`. A failed SteamSpy page is now
   a run warning instead of a failed catalog run. `reviews_daily` covers the
