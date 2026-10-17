@@ -38,7 +38,8 @@ def route_for(url, params):
     if "steamspy.com" in url:
         if params.get("request") == "appdetails":
             return f"steamspy_appdetails:{params.get('appid')}"
-        return "steamspy_all"
+        page = str(params.get("page", "0"))
+        return "steamspy_all" if page == "0" else f"steamspy_all:{page}"
 
     if path.startswith("/appreviews/"):
         return f"steam_review_summary:{path.rsplit('/', 1)[-1]}"

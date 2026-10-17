@@ -52,7 +52,9 @@ PIPELINE_TABLES = [
     "pipeline_runs",
 ]
 
-ALL_JOBS = ("catalog_daily", "players_hourly", "reviews_daily")
+ALL_JOBS = (
+    "catalog_daily", "players_hourly", "refresh_hourly", "reviews_daily",
+)
 
 IGNORED_TABLES = {"flyway_schema_history"}
 
@@ -183,7 +185,11 @@ class IntegrationTestCase(unittest.TestCase):
     # (test_catalog_sources.py) switch each of them on explicitly.
     BASELINE_SETTINGS = {
         "STEAMSPY_PAGE_INTERVAL_DAYS": "1",
+        "STEAMSPY_PAGES": "1",
         "CATALOG_FROM_VALVE_CHARTS": "false",
+        # refresh_hourly refreshes the whole small test catalog per run and
+        # leaves review summaries to reviews_daily (tracked games).
+        "STORE_DETAILS_PER_RUN": "120",
         "REVIEW_SUMMARIES_PER_RUN": "0",
     }
 
@@ -294,3 +300,10 @@ class IntegrationTestCase(unittest.TestCase):
             session=session,
             jobs=(job_name,)
         )[job_name]
+
+    def run_catalog_and_refresh(self, overrides=None, now_fn=None):
+        """The game list (catalog_daily), then its Store details and tags
+        (refresh_hourly), as the schedule does; return the refresh run."""
+        session = self.session(overrides)
+        self.run_job("catalog_daily", now_fn=now_fn, session=session)
+        return self.run_job("refresh_hourly", now_fn=now_fn, session=session)

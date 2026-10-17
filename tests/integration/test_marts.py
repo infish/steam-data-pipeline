@@ -39,7 +39,7 @@ class MartIntegrationTests(IntegrationTestCase):
     def setUp(self):
         super().setUp()
         start = datetime.combine(FIRST_DAY, datetime.min.time())
-        self.run_job("catalog_daily", now_fn=lambda: start)
+        self.run_catalog_and_refresh(now_fn=lambda: start)
 
     def run_players(self, collected_at, ranks):
         return self.run_job(

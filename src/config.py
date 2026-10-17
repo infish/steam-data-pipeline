@@ -115,19 +115,84 @@ def get_player_hourly_retention_days():
     return value
 
 
+def optional_count(name, maximum):
+    """A whole-number setting that may be unset or empty (None)."""
+    raw_value = get_env(name, "").strip()
+
+    if raw_value == "":
+        return None
+
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a whole number") from error
+
+    if not 0 <= value <= maximum:
+        raise ValueError(f"{name} must be between 0 and {maximum}")
+
+    return value
+
+
 def get_store_details_per_run():
-    raw_value = get_env("STORE_DETAILS_PER_RUN", "120")
+    """Override for the Store details refreshed per refresh run, or None.
+
+    Normally unset: refresh_hourly derives the count from the catalog size
+    and DETAILS_REFRESH_DAYS (ADR 6).
+    """
+    return optional_count("STORE_DETAILS_PER_RUN", 300)
+
+
+def get_refresh_days(name, default):
+    """Days in which every catalog game is refreshed once; 0 switches off."""
+    raw_value = get_env(name, default)
+
+    try:
+        value = float(raw_value)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a number of days") from error
+
+    if value != 0 and value < 1 / 24:
+        raise ValueError(f"{name} must be 0 (off) or at least 1/24 (an hour)")
+
+    return value
+
+
+def get_details_refresh_days():
+    return get_refresh_days("DETAILS_REFRESH_DAYS", "7")
+
+
+def get_reviews_refresh_days():
+    return get_refresh_days("REVIEWS_REFRESH_DAYS", "1")
+
+
+def get_refresh_max_requests():
+    """Ceiling on Store requests per refresh run (300 is about 10.5 min)."""
+    raw_value = get_env("REFRESH_MAX_REQUESTS", "300")
 
     try:
         value = int(raw_value)
     except ValueError as error:
         raise ValueError(
-            "STORE_DETAILS_PER_RUN must be a whole number"
+            "REFRESH_MAX_REQUESTS must be a whole number"
         ) from error
 
-    if not 0 <= value <= 140:
-        # 140 keeps one catalog run inside the 150-per-5-minute Store budget.
-        raise ValueError("STORE_DETAILS_PER_RUN must be between 0 and 140")
+    if not 1 <= value <= 1000:
+        raise ValueError("REFRESH_MAX_REQUESTS must be between 1 and 1000")
+
+    return value
+
+
+def get_steamspy_pages():
+    """SteamSpy catalog pages fetched, from STEAMSPY_PAGE on (1,000 each)."""
+    raw_value = get_env("STEAMSPY_PAGES", "5")
+
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise ValueError("STEAMSPY_PAGES must be a whole number") from error
+
+    if not 1 <= value <= 20:
+        raise ValueError("STEAMSPY_PAGES must be between 1 and 20")
 
     return value
 
@@ -183,21 +248,12 @@ def get_steamspy_page_interval_days():
 
 
 def get_review_summaries_per_run():
-    """Catalog games whose Steam review summary reviews_daily refreshes."""
-    raw_value = get_env("REVIEW_SUMMARIES_PER_RUN", "120")
+    """Override for the review summaries fetched per refresh run, or None.
 
-    try:
-        value = int(raw_value)
-    except ValueError as error:
-        raise ValueError(
-            "REVIEW_SUMMARIES_PER_RUN must be a whole number"
-        ) from error
-
-    if not 0 <= value <= 140:
-        # 140 keeps one reviews run inside the 150-per-5-minute Store budget.
-        raise ValueError("REVIEW_SUMMARIES_PER_RUN must be between 0 and 140")
-
-    return value
+    Normally unset: refresh_hourly derives the count from the catalog size
+    and REVIEWS_REFRESH_DAYS (ADR 6).
+    """
+    return optional_count("REVIEW_SUMMARIES_PER_RUN", 300)
 
 
 def get_store_country():

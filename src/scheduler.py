@@ -19,6 +19,9 @@ from main import run_pipeline
 
 DEFAULT_TIMEZONE = "Europe/Prague"
 DEFAULT_PLAYERS_MINUTE = 7
+# Half an hour after the players job, so the two never queue behind each
+# other (ADR 6).
+DEFAULT_REFRESH_MINUTE = 37
 DEFAULT_CATALOG_TIME = "20:00"
 DEFAULT_REVIEWS_TIME = "20:30"
 
@@ -92,6 +95,18 @@ def get_env_text(name, default):
     return value.strip() if value and value.strip() else default
 
 
+def parse_minute(name, default):
+    try:
+        minute = int(get_env_text(name, str(default)))
+    except ValueError as error:
+        raise ValueError(f"{name} must be a whole number") from error
+
+    if not 0 <= minute <= 59:
+        raise ValueError(f"{name} must be between 0 and 59")
+
+    return minute
+
+
 def get_schedule_config():
     timezone_name = get_env_text("PIPELINE_TIMEZONE", DEFAULT_TIMEZONE)
 
@@ -117,21 +132,13 @@ def get_schedule_config():
         get_env_text("JOB_REVIEWS_TIME", DEFAULT_REVIEWS_TIME)
     )
 
-    try:
-        players_minute = int(
-            get_env_text("JOB_PLAYERS_MINUTE", str(DEFAULT_PLAYERS_MINUTE))
-        )
-    except ValueError as error:
-        raise ValueError(
-            "JOB_PLAYERS_MINUTE must be a whole number"
-        ) from error
-
-    if not 0 <= players_minute <= 59:
-        raise ValueError("JOB_PLAYERS_MINUTE must be between 0 and 59")
+    players_minute = parse_minute("JOB_PLAYERS_MINUTE", DEFAULT_PLAYERS_MINUTE)
+    refresh_minute = parse_minute("JOB_REFRESH_MINUTE", DEFAULT_REFRESH_MINUTE)
 
     jobs = [
         ScheduledJob("catalog_daily", daily_at(*catalog_time)),
         ScheduledJob("players_hourly", hourly_at(players_minute)),
+        ScheduledJob("refresh_hourly", hourly_at(refresh_minute)),
         ScheduledJob("reviews_daily", daily_at(*reviews_time)),
     ]
     return timezone, jobs

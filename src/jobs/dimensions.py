@@ -17,7 +17,6 @@ from api.steam_api import (
 )
 from config import (
     get_store_country,
-    get_store_details_per_run,
     get_tag_refresh_days,
 )
 from parsing.names import split_company_names
@@ -154,8 +153,8 @@ def link_companies(cursor, parsed):
     return len(company_ids)
 
 
-def select_stalest(cursor, appids, limit):
-    """The games whose Store details to refresh next, in this order:
+def select_stalest(cursor, limit):
+    """The catalog games whose Store details to refresh next, in this order:
 
     1. games added from Valve's charts or tracked that have no details yet,
        so a new game gets its real name the next day (ADR 5);
@@ -164,18 +163,16 @@ def select_stalest(cursor, appids, limit):
        before v1.2.0 stored names);
     4. the oldest refresh; ties by appid.
     """
-    appids = sorted(set(appids))
-
-    if not appids or limit == 0:
+    if limit == 0:
         return []
 
+    # The whole catalog, sorted in MySQL: no IN list of thousands of IDs.
     cursor.execute(
-        f"""
+        """
         SELECT games.appid
         FROM games
         LEFT JOIN game_details AS details
             ON details.appid = games.appid
-        WHERE games.appid IN ({placeholders(appids)})
         ORDER BY (details.appid IS NULL
                   AND games.catalog_source <> 'steamspy') DESC,
                  details.details_fetched_at IS NOT NULL,
@@ -184,7 +181,7 @@ def select_stalest(cursor, appids, limit):
                  games.appid
         LIMIT %s
         """,
-        (*appids, limit)
+        (limit,)
     )
     return [row[0] for row in cursor.fetchall()]
 
@@ -404,19 +401,16 @@ def describe_failures(failures):
     return listed + (f"; and {more} more" if more > 0 else "")
 
 
-def refresh_details(ctx, appids):
-    """13b: refresh Store details for the stalest games, and SteamSpy tags
-    for those of them whose tags are missing or older than TAG_REFRESH_DAYS.
+def refresh_details(ctx, limit):
+    """13b: refresh Store details for the `limit` stalest catalog games, and
+    SteamSpy tags for those of them whose tags are missing or older than
+    TAG_REFRESH_DAYS.
     """
     if ctx.replay:
         chosen = refreshed_in_run(ctx.cursor, ctx.run_id)
         with_tags = tags_fetched_in_run(ctx.cursor, ctx.run_id)
     else:
-        chosen = select_stalest(
-            ctx.cursor,
-            appids,
-            get_store_details_per_run()
-        )
+        chosen = select_stalest(ctx.cursor, limit)
         with_tags = tags_due(
             ctx.cursor, chosen, get_tag_refresh_days(), ctx.now_fn()
         )

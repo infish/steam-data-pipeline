@@ -125,8 +125,9 @@ All four rollout steps shipped together, after review:
   catalog run with snapshots, so `current_game_metrics` keeps working on the
   other days. The snapshot volume check was removed, and SteamSpy's
   freshness interval follows the setting.
-- **Review summaries** for `REVIEW_SUMMARIES_PER_RUN` (default 120) catalog
-  games a day, paced with the Store limit. The genre, tag *and release-year*
+- **Review summaries** for the catalog games on a rotation, paced with the
+  Store limit. ADR 6 moved the rotation, and the Store details, into the
+  hourly `refresh_hourly` job, with a daily summary for every game. The genre, tag *and release-year*
   marts take their review score from them; the release-year mart was not
   named in the proposal but used the same SteamSpy score.
 - A new check, `new_games_have_store_details`, warns when a game added from

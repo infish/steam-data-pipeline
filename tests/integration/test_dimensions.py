@@ -93,7 +93,7 @@ class DimensionsIntegrationTests(IntegrationTestCase):
         )
 
     def test_store_details_and_tags_fill_the_bridge_tables(self):
-        self.run_job("catalog_daily")
+        self.run_catalog_and_refresh()
 
         details = {
             row["appid"]: row
@@ -181,16 +181,14 @@ class DimensionsIntegrationTests(IntegrationTestCase):
         # Day 1 fetches every game's tags; day 2 refreshes Store details
         # again but keeps tags younger than TAG_REFRESH_DAYS.
         with patch.dict(os.environ, {"TAG_REFRESH_DAYS": "30"}):
-            first = self.run_job("catalog_daily", now_fn=at(1))
-            second = self.run_job("catalog_daily", now_fn=at(2))
+            first = self.run_catalog_and_refresh(now_fn=at(1))
+            second = self.run_catalog_and_refresh(now_fn=at(2))
 
-        # 427520 is tracked but off the catalog page, so every run also looks
-        # it up on SteamSpy for its games row; that lookup is not a tag fetch.
-        self.assertEqual(
-            self.tag_requests(first), [570, 620, 730, 427520, 427520]
-        )
+        # The refresh runs fetch the tags; the tracked app's SteamSpy
+        # lookup for its games row happens in the catalog runs.
+        self.assertEqual(self.tag_requests(first), [570, 620, 730, 427520])
         self.assertEqual(self.refreshed(second), [570, 620, 730, 427520])
-        self.assertEqual(self.tag_requests(second), [427520])
+        self.assertEqual(self.tag_requests(second), [])
         (fetched,) = self.query(
             "SELECT tags_fetched_at FROM game_details WHERE appid = 730"
         )
@@ -198,19 +196,17 @@ class DimensionsIntegrationTests(IntegrationTestCase):
 
         # 0 restores fetching tags with every Store refresh.
         with patch.dict(os.environ, {"TAG_REFRESH_DAYS": "0"}):
-            third = self.run_job("catalog_daily", now_fn=at(3))
+            third = self.run_catalog_and_refresh(now_fn=at(3))
 
-        self.assertEqual(
-            self.tag_requests(third), [570, 620, 730, 427520, 427520]
-        )
+        self.assertEqual(self.tag_requests(third), [570, 620, 730, 427520])
 
     def test_each_run_refreshes_the_stalest_games(self):
         with patch.dict(os.environ, {"STORE_DETAILS_PER_RUN": "2"}):
-            first = self.run_job("catalog_daily", now_fn=at(1))
+            first = self.run_catalog_and_refresh(now_fn=at(1))
             first_set = self.refreshed(first)
-            second = self.run_job("catalog_daily", now_fn=at(2))
+            second = self.run_catalog_and_refresh(now_fn=at(2))
             second_set = self.refreshed(second)
-            third = self.run_job("catalog_daily", now_fn=at(3))
+            third = self.run_catalog_and_refresh(now_fn=at(3))
 
         # Games without details first (by appid), then the oldest refresh.
         self.assertEqual(first_set, [570, 620])
@@ -221,12 +217,11 @@ class DimensionsIntegrationTests(IntegrationTestCase):
     def test_a_failed_refresh_keeps_previous_details(self):
         # Tags are fetched with every refresh here (TAG_REFRESH_DAYS 0), so
         # a failed Store request is seen next to a successful tag refresh.
-        self.run_job("catalog_daily", now_fn=at(1))
+        self.run_catalog_and_refresh(now_fn=at(1))
         (before,) = self.query("SELECT * FROM game_details WHERE appid = 620")
 
         with self.assertLogs(level="WARNING") as logs:
-            run_id = self.run_job(
-                "catalog_daily",
+            run_id = self.run_catalog_and_refresh(
                 {"store_appdetails:620": (503, {"error": "busy"})},
                 now_fn=at(2)
             )
@@ -246,10 +241,9 @@ class DimensionsIntegrationTests(IntegrationTestCase):
         )
 
     def test_delisted_game_is_marked_unavailable_and_keeps_details(self):
-        self.run_job("catalog_daily", now_fn=at(1))
+        self.run_catalog_and_refresh(now_fn=at(1))
 
-        self.run_job(
-            "catalog_daily",
+        self.run_catalog_and_refresh(
             {"store_appdetails:570": {"570": {"success": False}}},
             now_fn=at(2)
         )
@@ -275,8 +269,7 @@ class DimensionsIntegrationTests(IntegrationTestCase):
         }}
 
         with self.assertLogs(level="WARNING"):
-            run_id = self.run_job(
-                "catalog_daily",
+            run_id = self.run_catalog_and_refresh(
                 {"store_appdetails:570": odd_date}
             )
 
@@ -298,8 +291,7 @@ class DimensionsIntegrationTests(IntegrationTestCase):
             },
         }}
 
-        run_id = self.run_job(
-            "catalog_daily",
+        run_id = self.run_catalog_and_refresh(
             {"store_appdetails:570": coming_soon}
         )
 

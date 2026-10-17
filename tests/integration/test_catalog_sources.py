@@ -77,17 +77,16 @@ class CatalogSourcesIntegrationTests(IntegrationTestCase):
         }
 
         # The recorded Store details: "Counter-Strike 2", developer Valve.
-        self.run_job("catalog_daily", {"steamspy_all": frozen_page},
-                     now_fn=at(1))
+        self.run_catalog_and_refresh({"steamspy_all": frozen_page},
+                                     now_fn=at(1))
 
         self.assertEqual(self.game(730)["name"], "Counter-Strike 2")
         self.assertEqual(self.game(730)["name_source"], "store")
         self.assertEqual(self.companies("game_developers", 730), ["Valve"])
 
-        # The next SteamSpy page, without a Store refresh, changes neither.
-        with patch.dict(os.environ, {"STORE_DETAILS_PER_RUN": "0"}):
-            self.run_job("catalog_daily", {"steamspy_all": frozen_page},
-                         now_fn=at(2))
+        # The next SteamSpy page changes neither.
+        self.run_job("catalog_daily", {"steamspy_all": frozen_page},
+                     now_fn=at(2))
 
         self.assertEqual(self.game(730)["name"], "Counter-Strike 2")
         self.assertEqual(self.companies("game_developers", 730), ["Valve"])
@@ -110,8 +109,8 @@ class CatalogSourcesIntegrationTests(IntegrationTestCase):
         )
         self.assertEqual(observed["current_players"], 50)
 
-        # The next catalog run fetches its Store details first.
-        catalog = self.run_job("catalog_daily", NEW_GAME_DETAILS,
+        # The next refresh run fetches its Store details first.
+        refresh = self.run_job("refresh_hourly", NEW_GAME_DETAILS,
                                now_fn=at(2))
 
         self.assertEqual(self.game(NEW_GAME)["name"], "New Hit")
@@ -128,7 +127,7 @@ class CatalogSourcesIntegrationTests(IntegrationTestCase):
         self.assertIsNotNone(details["tags_fetched_at"])
         self.assertNotIn(
             f"app {NEW_GAME}",
-            self.run_row(catalog)["warning_message"] or ""
+            self.run_row(refresh)["warning_message"] or ""
         )
 
     @patch.dict(os.environ, {"CATALOG_FROM_VALVE_CHARTS": "true"})
@@ -141,7 +140,7 @@ class CatalogSourcesIntegrationTests(IntegrationTestCase):
         self.run_job("players_hourly", now_fn=at(1))
 
         with patch.dict(os.environ, {"STORE_DETAILS_PER_RUN": "2"}):
-            run_id = self.run_job("catalog_daily", now_fn=at(2))
+            run_id = self.run_job("refresh_hourly", now_fn=at(2))
 
         requested = [
             int(row["appid"])
@@ -184,8 +183,7 @@ class CatalogSourcesIntegrationTests(IntegrationTestCase):
         self.assertEqual(self.requests(first, "steamspy_all"), 1)
         self.assertEqual(self.requests(second, "steamspy_all"), 0)
         self.assertEqual(self.requests(eighth, "steamspy_all"), 1)
-        # Days without the page still refresh Store details and prices.
-        self.assertGreater(self.requests(second, "store_appdetails"), 0)
+        # Days without the page still check prices.
         self.assertGreater(self.requests(second, "store_prices"), 0)
         # The SteamSpy views keep showing the latest snapshot.
         (latest,) = self.query("SELECT run_id FROM latest_successful_run")
@@ -218,7 +216,7 @@ class CatalogSourcesIntegrationTests(IntegrationTestCase):
         self.run_job("catalog_daily", now_fn=at(1))
         summaries = {"steam_review_summary:570": review_summary(800, 200)}
 
-        run_id = self.run_job("reviews_daily", summaries, now_fn=at(1))
+        run_id = self.run_job("refresh_hourly", summaries, now_fn=at(1))
 
         reviewed = sorted(
             row["appid"]
@@ -227,8 +225,9 @@ class CatalogSourcesIntegrationTests(IntegrationTestCase):
                 (run_id,)
             )
         )
-        # The three tracked games plus one rotated catalog game (570).
-        self.assertEqual(reviewed, [570, 620, 730, 427520])
+        # One rotated catalog game; tracked games get theirs from
+        # reviews_daily.
+        self.assertEqual(reviewed, [570])
         # Review history stays with the tracked games.
         self.assertEqual(
             self.query(
@@ -254,7 +253,7 @@ class CatalogSourcesIntegrationTests(IntegrationTestCase):
                     (run_id,)
                 )
             ),
-            [570, 620, 730, 427520]
+            [570]
         )
 
 

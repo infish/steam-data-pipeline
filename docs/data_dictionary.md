@@ -109,7 +109,7 @@ Links games to their publishers.
 
 ### `game_details` (table)
 
-Steam Store details per game, refreshed for the `STORE_DETAILS_PER_RUN` stalest catalog games each catalog run (games without details first). NULL means the Store did not return the value.
+Steam Store details per game, refreshed by refresh_hourly in hourly slices so every game is refreshed every `DETAILS_REFRESH_DAYS` (games without details first; ADR 6). NULL means the Store did not return the value.
 
 | Column | Type | Null | Key | Description |
 | --- | --- | --- | --- | --- |
@@ -275,7 +275,7 @@ Valve's daily-peak leaderboard (top 100 by peak players). Not limited to catalog
 
 ### `review_observations` (table)
 
-Steam review summary per game per reviews run (all languages and purchase types): the tracked games every run, other catalog games on a rotation of `REVIEW_SUMMARIES_PER_RUN`.
+Steam review summary per game per run (all languages and purchase types): the tracked games daily from reviews_daily, every other catalog game every `REVIEWS_REFRESH_DAYS` from refresh_hourly (a daily series by default; ADR 6).
 
 | Column | Type | Null | Key | Description |
 | --- | --- | --- | --- | --- |

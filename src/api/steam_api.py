@@ -58,9 +58,13 @@ STEAMSPY_REQUEST_INTERVAL_SECONDS = 1.1
 # requests (details, price batches, review histograms).
 STORE_REQUEST_INTERVAL_SECONDS = 2.1
 
+# SteamSpy allows one request=all page per 60 seconds.
+STEAMSPY_PAGE_INTERVAL_SECONDS = 61
+
 # Minimum interval per paced API, for RunContext.pace.
 API_INTERVALS = {
     "steamspy": STEAMSPY_REQUEST_INTERVAL_SECONDS,
+    "steamspy_all": STEAMSPY_PAGE_INTERVAL_SECONDS,
     "store": STORE_REQUEST_INTERVAL_SECONDS,
 }
 
@@ -125,7 +129,8 @@ def fetch_json(session, store, source, url, params=None):
     return json.loads(store.read_payload(response_id))
 
 
-def get_top_games(session, store=None):
+def get_top_games(session, store=None, page=None):
+    """One SteamSpy catalog page (STEAMSPY_PAGE unless page is given)."""
     store = store or MemoryRawStore()
     config = get_steamspy_config()
 
@@ -134,7 +139,7 @@ def get_top_games(session, store=None):
     }
 
     if config["mode"] == "all":
-        params["page"] = config["page"]
+        params["page"] = config["page"] if page is None else page
 
     data = fetch_json(
         session,

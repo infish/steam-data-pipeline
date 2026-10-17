@@ -55,18 +55,21 @@ class RawLayerIntegrationTests(IntegrationTestCase):
                 for job, run_id in runs.items()
             },
             {
-                # Factorio's appdetails is fetched twice: once to backfill
-                # its games row, once for its tags.
+                # Factorio's appdetails is fetched twice: by the catalog to
+                # backfill its games row, by the refresh for its tags.
                 "catalog_daily": {
                     "steamspy_all": 1,
-                    "steamspy_appdetails": 5,
-                    "store_appdetails": 4,
+                    "steamspy_appdetails": 1,
                     "store_prices": 1,
                 },
                 "players_hourly": {
                     "valve_top_concurrent": 1,
                     "valve_current_players": 2,
                     "valve_most_played": 1,
+                },
+                "refresh_hourly": {
+                    "steamspy_appdetails": 4,
+                    "store_appdetails": 4,
                 },
                 "reviews_daily": {
                     "steam_review_summary": 3,
@@ -281,18 +284,21 @@ class RawLayerIntegrationTests(IntegrationTestCase):
             row["source"] for row in old_rows if row["payload"] is not None
         )
 
+        # The catalog job repeats the page, Factorio's backfill and the
+        # prices; Store details and tags come from refresh_hourly (ADR 6).
         self.assertEqual(
             kept,
             {
                 "steamspy_all": 1,
-                "steamspy_appdetails": 4,
-                "store_appdetails": 4,
+                "steamspy_appdetails": 1,
                 "store_prices": 1,
             }
         )
         self.assertEqual(
             purged,
             {
+                "steamspy_appdetails": 3,
+                "store_appdetails": 4,
                 "valve_top_concurrent": 1,
                 "valve_current_players": 2,
                 "valve_most_played": 1,

@@ -11,11 +11,13 @@ the number of app IDs in `STEAM_TRACKED_APPIDS` (default 3).
 | `players_hourly` | 24 | Valve top concurrent players | 1 | 24 |
 | | | Valve current players | tracked apps outside the top 100 (≤ 3) | ≤ 72 |
 | | | Valve most played (daily peak) | 1 | 24 |
-| `catalog_daily` | 1 | SteamSpy `request=all` | 1 every `STEAMSPY_PAGE_INTERVAL_DAYS` (7) | ≈ 0.14 |
-| | | SteamSpy `request=appdetails` | tracked apps off the catalog page (≤ 3), plus tags for the refreshed games whose tags are missing or older than `TAG_REFRESH_DAYS` (30): about 120 × 9 / 30 ≈ 36 a day once every game has tags | ≤ 123, typically ≈ 40 |
-| | | Steam Store `api/appdetails` | `STORE_DETAILS_PER_RUN` (120) | 120 |
-| | | Steam Store price batch | catalog games ÷ 50 (≈ 20, growing with the games added from Valve's charts) | ≈ 20–25 |
-| `reviews_daily` | 1 | Steam review summary | tracked apps (3) plus `REVIEW_SUMMARIES_PER_RUN` catalog games (120) | 123 |
+| `catalog_daily` | 1 | SteamSpy `request=all` | `STEAMSPY_PAGES` (5) every `STEAMSPY_PAGE_INTERVAL_DAYS` (7) | ≈ 0.7 |
+| | | SteamSpy `request=appdetails` | tracked apps off the catalog pages (≤ 3), on page days | ≤ 3 |
+| | | Steam Store price batch | catalog games ÷ 50 (≈ 100 at 5,000 games) | ≈ 100 |
+| `refresh_hourly` | 24 | Steam Store `api/appdetails` | catalog ÷ (`DETAILS_REFRESH_DAYS` × 24): ≈ 31 at 5,000 games | ≈ 740 |
+| | | SteamSpy `request=appdetails` (tags) | the refreshed games whose tags are missing or older than `TAG_REFRESH_DAYS` (30) | ≈ 170 once every game has tags |
+| | | Steam review summary | catalog ÷ (`REVIEWS_REFRESH_DAYS` × 24): ≈ 211 at 5,000 games | ≈ 5,040 |
+| `reviews_daily` | 1 | Steam review summary | tracked apps (3) | 3 |
 | | | Steam review histogram | tracked apps (3) | 3 |
 | | | Steam news | tracked apps (3) | 3 |
 | `backfill` (manual) | on demand | review histogram or news | the given apps | — |
@@ -27,7 +29,7 @@ the number of app IDs in `STEAM_TRACKED_APPIDS` (default 3).
 | Valve Web API (top concurrent, current players, most played, news) | ≤ 123 | ≤ 5 per hourly run | keep modest; no published keyless limit | n/a |
 | SteamSpy `request=all` | ≈ 0.14 | 1 per week | 1 per 60 s | ample |
 | SteamSpy other requests | ≤ 123 | at most 1 per 1.1 s (paced) | 1 per s | the interval is 10% above the limit |
-| Steam Store (`api/appdetails`, price batches, `appreviews`, `appreviewhistogram`) | ≈ 270 | at most 1 per 2.1 s (paced, all four) | 150 per 5 min | each job stays under 143 per 5 minutes by its pacing; `catalog_daily` (20:00, about 5 minutes) and `reviews_daily` (20:30, about 4.5 minutes) do not overlap |
+| Steam Store (`api/appdetails`, price batches, `appreviews`, `appreviewhistogram`) | ≈ 5,900 at 5,000 games | at most 1 per 2.1 s (paced, all four) | 150 per 5 min | every run stays under 143 per 5 minutes by its pacing, and the scheduler runs one job at a time |
 
 ## How the limits are enforced
 
@@ -46,12 +48,14 @@ when they grew from 3 to 123 a day.
 
 ## Notes
 
-- The catalog job alternates one Store request with one SteamSpy request
-  per refreshed game. The Store interval sets the pace: 120 games take about
-  4.2 minutes (2.1 s each) and never exceed either limit. At 120 games per
-  run, a 1,000-game catalog is fully refreshed about every 9 days.
-  `STORE_DETAILS_PER_RUN` is capped at 140 so a run stays inside the Store
-  budget.
+- `refresh_hourly` alternates one Store details request with one SteamSpy
+  tag request per refreshed game, then fetches its review summaries. The
+  Store interval sets the pace: about 242 Store requests take about 8.5
+  minutes and never exceed either limit. `REFRESH_MAX_REQUESTS` (300, about
+  10.5 minutes) caps a run; both slices shrink in proportion above it
+  (ADR 6, docs/scale.md).
+- At 5,000 games the Store total is about 5,900 requests a day: 14% of the
+  roughly 41,000 that 2.1 s pacing would allow.
 - The most-played leaderboard changes once a day but is fetched every hour,
   because a missed day cannot be fetched later. Repeated identical responses
   cost only a metadata row in the raw landing layer.
