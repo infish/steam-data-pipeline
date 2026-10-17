@@ -149,11 +149,10 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             "Steam review lookup failed for app 730, skipped: 502"
         ))
 
-    def test_steamspy_failure_fails_only_the_catalog_run(self):
-        with (
-            self.assertLogs(level="ERROR"),
-            self.assertRaisesRegex(requests.ConnectionError, "SteamSpy down")
-        ):
+    def test_steamspy_failure_is_a_warning_and_the_catalog_carries_on(self):
+        # SteamSpy is a frozen reference since ADR 5: a failed page no
+        # longer fails the catalog run (ADR 6).
+        with self.assertLogs(level="WARNING"):
             self.run_pipeline({
                 "steamspy_all": requests.ConnectionError("SteamSpy down")
             })
@@ -162,14 +161,14 @@ class RunPipelineIntegrationTests(IntegrationTestCase):
             row["job_name"]: row
             for row in self.query("SELECT * FROM pipeline_runs")
         }
-        self.assertEqual(runs["catalog_daily"]["status"], "FAILED")
-        self.assertEqual(
-            runs["catalog_daily"]["error_message"],
-            "SteamSpy down"
+        self.assertEqual(runs["catalog_daily"]["status"], "SUCCESS")
+        self.assertIn(
+            "SteamSpy catalog page 0 failed: SteamSpy down",
+            runs["catalog_daily"]["warning_message"]
         )
-        # The other jobs still ran; with no games rows they loaded nothing.
+        # The tracked apps still got games rows, so they are measured.
         self.assertEqual(runs["players_hourly"]["status"], "SUCCESS")
-        self.assertEqual(runs["players_hourly"]["measurements_loaded"], 0)
+        self.assertEqual(runs["players_hourly"]["measurements_loaded"], 3)
         self.assertEqual(runs["reviews_daily"]["status"], "SUCCESS")
 
         (raw,) = self.query(

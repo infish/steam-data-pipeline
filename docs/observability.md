@@ -14,8 +14,9 @@ pipeline and can be tuned there.
 ## Which job runs which check
 
 Every check belongs to the job that produces its data, and runs only after
-that job: catalog checks after `catalog_daily`, player checks after
-`players_hourly`, review checks after `reviews_daily`. A few checks guard
+that job: catalog and price checks after `catalog_daily`, Store details,
+tag and review-summary checks after `refresh_hourly`, player checks after
+`players_hourly`, review-history checks after `reviews_daily`. A few checks guard
 the pipeline as a whole and run after every job: volume of
 `raw_api_responses` and `data_quality_results`, and `no_stuck_runs`.
 
@@ -40,7 +41,8 @@ fetched successfully is a `warn` (normal right after a fresh install).
 | Source | Expected interval | Fails after |
 | --- | --- | --- |
 | `valve_top_concurrent`, `valve_most_played` | 1 h | 1.5 h |
-| `store_appdetails`, `store_prices`, `steam_review_summary`, `steam_review_histogram`, `steam_news` | 24 h | 36 h |
+| `store_appdetails`, `steam_review_summary` (slices every hour, ADR 6) | 1 h | 1.5 h |
+| `store_prices`, `steam_review_histogram`, `steam_news` | 24 h | 36 h |
 | `steamspy_all` | `STEAMSPY_PAGE_INTERVAL_DAYS` × 24 h (7 days) | 1.5 × that (10.5 days) |
 
 `valve_current_players` and `steamspy_appdetails` are fetched only when
@@ -97,11 +99,11 @@ for every `CREATE TABLE` in migrations V5 and later.
 | `consistent_daily_rollup`: min ≤ average ≤ peak, at least one observation | `player_daily` | fail | `players_hourly` |
 | `recent_leaderboard_day`: newest leaderboard day at most 2 days old | `most_played_daily` | warn | `players_hourly` |
 | `catalog_games_have_developers` / `_publishers` | `game_developers`, `game_publishers` | fail | `catalog_daily` |
-| `named_companies`, `described_genres`, `described_categories`, `named_languages`, `named_tags` | lookup tables | fail | `catalog_daily` |
-| `available_details_have_type` | `game_details` | fail | `catalog_daily` |
-| `new_games_have_store_details`: games added from Valve's charts or tracked have Store details within 3 days | `games` | warn | `catalog_daily` |
-| `genre_/category_/language_links_from_details`: links only for games with details | bridge tables | fail | `catalog_daily` |
-| `tag_links_have_fetch_time` | `game_tags` | fail | `catalog_daily` |
+| `named_companies`, `described_genres`, `described_categories`, `named_languages`, `named_tags` | lookup tables | fail | `refresh_hourly` |
+| `available_details_have_type` | `game_details` | fail | `refresh_hourly` |
+| `new_games_have_store_details`: games added from Valve's charts or tracked have Store details within 3 days | `games` | warn | `refresh_hourly` |
+| `genre_/category_/language_links_from_details`: links only for games with details | bridge tables | fail | `refresh_hourly` |
+| `tag_links_have_fetch_time` | `game_tags` | fail | `refresh_hourly` |
 | `one_current_price_version`, `ordered_price_versions` | `game_price_history` | fail | `catalog_daily` |
 | `single_partial_month` | `review_rollups` | fail | `reviews_daily` |
 | `latest_reconciliation_within_tolerance` | `review_reconciliation` | warn | `reviews_daily` |

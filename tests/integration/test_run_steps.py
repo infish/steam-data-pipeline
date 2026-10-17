@@ -25,7 +25,7 @@ class RunStepsIntegrationTests(IntegrationTestCase):
         )
         self.assertTrue({
             "fetch_catalog", "validate", "load_games", "load_company_links",
-            "store_details_and_tags", "prices",
+            "add_tracked", "prices",
         } <= {
             step["step"] for step in steps if step["parent_step"] == "job"
         })

@@ -271,6 +271,7 @@ class ScheduleConfigTests(unittest.TestCase):
             {
                 "catalog_daily": now.replace(hour=20),
                 "players_hourly": now.replace(minute=7),
+                "refresh_hourly": now.replace(minute=37),
                 "reviews_daily": now.replace(hour=20, minute=30),
             }
         )
@@ -279,7 +280,8 @@ class ScheduleConfigTests(unittest.TestCase):
         timezone, jobs = self.config(
             JOB_CATALOG_TIME="06:15",
             JOB_REVIEWS_TIME="07:45",
-            JOB_PLAYERS_MINUTE="23"
+            JOB_PLAYERS_MINUTE="23",
+            JOB_REFRESH_MINUTE="50"
         )
         now = datetime(2026, 10, 12, 5, 0, tzinfo=timezone)
 
@@ -288,6 +290,7 @@ class ScheduleConfigTests(unittest.TestCase):
             {
                 "catalog_daily": now.replace(hour=6, minute=15),
                 "players_hourly": now.replace(minute=23),
+                "refresh_hourly": now.replace(minute=50),
                 "reviews_daily": now.replace(hour=7, minute=45),
             }
         )

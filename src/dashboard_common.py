@@ -106,7 +106,9 @@ def cache_note():
 
 # Jobs the scheduler runs today. Older job names (daily_legacy, from before
 # the split into jobs) stay in the run history but get no status badge.
-CURRENT_JOBS = ("catalog_daily", "players_hourly", "reviews_daily")
+CURRENT_JOBS = (
+    "catalog_daily", "players_hourly", "refresh_hourly", "reviews_daily",
+)
 
 
 def latest_runs():

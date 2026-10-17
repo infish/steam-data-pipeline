@@ -2,9 +2,23 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
-## Unreleased (planned v1.2.0)
+## v1.2.0 — 2026-10-17
 
 ### Added
+
+- A 5,000-game catalog (ADR 6): `STEAMSPY_PAGES` (default 5) SteamSpy pages
+  of 1,000 games, one page a minute, weekly, plus Valve's chart games and
+  tracked apps.
+- `refresh_hourly` (every hour at `JOB_REFRESH_MINUTE`, default :37) does
+  the Store work in hourly slices. Every game gets its Store details and
+  tags every `DETAILS_REFRESH_DAYS` (7) and its Steam review summary every
+  `REVIEWS_REFRESH_DAYS` (1): a daily review series for every game. Slice
+  sizes follow the catalog size within `REFRESH_MAX_REQUESTS` (300) Store
+  requests per run. `STORE_DETAILS_PER_RUN` and `REVIEW_SUMMARIES_PER_RUN`
+  are now optional fixed overrides, empty by default.
+- `scripts/scale_test.py` and `src/ingest/synthetic.py`: push a synthetic
+  catalog through every job with the API pauses off; results for 5,000 and
+  20,000 games in docs/scale.md.
 
 - The game list no longer comes only from frozen SteamSpy (ADR 5,
   `V13__catalog_sources`):
@@ -18,9 +32,8 @@ This file records user-visible changes to the Steam data pipeline.
     (`games.name_source`, `game_details.companies_from_store`); a later
     SteamSpy page never overwrites them. Counter-Strike 2 is no longer
     "Counter-Strike: Global Offensive".
-  - `reviews_daily` fetches Steam review summaries for
-    `REVIEW_SUMMARIES_PER_RUN` (default 120) other catalog games a day,
-    oldest first, paced with the Store limit.
+  - Steam review summaries for the other catalog games, oldest first, paced
+    with the Store limit (by `refresh_hourly`, see above).
 - Data check `new_games_have_store_details`: warns when a game added from the
   charts or tracked still has no Store details after 3 days.
 - Store details go first to games added from the charts or tracked, then to
@@ -40,9 +53,18 @@ This file records user-visible changes to the Steam data pipeline.
 
 ### Changed
 
+- Raising `STEAMSPY_PAGES` (or moving `STEAMSPY_PAGE`) makes the SteamSpy
+  pages due at the next catalog run, instead of waiting for
+  `STEAMSPY_PAGE_INTERVAL_DAYS`.
+- `catalog_daily` keeps the game list and the prices for every game; Store
+  details and tags moved to `refresh_hourly`. A failed SteamSpy page is now
+  a run warning instead of a failed catalog run. `reviews_daily` covers the
+  tracked games again; the other games' summaries come from
+  `refresh_hourly`. Store details and review-summary checks run after
+  `refresh_hourly`, with a one-hour freshness interval.
+
 - The SteamSpy page is fetched every `STEAMSPY_PAGE_INTERVAL_DAYS` (default
-  7; 1 = every catalog run). Store details and prices run every day for the
-  whole catalog. `latest_successful_run` is now the latest catalog run with
+  7; 1 = every catalog run). Prices run every day for the whole catalog. `latest_successful_run` is now the latest catalog run with
   SteamSpy snapshots, so `current_game_metrics` keeps working between
   fetches. SteamSpy's freshness interval follows the setting, and the daily
   snapshot volume check was removed.

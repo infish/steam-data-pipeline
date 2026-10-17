@@ -80,7 +80,7 @@ services:
         echo "db-bootstrap: dashboard and writer accounts are up to date"
 
   migration-assets:
-    image: ghcr.io/infish/steam-data-pipeline:v1.1.0
+    image: ghcr.io/infish/steam-data-pipeline:v1.2.0
     user: "0:0"
 
     command:
@@ -115,7 +115,7 @@ services:
       - flyway_migrations:/flyway/sql:ro
 
   scheduler:
-    image: ghcr.io/infish/steam-data-pipeline:v1.1.0
+    image: ghcr.io/infish/steam-data-pipeline:v1.2.0
     restart: unless-stopped
     command: python src/scheduler.py
 
@@ -130,26 +130,29 @@ services:
       MYSQL_PASSWORD: CHANGE_ME_WRITER
       STEAMSPY_MODE: all
       STEAMSPY_PAGE: "0"
+      STEAMSPY_PAGES: "5"
       STEAM_TRACKED_APPIDS: "730,427520,620"
       PIPELINE_MAX_REJECTED_PERCENT: "5"
       RAW_RETENTION_DAYS: "30"
       PLAYER_HOURLY_RETENTION_DAYS: "90"
-      STORE_DETAILS_PER_RUN: "120"
+      DETAILS_REFRESH_DAYS: "7"
+      REVIEWS_REFRESH_DAYS: "1"
+      REFRESH_MAX_REQUESTS: "300"
       TAG_REFRESH_DAYS: "30"
       CATALOG_FROM_VALVE_CHARTS: "true"
       STEAMSPY_PAGE_INTERVAL_DAYS: "7"
-      REVIEW_SUMMARIES_PER_RUN: "120"
       STEAM_STORE_COUNTRY: us
 
       PIPELINE_TIMEZONE: Europe/Prague
       JOB_PLAYERS_MINUTE: "7"
+      JOB_REFRESH_MINUTE: "37"
       JOB_CATALOG_TIME: "20:00"
       JOB_REVIEWS_TIME: "20:30"
       PIPELINE_RUN_ON_STARTUP: "false"
 
   pipeline:
     profiles: ["manual"]
-    image: ghcr.io/infish/steam-data-pipeline:v1.1.0
+    image: ghcr.io/infish/steam-data-pipeline:v1.2.0
 
     depends_on:
       migrate:
@@ -162,19 +165,21 @@ services:
       MYSQL_PASSWORD: CHANGE_ME_WRITER
       STEAMSPY_MODE: all
       STEAMSPY_PAGE: "0"
+      STEAMSPY_PAGES: "5"
       STEAM_TRACKED_APPIDS: "730,427520,620"
       PIPELINE_MAX_REJECTED_PERCENT: "5"
       RAW_RETENTION_DAYS: "30"
       PLAYER_HOURLY_RETENTION_DAYS: "90"
-      STORE_DETAILS_PER_RUN: "120"
+      DETAILS_REFRESH_DAYS: "7"
+      REVIEWS_REFRESH_DAYS: "1"
+      REFRESH_MAX_REQUESTS: "300"
       TAG_REFRESH_DAYS: "30"
       CATALOG_FROM_VALVE_CHARTS: "true"
       STEAMSPY_PAGE_INTERVAL_DAYS: "7"
-      REVIEW_SUMMARIES_PER_RUN: "120"
       STEAM_STORE_COUNTRY: us
 
   dashboard:
-    image: ghcr.io/infish/steam-data-pipeline:v1.1.0
+    image: ghcr.io/infish/steam-data-pipeline:v1.2.0
     restart: unless-stopped
 
     command: >

@@ -170,9 +170,9 @@ Fixtures: `current_players/<appid>.json`.
 ## Steam review summary
 
 **Status:** in use; `review_score_desc` accepted. `reviews_daily` fetches it
-for the tracked games every day and for `REVIEW_SUMMARIES_PER_RUN` other
-catalog games on a rotation (oldest summary first, ADR 5); the catalog marts'
-review score comes from it.
+for the tracked games every day. `refresh_hourly` fetches it for every other
+catalog game every `REVIEWS_REFRESH_DAYS` (daily by default), oldest summary
+first (ADR 5, ADR 6). The catalog marts' review score comes from it.
 
 - URL: `https://store.steampowered.com/appreviews/<appid>`
 - Parameters: `json=1`, `filter=recent`, `language=all`, `review_type=all`,
@@ -194,8 +194,9 @@ Fixtures: `review_summary/<appid>.json` (the review text is removed).
 
 ## Store app details
 
-**Status:** in use: `catalog_daily` refreshes the `STORE_DETAILS_PER_RUN`
-stalest catalog games per run into `game_details` and the genre, category
+**Status:** in use: `refresh_hourly` refreshes a slice of the stalest catalog
+games every hour, every game every `DETAILS_REFRESH_DAYS` (ADR 6), into
+`game_details` and the genre, category
 and language tables: games added from Valve's charts or tracked without
 details first, then other games without details, then games whose name is
 not from the Store yet, then the oldest refresh. Since v1.2.0 (ADR 5) its `name`, `developers` and

@@ -30,9 +30,11 @@ EXPECTED_INTERVAL_HOURS = {
     "valve_top_concurrent": 1,
     "valve_most_played": 1,
     "steamspy_all": 24,
-    "store_appdetails": 24,
+    # refresh_hourly fetches a slice of Store details and review summaries
+    # every hour (ADR 6).
+    "store_appdetails": 1,
     "store_prices": 24,
-    "steam_review_summary": 24,
+    "steam_review_summary": 1,
     "steam_review_histogram": 24,
     "steam_news": 24,
 }
@@ -50,13 +52,13 @@ def expected_interval_hours(source):
 # The job that fetches each source.
 SOURCE_JOBS = {
     "steamspy_all": "catalog_daily",
-    "steamspy_appdetails": "catalog_daily",
-    "store_appdetails": "catalog_daily",
+    "steamspy_appdetails": "refresh_hourly",
+    "store_appdetails": "refresh_hourly",
     "store_prices": "catalog_daily",
     "valve_top_concurrent": "players_hourly",
     "valve_most_played": "players_hourly",
     "valve_current_players": "players_hourly",
-    "steam_review_summary": "reviews_daily",
+    "steam_review_summary": "refresh_hourly",
     "steam_review_histogram": "reviews_daily",
     "steam_news": "reviews_daily",
 }
@@ -66,7 +68,7 @@ SOURCE_JOBS = {
 # game_metric_snapshots is not here: SteamSpy is fetched weekly (ADR 5).
 VOLUME_TABLES = {
     "player_observations": ("collected_at", "players_hourly"),
-    "review_observations": ("collected_at", "reviews_daily"),
+    "review_observations": ("collected_at", "refresh_hourly"),
     "raw_api_responses": ("fetched_at", None),
     "data_quality_results": ("checked_at", None),
     "run_steps": ("started_at", None),
@@ -198,7 +200,7 @@ INVARIANTS = [
     (
         # Games added from Valve's charts or tracked get their Store details
         # (and real name) from catalog_daily within a few days.
-        "new_games_have_store_details", "games", "warn", "catalog_daily",
+        "new_games_have_store_details", "games", "warn", "refresh_hourly",
         """SELECT COUNT(*) FROM games
            WHERE catalog_source <> 'steamspy'
              AND first_seen_at < %(now)s - INTERVAL 3 DAY
@@ -206,52 +208,53 @@ INVARIANTS = [
                              WHERE details.appid = games.appid)""",
     ),
     (
-        "named_companies", "companies", "fail", "catalog_daily",
+        "named_companies", "companies", "fail", "refresh_hourly",
         "SELECT COUNT(*) FROM companies WHERE TRIM(name) = ''",
     ),
     (
-        "available_details_have_type", "game_details", "fail", "catalog_daily",
+        "available_details_have_type", "game_details", "fail",
+        "refresh_hourly",
         """SELECT COUNT(*) FROM game_details
            WHERE store_available AND app_type IS NULL""",
     ),
     (
-        "described_genres", "genres", "fail", "catalog_daily",
+        "described_genres", "genres", "fail", "refresh_hourly",
         "SELECT COUNT(*) FROM genres WHERE TRIM(description) = ''",
     ),
     (
-        "described_categories", "categories", "fail", "catalog_daily",
+        "described_categories", "categories", "fail", "refresh_hourly",
         "SELECT COUNT(*) FROM categories WHERE TRIM(description) = ''",
     ),
     (
-        "named_languages", "languages", "fail", "catalog_daily",
+        "named_languages", "languages", "fail", "refresh_hourly",
         "SELECT COUNT(*) FROM languages WHERE TRIM(name) = ''",
     ),
     (
-        "named_tags", "tags", "fail", "catalog_daily",
+        "named_tags", "tags", "fail", "refresh_hourly",
         "SELECT COUNT(*) FROM tags WHERE TRIM(name) = ''",
     ),
     (
-        "genre_links_from_details", "game_genres", "fail", "catalog_daily",
+        "genre_links_from_details", "game_genres", "fail", "refresh_hourly",
         """SELECT COUNT(*) FROM game_genres AS links
            WHERE NOT EXISTS (SELECT 1 FROM game_details AS details
                              WHERE details.appid = links.appid)""",
     ),
     (
         "category_links_from_details", "game_categories", "fail",
-        "catalog_daily",
+        "refresh_hourly",
         """SELECT COUNT(*) FROM game_categories AS links
            WHERE NOT EXISTS (SELECT 1 FROM game_details AS details
                              WHERE details.appid = links.appid)""",
     ),
     (
         "language_links_from_details", "game_languages", "fail",
-        "catalog_daily",
+        "refresh_hourly",
         """SELECT COUNT(*) FROM game_languages AS links
            WHERE NOT EXISTS (SELECT 1 FROM game_details AS details
                              WHERE details.appid = links.appid)""",
     ),
     (
-        "tag_links_have_fetch_time", "game_tags", "fail", "catalog_daily",
+        "tag_links_have_fetch_time", "game_tags", "fail", "refresh_hourly",
         """SELECT COUNT(DISTINCT links.appid) FROM game_tags AS links
            JOIN game_details AS details ON details.appid = links.appid
            WHERE details.tags_fetched_at IS NULL""",

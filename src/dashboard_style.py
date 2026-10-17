@@ -45,12 +45,21 @@ DARK = Tokens(
     fall="#e66767",
 )
 
-# A job keeps its color everywhere it appears.
-JOB_SLOTS = {"catalog_daily": 0, "players_hourly": 1, "reviews_daily": 2}
+# A job keeps its color everywhere it appears. The palette is validated for
+# three slots, so refresh_hourly (catalog data, ADR 6) shares the catalog's
+# color and is told apart by its marker shape.
+JOB_SLOTS = {
+    "catalog_daily": 0,
+    "refresh_hourly": 0,
+    "players_hourly": 1,
+    "reviews_daily": 2,
+}
+JOB_SYMBOLS = {"refresh_hourly": "diamond"}
 
 # How often each job should succeed, for the sidebar's "late" badge.
 JOB_EXPECTED_HOURS = {
     "players_hourly": 1,
+    "refresh_hourly": 1,
     "catalog_daily": 24,
     "reviews_daily": 24,
 }

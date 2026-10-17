@@ -1,23 +1,30 @@
-"""catalog_daily: the game list, Store details and prices.
+"""catalog_daily: the game list and prices.
 
-The game list is every games row: the SteamSpy page (fetched every
-STEAMSPY_PAGE_INTERVAL_DAYS, since SteamSpy is frozen), tracked apps, and
-games players_hourly added from Valve's charts (ADR 5). Every run refreshes
-Store details for the stalest games and checks prices for all of them.
+The game list is every games row: STEAMSPY_PAGES SteamSpy catalog pages
+(fetched every STEAMSPY_PAGE_INTERVAL_DAYS, since SteamSpy is frozen),
+tracked apps, and games players_hourly added from Valve's charts (ADR 5).
+Every run checks prices for all of them; Store details, tags and review
+summaries are refreshed hourly by refresh_hourly (ADR 6).
 """
 
 import logging
 
-from api.steam_api import get_top_games, get_tracked_app_details
+from api.steam_api import (
+    ENRICHMENT_ERRORS,
+    get_top_games,
+    get_tracked_app_details,
+)
 from config import (
     get_max_rejected_percent,
     get_raw_retention_days,
+    get_steamspy_config,
     get_steamspy_page_interval_days,
+    get_steamspy_pages,
     get_tracked_appids,
 )
 from ingest.raw_store import purge_raw_payloads
 from jobs.base import Job
-from jobs.dimensions import load_company_links, refresh_details
+from jobs.dimensions import load_company_links
 from jobs.prices import check_prices
 from jobs.loading import (
     catalog_appids,
@@ -174,8 +181,11 @@ def steamspy_page_due(ctx):
 
     With STEAMSPY_PAGE_INTERVAL_DAYS 1, every catalog run fetches it, as
     before v1.2.0. Otherwise it is due when the newest SteamSpy snapshot is
-    at least that many calendar days old (or there is none). Reprocessing
-    does what the original run did.
+    at least that many calendar days old, when there is none, or when the
+    run that loaded it did not ask for every page STEAMSPY_PAGE and
+    STEAMSPY_PAGES now cover (the setting was raised, so the larger catalog
+    arrives with the next run, not a week later). Reprocessing does what
+    the original run did.
     """
     if ctx.replay:
         ctx.cursor.execute(
@@ -190,10 +200,28 @@ def steamspy_page_due(ctx):
     if interval_days == 1:
         return True
 
-    ctx.cursor.execute("SELECT MAX(snapshot_time) FROM game_metric_snapshots")
-    newest = ctx.cursor.fetchall()[0][0]
+    # The newest snapshot, and the last page its run asked SteamSpy for
+    # (request metadata stays after payloads are purged).
+    ctx.cursor.execute(
+        """
+        SELECT
+            (SELECT MAX(snapshot_time) FROM game_metric_snapshots),
+            (SELECT MAX(CAST(JSON_UNQUOTE(
+                        JSON_EXTRACT(request_params, '$.page')) AS UNSIGNED))
+             FROM raw_api_responses
+             WHERE source = 'steamspy_all'
+               AND run_id = (SELECT MAX(run_id) FROM game_metric_snapshots))
+        """
+    )
+    newest, last_page = ctx.cursor.fetchall()[0]
 
     if newest is None:
+        return True
+
+    config = get_steamspy_config()
+    wanted_last_page = config["page"] + get_steamspy_pages() - 1
+
+    if last_page is None or last_page < wanted_last_page:
         return True
 
     return (ctx.now_fn().date() - newest.date()).days >= interval_days
@@ -201,11 +229,25 @@ def steamspy_page_due(ctx):
 
 def load_steamspy_page(ctx):
     """Fetch, validate and load the SteamSpy page; return the counters."""
+    data = {}
+    first_page = get_steamspy_config()["page"]
+
     with ctx.step("fetch_catalog"):
-        # The page request counts towards SteamSpy's interval, so the first
-        # appdetails request after it is still spaced.
-        ctx.pace("steamspy")
-        data = get_top_games(ctx.session, ctx.store)
+        for page in range(first_page, first_page + get_steamspy_pages()):
+            # SteamSpy allows one page a minute; the page also counts
+            # towards its 1-per-second interval for appdetails.
+            ctx.pace("steamspy_all")
+            ctx.pace("steamspy")
+
+            try:
+                data.update(get_top_games(ctx.session, ctx.store, page))
+            except ENRICHMENT_ERRORS as error:
+                # SteamSpy is a frozen reference (ADR 5): a missing page is
+                # a warning, not a failed run; prices still run.
+                ctx.warn(f"SteamSpy catalog page {page} failed: {error}")
+
+    if not data:
+        return 0, 0, 0
 
     # Tracked apps off the page get a SteamSpy row from appdetails.
     off_page_appids = [
@@ -287,13 +329,10 @@ def run_catalog(ctx):
         )
         step["rows"] = len(added)
 
-    appids = catalog_appids(ctx.cursor)
-
-    with ctx.step("store_details_and_tags"):
-        refresh_details(ctx, appids)
-
+    # Store details, tags and review summaries are refreshed in hourly slices
+    # by refresh_hourly (ADR 6); the daily job keeps the cheap price batches.
     with ctx.step("prices"):
-        check_prices(ctx, appids)
+        check_prices(ctx, catalog_appids(ctx.cursor))
 
     ctx.counters.update(
         rows_extracted=rows_extracted,

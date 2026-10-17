@@ -53,7 +53,7 @@ class FreshnessTests(unittest.TestCase):
 
     def test_older_fails(self):
         row = evaluate_freshness(
-            "store_appdetails", NOW - timedelta(hours=37), NOW
+            "store_prices", NOW - timedelta(hours=37), NOW
         )
         self.assertEqual(row["status"], "fail")
         self.assertEqual(row["threshold"], "newest success younger than 36 h")

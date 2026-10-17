@@ -17,6 +17,7 @@ from dashboard_common import (
 )
 from dashboard_data import request_budget_usage
 from dashboard_style import (
+    JOB_SYMBOLS,
     card,
     job_color,
     line,
@@ -132,8 +133,8 @@ with runs_tab:
 
         with card(
             "Run durations, last 7 days",
-            "Each point is one run, colored by job; failed runs are "
-            "crosses."
+            "Each point is one run, colored by job (the hourly refresh is "
+            "a diamond in the catalog's color); failed runs are crosses."
         ):
             figure = go.Figure()
 
@@ -146,7 +147,8 @@ with runs_tab:
                     marker={
                         "color": job_color(job_name),
                         "symbol": [
-                            "x" if status == "FAILED" else "circle"
+                            "x" if status == "FAILED"
+                            else JOB_SYMBOLS.get(job_name, "circle")
                             for status in group["status"]
                         ],
                     },

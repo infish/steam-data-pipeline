@@ -23,12 +23,12 @@ flowchart LR
 
     raw -->|catalog_daily| games
     raw -->|catalog_daily| companies
-    raw -->|catalog_daily| details
+    raw -->|refresh_hourly| details
     raw -->|catalog_daily| price_history
     raw -->|players_hourly| player_obs
     raw -->|players_hourly| most_played
     raw -->|players_hourly: chart games| games
-    raw -->|reviews_daily| review_obs
+    raw -->|reviews_daily, refresh_hourly| review_obs
     raw -->|reviews_daily| rollups
     raw -->|reviews_daily| events
     player_obs --> player_daily
@@ -85,13 +85,13 @@ flowchart LR
 | --- | --- | --- | --- |
 | `games` | SteamSpy rows (catalog page plus tracked-game backfill), tracked apps, and games seen in Valve's charts (ADR 5); names from Store details | `catalog_daily`, `players_hourly` | SteamSpy catalog page, SteamSpy app details, Valve top-100 chart, Valve most played, Store app details |
 | `game_metric_snapshots` | SteamSpy rows, every `STEAMSPY_PAGE_INTERVAL_DAYS` | `catalog_daily` | SteamSpy catalog page, SteamSpy app details |
-| `companies`, `game_developers`, `game_publishers` | Store developer and publisher lists; SteamSpy `games.developer`/`publisher` strings for games without Store details | `catalog_daily` | Store app details, SteamSpy catalog page |
-| `game_details`, `genres`, `categories`, `languages` and their links | Store app details | `catalog_daily` | Store app details |
-| `tags`, `game_tags` | SteamSpy app details | `catalog_daily` | SteamSpy app details |
+| `companies`, `game_developers`, `game_publishers` | Store developer and publisher lists; SteamSpy `games.developer`/`publisher` strings for games without Store details | `refresh_hourly` (Store details and tags), `catalog_daily` (SteamSpy strings) | Store app details, SteamSpy catalog page |
+| `game_details`, `genres`, `categories`, `languages` and their links | Store app details | `refresh_hourly` | Store app details |
+| `tags`, `game_tags` | SteamSpy app details | `refresh_hourly` | SteamSpy app details |
 | `game_price_history` | Store price batches | `catalog_daily` | Store price batch |
 | `player_observations`, `player_daily` | top-100 chart and direct lookups | `players_hourly` | Valve top-100 chart, Valve current players |
 | `most_played_daily` | daily-peak leaderboard | `players_hourly` | Valve most played |
-| `review_observations` | review summaries: tracked games daily, other catalog games on a rotation | `reviews_daily` | Steam review summary |
+| `review_observations` | review summaries: tracked games daily (`reviews_daily`), every other catalog game every `REVIEWS_REFRESH_DAYS` (`refresh_hourly`) | `reviews_daily`, `refresh_hourly` | Steam review summary |
 | `review_reconciliation` | review summaries and histograms of the tracked games | `reviews_daily` | Steam review summary, Steam review histogram |
 | `review_rollups` | review histograms | `reviews_daily`, `backfill` | Steam review histogram |
 | `game_events` | news items | `reviews_daily`, `backfill` | Steam news |

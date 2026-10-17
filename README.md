@@ -104,6 +104,11 @@ MySQL healthy → bootstrap and migrations complete → scheduler and dashboard 
 - **Measured optimisation**: every run times its steps, and each change made
   from those timings is recorded with before and after numbers —
   [`docs/optimizations.md`](docs/optimizations.md).
+- **Scale**: a 5,000-game catalog with a daily review series for every game,
+  refreshed in hourly slices within the APIs' rate limits, and a synthetic
+  scale test showing under 1% of each run is the pipeline's own work at
+  5,000 games and headroom to 20,000 — [`docs/scale.md`](docs/scale.md),
+  [ADR 6](docs/adr/0006-5000-game-catalog-with-hourly-refresh.md).
 - **Data observability**: freshness, volume, staleness, duplicate rates,
   schema drift, table invariants and mart tests stored after every run —
   [`src/quality/checks.py`](src/quality/checks.py),
@@ -172,10 +177,10 @@ link games to them.
 - `languages` + `game_languages`: supported languages, with `full_audio`.
 - `tags` + `game_tags`: SteamSpy user tags with their vote counts.
 
-Each catalog run refreshes Store details and tags for the
-`STORE_DETAILS_PER_RUN` (default 120) games that have gone longest without a
-refresh, new games first, so a 1,000-game catalog is refreshed about every 9
-days. A failed refresh keeps the previous values and adds a run warning; a
+`refresh_hourly` refreshes Store details and tags for a slice of the catalog
+every hour, games that have gone longest without a refresh first (new games
+before all others), so every game is refreshed every `DETAILS_REFRESH_DAYS`
+(7). A failed refresh keeps the previous values and adds a run warning; a
 game the Store no longer returns is marked `store_available = FALSE` and keeps
 its last known details.
 
@@ -396,8 +401,9 @@ The scheduler runs three jobs, each with its own run rows
 | Job | Default schedule | Collects | Writes |
 | --- | --- | --- | --- |
 | `players_hourly` | every hour at :07 | Valve top-100 chart, direct lookups for tracked games outside it, daily-peak leaderboard; games in the chart or leaderboard join the catalog (`CATALOG_FROM_VALVE_CHARTS`) | `player_observations`, `player_daily`, `most_played_daily`, `games` |
-| `catalog_daily` | 20:00 | SteamSpy catalog page and `appdetails` for tracked games off it, every `STEAMSPY_PAGE_INTERVAL_DAYS`; Store details (names, companies, genres, …) for the stalest catalog games and SteamSpy tags for those whose tags are missing or older than `TAG_REFRESH_DAYS`; Store prices for all catalog games | `games`, `game_metric_snapshots`, normalized dimensions, `game_price_history` |
-| `reviews_daily` | 20:30 | Steam review summaries for tracked games and a rotation of `REVIEW_SUMMARIES_PER_RUN` other catalog games; review histograms and news for tracked games | `review_observations`, `review_rollups`, `review_reconciliation`, `game_events` |
+| `catalog_daily` | 20:00 | `STEAMSPY_PAGES` SteamSpy catalog pages and `appdetails` for tracked games off them, every `STEAMSPY_PAGE_INTERVAL_DAYS`; tracked apps added to the catalog; Store prices for all catalog games | `games`, `game_metric_snapshots`, `game_price_history` |
+| `refresh_hourly` | every hour at :37 | Store details (names, companies, genres, …) and SteamSpy tags for a slice of the catalog, so every game is refreshed every `DETAILS_REFRESH_DAYS`; Steam review summaries for a slice, so every game gets one every `REVIEWS_REFRESH_DAYS` | `game_details` and normalized dimensions, `review_observations` |
+| `reviews_daily` | 20:30 | Steam review summaries, review histograms and news for tracked games | `review_observations`, `review_rollups`, `review_reconciliation`, `game_events` |
 
 Times are in `PIPELINE_TIMEZONE` (default `Europe/Prague`). Hourly runs are
 scheduled in UTC, so they stay exactly one hour apart across DST changes;
@@ -496,8 +502,8 @@ Views contain reusable analytical logic. Final dashboard queries control sorting
 ├── db/transforms/            SQL that rebuilds each analytics mart after every job
 ├── deploy/                   TrueNAS Custom App definition
 ├── docs/                     sources, data dictionary, lineage, marts,
-│                             observability, budget, optimisations, ADRs,
-│                             screenshots
+│                             observability, budget, optimisations, scale
+│                             tests, ADRs, screenshots
 ├── src/
 │   ├── api/                  HTTP calls to SteamSpy and Steam, via the raw layer
 │   ├── ingest/               raw landing layer, fixture and raw replay sessions
@@ -590,18 +596,23 @@ Collection settings use these defaults:
 | --- | --- | --- |
 | `STEAMSPY_MODE` | `all` | SteamSpy catalog request |
 | `STEAMSPY_PAGE` | `0` | SteamSpy catalog page |
+| `STEAMSPY_PAGES` | `5` | SteamSpy catalog pages of 1,000 games, from `STEAMSPY_PAGE` on, one per minute |
 | `STEAM_TRACKED_APPIDS` | `730,427520,620` | App IDs enriched with reviews and direct player fallback |
 | `PIPELINE_MAX_REJECTED_PERCENT` | `5` | Fail the run if more than this % of SteamSpy rows fail validation |
 | `RAW_RETENTION_DAYS` | `30` | Days to keep raw response bodies; metadata is kept forever |
-| `STORE_DETAILS_PER_RUN` | `120` | Games whose Store details each catalog run refreshes (0–140) |
+| `DETAILS_REFRESH_DAYS` | `7` | `refresh_hourly` refreshes every catalog game's Store details within this many days (fractions allowed; 0 switches it off) |
+| `REVIEWS_REFRESH_DAYS` | `1` | Same for Steam review summaries: `1` gives every game a daily review time series |
+| `REFRESH_MAX_REQUESTS` | `300` | Ceiling on Store requests per hourly refresh run (300 is about 10.5 minutes); both slices shrink in proportion above it |
+| `STORE_DETAILS_PER_RUN` | empty | Optional fixed number of Store details per refresh run instead of the derived one (0–300) |
 | `TAG_REFRESH_DAYS` | `30` | Days before a refreshed game's SteamSpy tags are fetched again; 0 fetches them with every Store refresh |
 | `CATALOG_FROM_VALVE_CHARTS` | `true` | Games that appear in Valve's top-100 or most-played charts join the catalog; `false` skips them as before v1.2.0 |
 | `STEAMSPY_PAGE_INTERVAL_DAYS` | `7` | Days between SteamSpy catalog page fetches; 1 fetches it on every catalog run |
-| `REVIEW_SUMMARIES_PER_RUN` | `120` | Catalog games, beyond the tracked ones, whose Steam review summary each reviews run refreshes, oldest first (0–140) |
+| `REVIEW_SUMMARIES_PER_RUN` | empty | Optional fixed number of review summaries per refresh run instead of the derived one (0–300) |
 | `STEAM_STORE_COUNTRY` | `us` | Store country code; sets the price currency |
 | `PLAYER_HOURLY_RETENTION_DAYS` | `90` | Days to keep hourly player observations; daily rollups are kept forever |
 | `PIPELINE_TIMEZONE` | `Europe/Prague` | Timezone of the job schedule |
 | `JOB_PLAYERS_MINUTE` | `7` | Minute past every hour for `players_hourly` |
+| `JOB_REFRESH_MINUTE` | `37` | Minute past every hour for `refresh_hourly` (Store details, tags and review summaries in slices) |
 | `JOB_CATALOG_TIME` | `20:00` | Local time for `catalog_daily` |
 | `JOB_REVIEWS_TIME` | `20:30` | Local time for `reviews_daily` |
 | `PIPELINE_RUN_ON_STARTUP` | `false` | Optional immediate collection on scheduler startup |
@@ -1018,7 +1029,7 @@ The TrueNAS deployment runs:
 The application image is pinned to a release tag:
 
 ```text
-ghcr.io/infish/steam-data-pipeline:v1.1.0
+ghcr.io/infish/steam-data-pipeline:v1.2.0
 ```
 
 Deploy only a tag whose image has been published (see
