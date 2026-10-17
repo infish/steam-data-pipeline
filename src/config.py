@@ -151,6 +151,55 @@ def get_tag_refresh_days():
     return value
 
 
+def get_catalog_from_valve_charts():
+    """Whether games seen in Valve's charts join the catalog (ADR 5)."""
+    value = get_env("CATALOG_FROM_VALVE_CHARTS", "true").strip().lower()
+
+    if value not in {"true", "false", "1", "0", "yes", "no"}:
+        raise ValueError("CATALOG_FROM_VALVE_CHARTS must be true or false")
+
+    return value in {"true", "1", "yes"}
+
+
+def get_steamspy_page_interval_days():
+    """Days between SteamSpy catalog page fetches (1 = every catalog run).
+
+    SteamSpy is frozen (docs/sources.md), so the page is a weekly probe for
+    it coming back rather than a daily source.
+    """
+    raw_value = get_env("STEAMSPY_PAGE_INTERVAL_DAYS", "7")
+
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise ValueError(
+            "STEAMSPY_PAGE_INTERVAL_DAYS must be a whole number"
+        ) from error
+
+    if value < 1:
+        raise ValueError("STEAMSPY_PAGE_INTERVAL_DAYS must be 1 or more")
+
+    return value
+
+
+def get_review_summaries_per_run():
+    """Catalog games whose Steam review summary reviews_daily refreshes."""
+    raw_value = get_env("REVIEW_SUMMARIES_PER_RUN", "120")
+
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise ValueError(
+            "REVIEW_SUMMARIES_PER_RUN must be a whole number"
+        ) from error
+
+    if not 0 <= value <= 140:
+        # 140 keeps one reviews run inside the 150-per-5-minute Store budget.
+        raise ValueError("REVIEW_SUMMARIES_PER_RUN must be between 0 and 140")
+
+    return value
+
+
 def get_store_country():
     value = get_env("STEAM_STORE_COUNTRY", "us").strip().lower()
 

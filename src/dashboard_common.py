@@ -196,6 +196,6 @@ def steamspy_frozen_note():
     when = f" since at least {since.group(1)}" if since else ""
     return (
         f"SteamSpy has served the same values{when}. Its figures here "
-        "(owner estimates, playtime, its review score and user tags) are a "
-        "frozen reference, not current data."
+        "(user tags, owner estimates, playtime) are a frozen reference, not "
+        "current data."
     )

@@ -1,7 +1,8 @@
 -- mart_tag_summary
 -- Grain: one row per SteamSpy user tag with at least one game.
--- Sources: game_tags, tags, game_details (Store), current_game_metrics
--- (latest catalog snapshot), player_observations (latest players run), games.
+-- Sources: game_tags, tags, game_details (Store), review_observations
+-- (each game's latest Steam review summary), player_observations (latest
+-- players run), games.
 -- Refresh: rebuilt after every job.
 -- Same measures as mart_genre_summary, plus the tag's total SteamSpy votes.
 DELETE FROM mart_tag_summary;
@@ -18,18 +19,27 @@ WITH latest_players AS (
     WHERE source = 'top100'
       AND run_id = (SELECT MAX(run_id) FROM player_observations)
 ),
+latest_reviews AS (
+    SELECT reviews.appid, reviews.review_score_percent
+    FROM review_observations AS reviews
+    JOIN (
+        SELECT appid, MAX(observation_id) AS observation_id
+        FROM review_observations
+        GROUP BY appid
+    ) AS newest ON newest.observation_id = reviews.observation_id
+),
 game_facts AS (
     SELECT
         games.appid,
-        snapshot.review_score_percent,
+        latest_reviews.review_score_percent,
         YEAR(details.release_date) AS release_year,
         COALESCE(details.platform_windows, FALSE) AS on_windows,
         COALESCE(details.platform_mac, FALSE) AS on_mac,
         COALESCE(details.platform_linux, FALSE) AS on_linux,
         latest_players.current_players
     FROM games
-    LEFT JOIN current_game_metrics AS snapshot
-        ON snapshot.appid = games.appid
+    LEFT JOIN latest_reviews
+        ON latest_reviews.appid = games.appid
     LEFT JOIN game_details AS details
         ON details.appid = games.appid
     LEFT JOIN latest_players

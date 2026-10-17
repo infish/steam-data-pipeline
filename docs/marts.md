@@ -71,8 +71,8 @@ discount ended.
 ## Catalog
 
 **`mart_genre_summary`** and **`mart_tag_summary`**: per Store genre or
-SteamSpy tag, the number of games, the average SteamSpy review score from the
-latest catalog snapshot (for broad comparison only), the average Metacritic
+SteamSpy tag, the number of games, the average Steam review score (each game's
+latest review summary; games without one yet are left out), the average Metacritic
 score (genres), total tag votes (tags), how many of the games are in the
 latest top-100 chart and their current players, release-year groups (before
 2015, 2015–2019, 2020 or later, unknown) and Windows/Mac/Linux counts. Release
@@ -81,7 +81,12 @@ been refreshed.
 
 **`mart_release_year_summary`**: per release year (games with a complete
 Store release date), the number of games, free and paid counts, average
-SteamSpy review score and average Metacritic score.
+Steam review score and average Metacritic score.
+
+Since v1.2.0 (ADR 5) these marts cover every game in `games`, including
+those added from Valve's charts, and the review score comes from Steam
+review summaries, which `reviews_daily` refreshes on a rotation. SteamSpy's
+frozen review counts are no longer used.
 
 ## Engagement (rough)
 

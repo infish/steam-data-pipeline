@@ -1,4 +1,10 @@
-"""catalog_daily: SteamSpy catalog page plus tracked-app backfill."""
+"""catalog_daily: the game list, Store details and prices.
+
+The game list is every games row: the SteamSpy page (fetched every
+STEAMSPY_PAGE_INTERVAL_DAYS, since SteamSpy is frozen), tracked apps, and
+games players_hourly added from Valve's charts (ADR 5). Every run refreshes
+Store details for the stalest games and checks prices for all of them.
+"""
 
 import logging
 
@@ -6,13 +12,20 @@ from api.steam_api import get_top_games, get_tracked_app_details
 from config import (
     get_max_rejected_percent,
     get_raw_retention_days,
+    get_steamspy_page_interval_days,
     get_tracked_appids,
 )
 from ingest.raw_store import purge_raw_payloads
 from jobs.base import Job
 from jobs.dimensions import load_company_links, refresh_details
 from jobs.prices import check_prices
-from jobs.loading import clean_float, clean_int, clean_value
+from jobs.loading import (
+    catalog_appids,
+    clean_float,
+    clean_int,
+    clean_value,
+    ensure_games,
+)
 from quality.data_quality import format_rejections, validate_games_data
 from transform.data_transformer import transform_games_data
 
@@ -21,6 +34,8 @@ LOGGED_REJECTIONS_LIMIT = 20
 
 
 def load_games(cursor, df, observed_at):
+    # A Store name is current and SteamSpy's is frozen (ADR 5), so SteamSpy
+    # never replaces a name that came from the Store.
     query = """
         INSERT INTO games (
             appid,
@@ -35,8 +50,10 @@ def load_games(cursor, df, observed_at):
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
 
         ON DUPLICATE KEY UPDATE
-            name = IF(VALUES(last_seen_at) >= last_seen_at,
+            name = IF(name_source <> 'store'
+                          AND VALUES(last_seen_at) >= last_seen_at,
                       VALUES(name), name),
+            name_source = IF(name_source = 'store', 'store', 'steamspy'),
             developer = IF(VALUES(last_seen_at) >= last_seen_at,
                            VALUES(developer), developer),
             publisher = IF(VALUES(last_seen_at) >= last_seen_at,
@@ -152,14 +169,45 @@ def build_games_list(data):
     return games_list
 
 
-def run_catalog(ctx):
+def steamspy_page_due(ctx):
+    """Whether this run fetches the SteamSpy page.
+
+    With STEAMSPY_PAGE_INTERVAL_DAYS 1, every catalog run fetches it, as
+    before v1.2.0. Otherwise it is due when the newest SteamSpy snapshot is
+    at least that many calendar days old (or there is none). Reprocessing
+    does what the original run did.
+    """
+    if ctx.replay:
+        ctx.cursor.execute(
+            "SELECT COUNT(*) FROM raw_api_responses"
+            " WHERE run_id = %s AND source = 'steamspy_all'",
+            (ctx.run_id,)
+        )
+        return ctx.cursor.fetchall()[0][0] > 0
+
+    interval_days = get_steamspy_page_interval_days()
+
+    if interval_days == 1:
+        return True
+
+    ctx.cursor.execute("SELECT MAX(snapshot_time) FROM game_metric_snapshots")
+    newest = ctx.cursor.fetchall()[0][0]
+
+    if newest is None:
+        return True
+
+    return (ctx.now_fn().date() - newest.date()).days >= interval_days
+
+
+def load_steamspy_page(ctx):
+    """Fetch, validate and load the SteamSpy page; return the counters."""
     with ctx.step("fetch_catalog"):
         # The page request counts towards SteamSpy's interval, so the first
         # appdetails request after it is still spaced.
         ctx.pace("steamspy")
         data = get_top_games(ctx.session, ctx.store)
 
-    # Tracked apps need a games row for their observations' foreign keys.
+    # Tracked apps off the page get a SteamSpy row from appdetails.
     off_page_appids = [
         appid
         for appid in get_tracked_appids()
@@ -219,16 +267,38 @@ def run_catalog(ctx):
     with ctx.step("load_company_links"):
         load_company_links(ctx.cursor, df)
 
+    return rows_extracted, rows_loaded, len(rejected)
+
+
+def run_catalog(ctx):
+    rows_extracted = rows_loaded = rows_rejected = 0
+
+    if steamspy_page_due(ctx):
+        rows_extracted, rows_loaded, rows_rejected = load_steamspy_page(ctx)
+    else:
+        logging.info(
+            "SteamSpy page not due (every %s days); skipped",
+            get_steamspy_page_interval_days()
+        )
+
+    with ctx.step("add_tracked") as step:
+        added = ensure_games(
+            ctx.cursor, get_tracked_appids(), "tracked", ctx.load_time()
+        )
+        step["rows"] = len(added)
+
+    appids = catalog_appids(ctx.cursor)
+
     with ctx.step("store_details_and_tags"):
-        refresh_details(ctx, df["appid"].astype(int).tolist())
+        refresh_details(ctx, appids)
 
     with ctx.step("prices"):
-        check_prices(ctx, df["appid"].astype(int).tolist())
+        check_prices(ctx, appids)
 
     ctx.counters.update(
         rows_extracted=rows_extracted,
         rows_loaded=rows_loaded,
-        rows_rejected=len(rejected)
+        rows_rejected=rows_rejected
     )
 
     if not ctx.replay:

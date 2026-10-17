@@ -117,6 +117,30 @@ class LanguageTests(unittest.TestCase):
 
 
 class StoreDetailsTests(unittest.TestCase):
+    def test_name_and_companies_come_from_the_store(self):
+        # The Store has the current name; SteamSpy's frozen page still says
+        # "Counter-Strike: Global Offensive" (ADR 5).
+        details = parse_store_details(
+            730, fixture("store_appdetails/730.json")
+        )
+
+        self.assertEqual(details["name"], "Counter-Strike 2")
+        self.assertEqual(details["developers"], ["Valve"])
+        self.assertEqual(details["publishers"], ["Valve"])
+
+    def test_blank_and_repeated_companies_are_dropped(self):
+        payload = {"1": {"success": True, "data": {
+            "name": "  ",
+            "developers": ["Studio", " ", "Studio", None, "Other "],
+            "publishers": "not a list",
+        }}}
+
+        details = parse_store_details(1, payload)
+
+        self.assertIsNone(details["name"])
+        self.assertEqual(details["developers"], ["Studio", "Other"])
+        self.assertEqual(details["publishers"], [])
+
     def test_full_recorded_response(self):
         details = parse_store_details(
             620,

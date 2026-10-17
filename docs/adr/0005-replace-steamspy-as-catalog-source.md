@@ -1,7 +1,8 @@
 # 5. Replace SteamSpy as the source of the game list
 
-Status: **proposed** (2026-10-17), awaiting review. Nothing here is
-implemented yet.
+Status: **accepted** (2026-10-17), implemented in v1.2.0 (see
+"Implementation" at the end for what differs from the proposal and the
+answers chosen for the open questions).
 
 ## Context
 
@@ -103,3 +104,42 @@ where it changes run time, and a CHANGELOG entry.
   every 8 days.
 - Is losing owner estimates and playtime for new games acceptable, or should
   the engagement view be dropped altogether once most games lack them?
+
+## Implementation (v1.2.0)
+
+All four rollout steps shipped together, after review:
+
+- **V13:** `games.catalog_source` (`steamspy`, `valve_chart`, `tracked`),
+  `games.name_source` (`store`, `steamspy`, `placeholder`), and
+  `game_details.companies_from_store`. The Store name is written to
+  `games.name` itself, not a separate column, so every query and mart that
+  shows a name gets the current one without changes.
+- **Valve's charts:** `players_hourly` adds games from the top-100 chart and
+  the most-played leaderboard, and measures them in the same run.
+  `CATALOG_FROM_VALVE_CHARTS` defaults to **true**, not false as proposed:
+  the change was asked for, and setting it to false restores the old
+  behaviour without a rollback. Tracked apps without a games row get one
+  (`tracked`), even when SteamSpy has no row for them.
+- **The SteamSpy page** is fetched every `STEAMSPY_PAGE_INTERVAL_DAYS`
+  (default 7; 1 = every run). `latest_successful_run` now means the latest
+  catalog run with snapshots, so `current_game_metrics` keeps working on the
+  other days. The snapshot volume check was removed, and SteamSpy's
+  freshness interval follows the setting.
+- **Review summaries** for `REVIEW_SUMMARIES_PER_RUN` (default 120) catalog
+  games a day, paced with the Store limit. The genre, tag *and release-year*
+  marts take their review score from them; the release-year mart was not
+  named in the proposal but used the same SteamSpy score.
+- A new check, `new_games_have_store_details`, warns when a game added from
+  the charts still has no Store details after 3 days.
+
+Answers chosen for the open questions (each can change later without a
+migration):
+
+1. **No cap.** Games stay in the catalog; `last_seen_at` records when a chart
+   game was last seen, for an "active" filter later.
+2. **The SteamSpy-era games stay** as members, with their frozen snapshot.
+3. **120 review summaries a day**, which refreshes a 1,000-game catalog about
+   every 8 days.
+4. **The engagement mart stays** for games with a SteamSpy snapshot, labelled
+   as SteamSpy-based; revisit once most games lack one.
+

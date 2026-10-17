@@ -79,6 +79,9 @@ def parse_store_details(appid, payload):
     return {
         "appid": appid,
         "available": True,
+        "name": clean_name(data.get("name")),
+        "developers": company_list(data.get("developers")),
+        "publishers": company_list(data.get("publishers")),
         "app_type": data.get("type"),
         "release_date": parse_release_date(release_text),
         "release_date_text": release_text[:100] if release_text else None,
@@ -103,6 +106,31 @@ def parse_store_details(appid, payload):
         "languages": parse_languages(data.get("supported_languages")),
         "price_overview": data.get("price_overview"),
     }
+
+
+def clean_name(value):
+    """A Store name, trimmed to the games.name column; None when blank."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    return value.strip()[:255]
+
+
+def company_list(values):
+    """Store developers or publishers: distinct non-blank names, in order."""
+    if not isinstance(values, list):
+        return []
+
+    names = []
+
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            name = value.strip()[:255]
+
+            if name not in names:
+                names.append(name)
+
+    return names
 
 
 def parse_steamspy_tags(payload):

@@ -23,6 +23,9 @@ class DimensionsIntegrationTests(IntegrationTestCase):
             )
         ]
 
+    # Store details off: once a game has them, its company links come from
+    # the Store instead (test_catalog_sources.py).
+    @patch.dict(os.environ, {"STORE_DETAILS_PER_RUN": "0"})
     def test_company_links_are_parsed_from_steamspy_strings(self):
         top_games = {
             **CANNED_TOP_GAMES,
@@ -54,6 +57,9 @@ class DimensionsIntegrationTests(IntegrationTestCase):
             "Valve, Inc., Hidden Path Entertainment"
         )
 
+    # Store details off: once a game has them, its company links come from
+    # the Store instead (test_catalog_sources.py).
+    @patch.dict(os.environ, {"STORE_DETAILS_PER_RUN": "0"})
     def test_names_equal_under_the_collation_share_one_company(self):
         # Real catalogs spell one company with different case or accents in
         # the same run. MySQL treats them as one key, so the batched upsert

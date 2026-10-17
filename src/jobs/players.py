@@ -8,9 +8,12 @@ from api.steam_api import (
     get_most_played,
     get_player_measurements,
 )
-from config import get_player_hourly_retention_days
+from config import (
+    get_catalog_from_valve_charts,
+    get_player_hourly_retention_days,
+)
 from jobs.base import Job
-from jobs.loading import known_appids
+from jobs.loading import ensure_games, known_appids
 
 
 def load_player_observations(cursor, observations, run_id, collected_at):
@@ -128,14 +131,34 @@ def run_players(ctx):
         )
 
     ctx.warn(*warnings)
+    from_charts = get_catalog_from_valve_charts()
+
+    if from_charts:
+        # Games in Valve's top 100 join the catalog instead of being skipped
+        # (ADR 5); catalog_daily fetches their Store details.
+        with ctx.step("add_chart_games") as step:
+            added = ensure_games(
+                ctx.cursor,
+                [row["appid"] for row in measurements
+                 if row["source"] == "top100"],
+                "valve_chart",
+                ctx.load_time()
+            )
+            step["rows"] = len(added)
+
+        if added:
+            logging.info(
+                "Added %s game(s) from Valve's top-100 chart to the catalog",
+                len(added)
+            )
 
     known = known_appids(ctx.cursor, [row["appid"] for row in measurements])
     loadable = [row for row in measurements if row["appid"] in known]
     skipped = [row for row in measurements if row["appid"] not in known]
 
-    if skipped:
+    if skipped and not from_charts:
         logging.info(
-            "%s top-100 games not in catalog page; skipped",
+            "%s top-100 games not in the catalog; skipped",
             sum(1 for row in skipped if row["source"] == "top100")
         )
 
@@ -169,6 +192,14 @@ def run_players(ctx):
             load_most_played(
                 ctx.cursor, rollup_date, leaderboard, ctx.run_id
             )
+
+            if from_charts:
+                ensure_games(
+                    ctx.cursor,
+                    [row["appid"] for row in leaderboard],
+                    "valve_chart",
+                    ctx.load_time()
+                )
         except ENRICHMENT_ERRORS as error:
             ctx.warn(f"Valve most-played leaderboard unavailable: {error}")
 

@@ -11,6 +11,7 @@ import logging
 
 from api.steam_api import (
     ENRICHMENT_ERRORS,
+    SteamSpyUnknownApp,
     fetch_steamspy_appdetails_payload,
     fetch_store_app_details,
 )
@@ -78,15 +79,47 @@ def replace_links(cursor, table, appids, columns, rows):
         )
 
 
+def store_company_games(cursor, appids):
+    """The games whose company links already come from the Store details."""
+    appids = list(appids)
+
+    if not appids:
+        return set()
+
+    cursor.execute(
+        f"""
+        SELECT appid FROM game_details
+        WHERE companies_from_store AND appid IN ({placeholders(appids)})
+        """,
+        tuple(appids)
+    )
+    return {row[0] for row in cursor.fetchall()}
+
+
 def load_company_links(cursor, df):
-    """13a: rebuild game_developers and game_publishers for loaded games."""
-    parsed = {
+    """13a: rebuild company links from SteamSpy strings for loaded games.
+
+    Games whose links come from the Store details keep them: the Store is
+    current, SteamSpy is frozen (docs/sources.md).
+    """
+    from_store = store_company_games(
+        cursor, [int(appid) for appid in df["appid"]]
+    )
+    link_companies(cursor, {
         int(row.appid): (
             split_company_names(row.developer),
             split_company_names(row.publisher),
         )
         for row in df.itertuples(index=False)
-    }
+        if int(row.appid) not in from_store
+    })
+
+
+def link_companies(cursor, parsed):
+    """Replace developer and publisher links: {appid: (devs, pubs)}."""
+    if not parsed:
+        return
+
     company_ids = upsert_names(
         cursor,
         "companies",
@@ -122,7 +155,15 @@ def load_company_links(cursor, df):
 
 
 def select_stalest(cursor, appids, limit):
-    """Games without details first, then the oldest refresh, then appid."""
+    """The games whose Store details to refresh next, in this order:
+
+    1. games added from Valve's charts or tracked that have no details yet,
+       so a new game gets its real name the next day (ADR 5);
+    2. other games without details;
+    3. games whose name does not come from the Store yet (details fetched
+       before v1.2.0 stored names);
+    4. the oldest refresh; ties by appid.
+    """
     appids = sorted(set(appids))
 
     if not appids or limit == 0:
@@ -135,7 +176,10 @@ def select_stalest(cursor, appids, limit):
         LEFT JOIN game_details AS details
             ON details.appid = games.appid
         WHERE games.appid IN ({placeholders(appids)})
-        ORDER BY details.details_fetched_at IS NOT NULL,
+        ORDER BY (details.appid IS NULL
+                  AND games.catalog_source <> 'steamspy') DESC,
+                 details.details_fetched_at IS NOT NULL,
+                 games.name_source = 'store',
                  details.details_fetched_at,
                  games.appid
         LIMIT %s
@@ -259,6 +303,25 @@ def load_store_details(cursor, details, run_id, fetched_at):
         )
     )
 
+    # The Store's name and companies are current; they replace SteamSpy's
+    # frozen strings and the placeholder of games added from Valve's charts.
+    if details.get("name"):
+        cursor.execute(
+            "UPDATE games SET name = %s, name_source = 'store'"
+            " WHERE appid = %s",
+            (details["name"], appid)
+        )
+
+    if details.get("developers") or details.get("publishers"):
+        link_companies(
+            cursor, {appid: (details["developers"], details["publishers"])}
+        )
+        cursor.execute(
+            "UPDATE game_details SET companies_from_store = TRUE"
+            " WHERE appid = %s",
+            (appid,)
+        )
+
     for table, rows in (("genres", details["genres"]),
                         ("categories", details["categories"])):
         if rows:
@@ -362,6 +425,7 @@ def refresh_details(ctx, appids):
     fetched_at = ctx.load_time()
     store_failures = []
     tag_failures = []
+    unknown_to_steamspy = 0
     unparsed_dates = []
 
     for appid in chosen:
@@ -408,6 +472,11 @@ def refresh_details(ctx, appids):
                 parse_steamspy_tags(payload),
                 fetched_at
             )
+        except SteamSpyUnknownApp:
+            # Newer than SteamSpy's frozen data: record "no tags" so it is
+            # asked again only after TAG_REFRESH_DAYS, without a warning.
+            load_tags(ctx.cursor, appid, [], fetched_at)
+            unknown_to_steamspy += 1
         except ENRICHMENT_ERRORS as error:
             tag_failures.append((appid, error))
 
@@ -431,9 +500,11 @@ def refresh_details(ctx, appids):
         )
 
     logging.info(
-        "Refreshed Store details for %s of %s game(s), SteamSpy tags for %s",
+        "Refreshed Store details for %s of %s game(s), SteamSpy tags for %s"
+        " (%s unknown to SteamSpy)",
         len(chosen) - len(store_failures),
         len(chosen),
-        len(with_tags & set(chosen)) - len(tag_failures)
+        len(with_tags & set(chosen)) - len(tag_failures),
+        unknown_to_steamspy
     )
     return len(chosen) - len(store_failures)

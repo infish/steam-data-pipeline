@@ -160,6 +160,14 @@ ENRICHMENT_ERRORS = (
 )
 
 
+class SteamSpyUnknownApp(ValueError):
+    """SteamSpy has no data for the app: it answers without a name.
+
+    Usual for games released after SteamSpy froze (docs/sources.md); callers
+    that only want optional data (tags) treat it as "none", not a failure.
+    """
+
+
 def fetch_steamspy_appdetails_payload(session, store, appid):
     """The full SteamSpy appdetails object, including tags."""
     details = fetch_json(
@@ -181,7 +189,9 @@ def fetch_steamspy_appdetails_payload(session, store, appid):
         )
 
     if not details.get("name"):
-        raise ValueError(f"SteamSpy appdetails has no name for app {appid}")
+        raise SteamSpyUnknownApp(
+            f"SteamSpy appdetails has no name for app {appid}"
+        )
 
     return details
 
@@ -412,13 +422,20 @@ def get_player_measurements(session, store=None):
     return list(measurements.values()), warnings
 
 
-def get_review_summaries(session, appids, store=None):
-    """Return (summaries, warnings); a failed lookup skips that app."""
+def get_review_summaries(session, appids, store=None, pace=None):
+    """Return (summaries, warnings); a failed lookup skips that app.
+
+    pace() is called before each request (RunContext.pace("store")); the
+    review summary is a Store endpoint.
+    """
     store = store or MemoryRawStore()
     summaries = []
     warnings = []
 
     for appid in appids:
+        if pace:
+            pace()
+
         try:
             summaries.append(fetch_review_summary(session, store, appid))
         except ENRICHMENT_ERRORS as error:
