@@ -2,6 +2,16 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## Unreleased
+
+### Fixed
+
+- Dashboard request budget: review summaries are counted against their own
+  limit (tested at 300 per 5 minutes, paced at 250) instead of the Store's
+  150, which marked the Store as over its limit after v1.2.1. The planned
+  daily volumes now match the 5,000-game catalog (docs/request_budget.md):
+  Store 770, Store reviews 5,040, SteamSpy 173 a day.
+
 ## v1.2.1 — 2026-10-20
 
 ### Changed

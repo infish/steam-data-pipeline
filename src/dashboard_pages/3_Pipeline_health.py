@@ -99,8 +99,10 @@ budget.metric(
     "Store peak, 5 min",
     f"{store_peak} / 150",
     border=True,
-    help="Steam Store requests in the busiest 5 minutes of the last 24 "
-         "hours; the Store allows about 150 per 5 minutes.",
+    help="Steam Store requests (details, prices, histograms) in the "
+         "busiest 5 minutes of the last 24 hours; the Store allows about "
+         "150 per 5 minutes. Review summaries have their own, higher limit "
+         "(Request budget tab).",
 )
 
 (
