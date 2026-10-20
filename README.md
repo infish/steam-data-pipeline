@@ -402,7 +402,7 @@ The scheduler runs three jobs, each with its own run rows
 | --- | --- | --- | --- |
 | `players_hourly` | every hour at :07 | Valve top-100 chart, direct lookups for tracked games outside it, daily-peak leaderboard; games in the chart or leaderboard join the catalog (`CATALOG_FROM_VALVE_CHARTS`) | `player_observations`, `player_daily`, `most_played_daily`, `games` |
 | `catalog_daily` | 20:00 | `STEAMSPY_PAGES` SteamSpy catalog pages and `appdetails` for tracked games off them, every `STEAMSPY_PAGE_INTERVAL_DAYS`; tracked apps added to the catalog; Store prices for all catalog games | `games`, `game_metric_snapshots`, `game_price_history` |
-| `refresh_hourly` | every hour at :37 | Store details (names, companies, genres, …) and SteamSpy tags for a slice of the catalog, so every game is refreshed every `DETAILS_REFRESH_DAYS`; Steam review summaries for a slice, so every game gets one every `REVIEWS_REFRESH_DAYS` | `game_details` and normalized dimensions, `review_observations` |
+| `refresh_hourly` | every hour at :37 | Store details (names, companies, genres, …) and SteamSpy tags for a slice of the catalog, so every game is refreshed every `DETAILS_REFRESH_DAYS`; Steam review summaries for a slice, so every game gets one every `REVIEWS_REFRESH_DAYS` (`QUIET_REVIEWS_REFRESH_DAYS` for games whose total stopped changing) | `game_details` and normalized dimensions, `review_observations` |
 | `reviews_daily` | 20:30 | Steam review summaries, review histograms and news for tracked games | `review_observations`, `review_rollups`, `review_reconciliation`, `game_events` |
 
 Times are in `PIPELINE_TIMEZONE` (default `Europe/Prague`). Hourly runs are
@@ -602,6 +602,7 @@ Collection settings use these defaults:
 | `RAW_RETENTION_DAYS` | `30` | Days to keep raw response bodies; metadata is kept forever |
 | `DETAILS_REFRESH_DAYS` | `7` | `refresh_hourly` refreshes every catalog game's Store details within this many days (fractions allowed; 0 switches it off) |
 | `REVIEWS_REFRESH_DAYS` | `1` | Same for Steam review summaries: `1` gives every game a daily review time series |
+| `QUIET_REVIEWS_REFRESH_DAYS` | `3` | Games whose last two review summaries had the same total are refreshed this often instead; `0` treats every game as active |
 | `REFRESH_MAX_REQUESTS` | `300` | Ceiling on Store requests per hourly refresh run (300 is about 10.5 minutes); both slices shrink in proportion above it |
 | `STORE_DETAILS_PER_RUN` | empty | Optional fixed number of Store details per refresh run instead of the derived one (0–300) |
 | `TAG_REFRESH_DAYS` | `30` | Days before a refreshed game's SteamSpy tags are fetched again; 0 fetches them with every Store refresh |

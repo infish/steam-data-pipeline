@@ -54,7 +54,8 @@ pipeline plans around; Phase 12 turns them into a per-job request budget.
 | SteamSpy `request=all` | 1 request per 60 s | SteamSpy API documentation |
 | SteamSpy other requests | 1 request per s | SteamSpy API documentation |
 | Store `api/appdetails` (incl. price batch) | 150 requests per 5 min | informally reported ~200 per 5 min, with a margin |
-| Store `appreviews`, `appreviewhistogram` | shares the Store budget | undocumented; assumed |
+| Store `appreviews` | 250 requests per 5 min | undocumented; a live probe on 2026-10-20 ran 168, 200, 250 and 300 per 5 minutes without refusal or slowdown |
+| Store `appreviewhistogram` | shares the Store budget | undocumented; assumed |
 | Valve Web API (`api.steampowered.com`) | keep modest, no key used | no published keyless limit |
 
 All responses in the recording took under 0.3 s.
@@ -172,7 +173,9 @@ Fixtures: `current_players/<appid>.json`.
 **Status:** in use; `review_score_desc` accepted. `reviews_daily` fetches it
 for the tracked games every day. `refresh_hourly` fetches it for every other
 catalog game every `REVIEWS_REFRESH_DAYS` (daily by default), oldest summary
-first (ADR 5, ADR 6). The catalog marts' review score comes from it.
+first (ADR 5, ADR 6); a game whose last two summaries had the same total
+waits `QUIET_REVIEWS_REFRESH_DAYS` (3) instead. The catalog marts' review
+score comes from it. Paced at 1.2 s, its own limit (see Rate limits).
 
 - URL: `https://store.steampowered.com/appreviews/<appid>`
 - Parameters: `json=1`, `filter=recent`, `language=all`, `review_type=all`,
