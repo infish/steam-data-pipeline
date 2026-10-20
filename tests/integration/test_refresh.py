@@ -94,6 +94,61 @@ class RefreshIntegrationTests(IntegrationTestCase):
         self.assertEqual(run["rows_loaded"], len(CANNED_TOP_GAMES) + 1)
 
 
+class QuietReviewsIntegrationTests(IntegrationTestCase):
+    """Games whose review total stopped changing are asked less often."""
+
+    SETTINGS = {
+        "STORE_DETAILS_PER_RUN": "0",
+        "REVIEW_SUMMARIES_PER_RUN": "",
+        "REVIEWS_REFRESH_DAYS": "1",
+        "QUIET_REVIEWS_REFRESH_DAYS": "3",
+    }
+
+    def reviewed(self, run_id):
+        return [
+            row["appid"]
+            for row in self.query(
+                "SELECT appid FROM review_observations WHERE run_id = %s",
+                (run_id,)
+            )
+        ]
+
+    def refresh(self, day, hour, positive):
+        return self.run_job(
+            "refresh_hourly",
+            {"steam_review_summary:570": review_summary(positive, 200)},
+            now_fn=at(day, hour)
+        )
+
+    @patch.dict(os.environ, SETTINGS)
+    def test_a_quiet_game_waits_three_days_an_active_one_one(self):
+        self.run_job("catalog_daily", now_fn=at(1))
+
+        first = self.refresh(1, 10, 800)
+        too_soon = self.refresh(1, 11, 800)
+        next_day = self.refresh(2, 10, 800)  # same total: now quiet
+        quiet_wait = self.refresh(3, 10, 800)
+        after_three = self.refresh(5, 10, 801)  # changed: active again
+        active_again = self.refresh(6, 10, 802)
+
+        self.assertEqual(self.reviewed(first), [570])
+        self.assertEqual(self.reviewed(too_soon), [])
+        self.assertEqual(self.reviewed(next_day), [570])
+        self.assertEqual(self.reviewed(quiet_wait), [])
+        self.assertEqual(self.reviewed(after_three), [570])
+        self.assertEqual(self.reviewed(active_again), [570])
+
+    @patch.dict(os.environ, {**SETTINGS, "QUIET_REVIEWS_REFRESH_DAYS": "0"})
+    def test_zero_treats_every_game_as_active(self):
+        self.run_job("catalog_daily", now_fn=at(1))
+
+        self.refresh(1, 10, 800)
+        self.refresh(2, 10, 800)
+        daily = self.refresh(3, 10, 800)
+
+        self.assertEqual(self.reviewed(daily), [570])
+
+
 class SteamSpyPagesDueIntegrationTests(IntegrationTestCase):
     def page_requests(self, run_id):
         (row,) = self.query(

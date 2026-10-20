@@ -58,7 +58,7 @@ def run_reviews(ctx):
             ctx.session,
             appids,
             ctx.store,
-            pace=lambda: ctx.pace("store")
+            pace=lambda: ctx.pace("store_reviews")
         )
 
     ctx.warn(*warnings)
