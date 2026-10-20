@@ -44,9 +44,11 @@ SOURCE_STORE_PRICES = "store_prices"
 SOURCE_REVIEW_HISTOGRAM = "steam_review_histogram"
 SOURCE_NEWS = "steam_news"
 
-# Batching works with filters=price_overview (docs/sources.md). The maximum
-# batch size is undocumented; 50 stays well below the ~100 worth testing.
-PRICE_BATCH_SIZE = 50
+# Batching works with filters=price_overview (docs/sources.md). Tested live
+# on 2026-10-20: 500 app IDs per request worked; 1,000 failed with HTTP 414
+# (the URL got too long). 200 leaves room for longer, 7-digit app IDs
+# (docs/optimizations.md, entry 3).
+PRICE_BATCH_SIZE = 200
 
 # SteamSpy allows one non-"all" request per second; this is the minimum
 # time between the starts of two SteamSpy requests, the page request

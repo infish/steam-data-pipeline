@@ -13,7 +13,7 @@ the number of app IDs in `STEAM_TRACKED_APPIDS` (default 3).
 | | | Valve most played (daily peak) | 1 | 24 |
 | `catalog_daily` | 1 | SteamSpy `request=all` | `STEAMSPY_PAGES` (5) every `STEAMSPY_PAGE_INTERVAL_DAYS` (7) | ≈ 0.7 |
 | | | SteamSpy `request=appdetails` | tracked apps off the catalog pages (≤ 3), on page days | ≤ 3 |
-| | | Steam Store price batch | catalog games ÷ 50 (≈ 100 at 5,000 games) | ≈ 100 |
+| | | Steam Store price batch | catalog games ÷ 200 (≈ 26 at 5,000 games) | ≈ 26 |
 | `refresh_hourly` | 24 | Steam Store `api/appdetails` | catalog ÷ (`DETAILS_REFRESH_DAYS` × 24): ≈ 31 at 5,000 games | ≈ 740 |
 | | | SteamSpy `request=appdetails` (tags) | the refreshed games whose tags are missing or older than `TAG_REFRESH_DAYS` (30) | ≈ 170 once every game has tags |
 | | | Steam review summary | catalog ÷ (`REVIEWS_REFRESH_DAYS` × 24): ≈ 211 at 5,000 games | ≈ 5,040 |
@@ -29,7 +29,7 @@ the number of app IDs in `STEAM_TRACKED_APPIDS` (default 3).
 | Valve Web API (top concurrent, current players, most played, news) | ≤ 123 | ≤ 5 per hourly run | keep modest; no published keyless limit | n/a |
 | SteamSpy `request=all` | ≈ 0.14 | 1 per week | 1 per 60 s | ample |
 | SteamSpy other requests | ≤ 123 | at most 1 per 1.1 s (paced) | 1 per s | the interval is 10% above the limit |
-| Steam Store (`api/appdetails`, price batches, `appreviews`, `appreviewhistogram`) | ≈ 5,900 at 5,000 games | at most 1 per 2.1 s (paced, all four) | 150 per 5 min | every run stays under 143 per 5 minutes by its pacing, and the scheduler runs one job at a time |
+| Steam Store (`api/appdetails`, price batches, `appreviews`, `appreviewhistogram`) | ≈ 5,830 at 5,000 games | at most 1 per 2.1 s (paced, all four) | 150 per 5 min | every run stays under 143 per 5 minutes by its pacing, and the scheduler runs one job at a time |
 
 ## How the limits are enforced
 
@@ -54,7 +54,7 @@ when they grew from 3 to 123 a day.
   minutes and never exceed either limit. `REFRESH_MAX_REQUESTS` (300, about
   10.5 minutes) caps a run; both slices shrink in proportion above it
   (ADR 6, docs/scale.md).
-- At 5,000 games the Store total is about 5,900 requests a day: 14% of the
+- At 5,000 games the Store total is about 5,830 requests a day: 14% of the
   roughly 41,000 that 2.1 s pacing would allow.
 - The most-played leaderboard changes once a day but is fetched every hour,
   because a missed day cannot be fetched later. Repeated identical responses

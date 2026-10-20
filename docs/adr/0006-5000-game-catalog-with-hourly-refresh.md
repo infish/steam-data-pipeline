@@ -37,7 +37,8 @@ therefore delay `players_hourly`, and leave gaps in the hourly player series.
   oldest first, so a missed or failed run is caught up by the next ones
   without any bookkeeping.
 - **`catalog_daily`** keeps the game list and the prices for every game
-  (100 batches of 50, about 3.5 minutes). **`reviews_daily`** keeps the
+  (100 batches of 50, about 3.5 minutes; 26 batches of 200 and about 1
+  minute since docs/optimizations.md entry 3). **`reviews_daily`** keeps the
   tracked games' summaries, histories and news.
 - Store details and review checks belong to `refresh_hourly`, and their
   freshness interval is one hour.

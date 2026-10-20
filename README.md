@@ -186,7 +186,7 @@ its last known details.
 
 ### `game_price_history` and `game_price_summary`
 
-Each catalog run checks the price of every catalog game in batches of 50
+Each catalog run checks the price of every catalog game in batches of 200
 (`filters=price_overview`, country `STEAM_STORE_COUNTRY`) and keeps a Type 2
 history: one row per price version per game and country, with `valid_from`,
 `valid_to` and `is_current`. A changed price closes the current version and

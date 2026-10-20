@@ -92,3 +92,36 @@ that a second refresh within `TAG_REFRESH_DAYS` makes no tag requests.
 before, and every game's tags are refreshed at least every
 `TAG_REFRESH_DAYS`, so SteamSpy updating again would reach every game's tags
 within 30 days, and the staleness check would show it.
+
+## 3. Price batches of 200 instead of 50 (v1.2.1)
+
+**Found:** on TrueNAS after the 5,000-game upgrade, `catalog_daily` took about
+212 s on days without SteamSpy pages, and almost all of it was the `prices`
+step: 101 batch requests of 50 games at the Store's 2.1 s interval. The
+batch size of 50 was a cautious guess, because the maximum is undocumented.
+
+**Tested** (live Store, 2026-10-20): batches of 50, 100, 200, 300 and 500 app
+IDs each returned an entry for every requested ID (a delisted game answers
+`success: false`), in 0.35 s to 1.1 s per request. 1,000 IDs failed with
+`414 Request-URI Too Large`: the limit is the length of the URL, not the API.
+
+**Changed:** `PRICE_BATCH_SIZE` from 50 to 200. That is under half the URL
+length that worked, leaving room for 7-digit app IDs.
+
+**Measured** (local stack, live Store, the same 5,040 games):
+
+| `prices` step | Before (run 72) | After (run 75) |
+| --- | --- | --- |
+| Requests | 101 | 26 |
+| Duration | 211.0 s | 52.9 s (−75%) |
+| Waiting between requests | 178.0 s | 37.0 s |
+| Games priced | 5,040 | 5,040 (324 new versions, 4,716 unchanged) |
+
+On days without SteamSpy pages the whole catalog run goes from about 212 s
+to about 54 s.
+
+**Why it is safe:** the same games are priced with the same parser. The
+requests are still paced at 2.1 s, there are fewer of them, and each answer
+is about 1 s even at 500 IDs. A batch that fails is a run warning and keeps
+the previous prices, as before, so a future URL limit would show up as a
+warning, not as wrong data.
