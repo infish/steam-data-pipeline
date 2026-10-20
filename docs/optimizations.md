@@ -2,7 +2,7 @@
 
 Changes made to cut processing time, each found and checked with the run
 step timings in `run_steps` (see [`observability.md`](observability.md#run-step-timing)
-and the **Steps** tab on Pipeline health). Every entry records what was
+and the **Steps** tab on Pipeline). Every entry records what was
 slow, what changed, the measured effect, and why the change is safe.
 
 Measure a change the same way: compare the job's steps before and after,

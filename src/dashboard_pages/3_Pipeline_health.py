@@ -1,4 +1,4 @@
-"""Pipeline health: runs, steps, freshness, data quality, staleness, budget.
+"""Pipeline: runs, steps, freshness, data quality, staleness, budget.
 """
 
 import pandas as pd
@@ -30,7 +30,7 @@ from dashboard_style import (
 
 
 page_header(
-    "Pipeline health",
+    "Pipeline",
     "Is the pipeline running, is every source fresh, and do the data checks "
     "pass?"
 )

@@ -27,9 +27,9 @@ navigation = st.navigation({
                 title="Market explorer", icon=":material/category:"),
     ],
     "Operate": [
-        st.Page("dashboard_pages/3_Pipeline_health.py",
-                title="Pipeline health", icon=":material/monitor_heart:"),
-        st.Page("dashboard_pages/4_SQL_explorer.py", title="SQL explorer",
+        st.Page("dashboard_pages/3_Pipeline_health.py", title="Pipeline",
+                icon=":material/monitor_heart:"),
+        st.Page("dashboard_pages/4_SQL_explorer.py", title="Explorer",
                 icon=":material/database:"),
     ],
 })

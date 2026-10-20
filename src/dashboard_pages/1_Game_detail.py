@@ -319,8 +319,8 @@ with players_tab:
             if latest_values_identical(hourly["current_players"]):
                 st.warning(
                     "The latest three hourly counts are identical. The "
-                    "source may be unchanged or cached; check Pipeline "
-                    "health before treating them as new.",
+                    "source may be unchanged or cached; check the "
+                    "Pipeline page before treating them as new.",
                     icon=":material/warning:",
                 )
 
