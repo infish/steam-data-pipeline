@@ -19,27 +19,25 @@ WITH latest_players AS (
     WHERE source = 'top100'
       AND run_id = (SELECT MAX(run_id) FROM player_observations)
 ),
-latest_reviews AS (
-    SELECT reviews.appid, reviews.review_score_percent
-    FROM review_observations AS reviews
-    JOIN (
-        SELECT appid, MAX(observation_id) AS observation_id
-        FROM review_observations
-        GROUP BY appid
-    ) AS newest ON newest.observation_id = reviews.observation_id
-),
 game_facts AS (
     SELECT
         games.appid,
-        latest_reviews.review_score_percent,
+        -- The latest Steam review summary of the game, through the
+        -- (appid, collected_at) index; a join on a derived "latest per
+        -- game" table grew quadratically (docs/optimizations.md, entry 6).
+        (
+            SELECT reviews.review_score_percent
+            FROM review_observations AS reviews
+            WHERE reviews.appid = games.appid
+            ORDER BY reviews.collected_at DESC, reviews.observation_id DESC
+            LIMIT 1
+        ) AS review_score_percent,
         YEAR(details.release_date) AS release_year,
         COALESCE(details.platform_windows, FALSE) AS on_windows,
         COALESCE(details.platform_mac, FALSE) AS on_mac,
         COALESCE(details.platform_linux, FALSE) AS on_linux,
         latest_players.current_players
     FROM games
-    LEFT JOIN latest_reviews
-        ON latest_reviews.appid = games.appid
     LEFT JOIN game_details AS details
         ON details.appid = games.appid
     LEFT JOIN latest_players

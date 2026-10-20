@@ -165,6 +165,12 @@ def get_reviews_refresh_days():
     return get_refresh_days("REVIEWS_REFRESH_DAYS", "1")
 
 
+def get_quiet_reviews_refresh_days():
+    """Days between review summaries for quiet games (whose last two had
+    the same total); 0 treats every game as active."""
+    return get_refresh_days("QUIET_REVIEWS_REFRESH_DAYS", "3")
+
+
 def get_refresh_max_requests():
     """Ceiling on Store requests per refresh run (300 is about 10.5 min)."""
     raw_value = get_env("REFRESH_MAX_REQUESTS", "300")

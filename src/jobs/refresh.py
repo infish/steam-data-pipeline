@@ -12,10 +12,12 @@ by the next ones.
 
 import logging
 import math
+from datetime import datetime, timedelta
 
 from api.steam_api import get_review_summaries
 from config import (
     get_details_refresh_days,
+    get_quiet_reviews_refresh_days,
     get_refresh_max_requests,
     get_review_summaries_per_run,
     get_reviews_refresh_days,
@@ -63,28 +65,64 @@ def plan_slices(catalog_size, details_days, reviews_days, max_requests,
     return details, max(0, max_requests - details)
 
 
-def select_review_rotation(cursor, exclude, limit):
-    """Catalog games without a summary first, then the oldest summary."""
+def select_review_rotation(cursor, exclude, limit, now=None,
+                           active_days=1, quiet_days=0):
+    """Catalog games whose review summary is due, most overdue first.
+
+    A game is quiet when its last two summaries had the same total; it is
+    due every quiet_days, other games every active_days (when quiet_days is
+    0 or not longer, every game counts as active). Games without a recent
+    summary come first. "Due" means due before the next hourly run, so a
+    game fetched a few seconds later yesterday is not pushed back an hour.
+    Without `now` every game is due and only the order applies.
+    """
     if limit == 0:
         return []
 
+    if not quiet_days or quiet_days <= active_days:
+        quiet_days = active_days
+
+    active_minutes = round(active_days * 24 * 60)
+    quiet_minutes = round(quiet_days * 24 * 60)
     excluded = sorted(set(exclude)) or [0]
+    due_by = None if now is None else now + timedelta(minutes=59)
+    # Only recent summaries decide the state; older ones mean "overdue".
+    since = (
+        datetime(1970, 1, 1) if now is None
+        else now - timedelta(minutes=quiet_minutes + 24 * 60)
+    )
     cursor.execute(
         f"""
+        WITH recent AS (
+            SELECT appid, collected_at, total_reviews,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY appid
+                       ORDER BY collected_at DESC, observation_id DESC
+                   ) AS position
+            FROM review_observations
+            WHERE collected_at >= %s
+        ),
+        state AS (
+            SELECT last.appid,
+                   last.collected_at + INTERVAL IF(
+                       last.total_reviews <=> previous.total_reviews,
+                       %s, %s
+                   ) MINUTE AS due_at
+            FROM recent AS last
+            LEFT JOIN recent AS previous
+                ON previous.appid = last.appid AND previous.position = 2
+            WHERE last.position = 1
+        )
         SELECT games.appid
         FROM games
-        LEFT JOIN (
-            SELECT appid, MAX(collected_at) AS last_collected
-            FROM review_observations
-            GROUP BY appid
-        ) AS latest ON latest.appid = games.appid
+        LEFT JOIN state ON state.appid = games.appid
         WHERE games.appid NOT IN ({", ".join(["%s"] * len(excluded))})
-        ORDER BY latest.last_collected IS NOT NULL,
-                 latest.last_collected,
-                 games.appid
+          AND (state.due_at IS NULL OR %s IS NULL OR state.due_at <= %s)
+        ORDER BY state.due_at IS NOT NULL, state.due_at, games.appid
         LIMIT %s
         """,
-        (*excluded, limit)
+        (since, quiet_minutes, active_minutes, *excluded, due_by, due_by,
+         limit)
     )
     return [row[0] for row in cursor.fetchall()]
 
@@ -130,14 +168,21 @@ def run_refresh(ctx):
     if ctx.replay:
         rotation = rotation_in_run(ctx.cursor, ctx.run_id, tracked)
     else:
-        rotation = select_review_rotation(ctx.cursor, tracked, reviews_count)
+        rotation = select_review_rotation(
+            ctx.cursor,
+            tracked,
+            reviews_count,
+            ctx.now_fn(),
+            get_reviews_refresh_days(),
+            get_quiet_reviews_refresh_days(),
+        )
 
     with ctx.step("review_summaries"):
         summaries, warnings = get_review_summaries(
             ctx.session,
             rotation,
             ctx.store,
-            pace=lambda: ctx.pace("store")
+            pace=lambda: ctx.pace("store_reviews")
         )
 
     ctx.warn(*warnings)

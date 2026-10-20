@@ -12,24 +12,21 @@ INSERT INTO mart_release_year_summary (
     release_year, game_count, free_games, paid_games, avg_review_score,
     avg_metacritic
 )
-WITH latest_reviews AS (
-    SELECT reviews.appid, reviews.review_score_percent
-    FROM review_observations AS reviews
-    JOIN (
-        SELECT appid, MAX(observation_id) AS observation_id
-        FROM review_observations
-        GROUP BY appid
-    ) AS newest ON newest.observation_id = reviews.observation_id
-)
 SELECT
     YEAR(details.release_date),
     COUNT(*),
     COUNT(CASE WHEN details.is_free = TRUE THEN 1 END),
     COUNT(CASE WHEN details.is_free = FALSE THEN 1 END),
-    ROUND(AVG(latest_reviews.review_score_percent), 2),
+    -- The latest Steam review summary of each game, through the
+    -- (appid, collected_at) index (docs/optimizations.md, entry 6).
+    ROUND(AVG((
+        SELECT reviews.review_score_percent
+        FROM review_observations AS reviews
+        WHERE reviews.appid = details.appid
+        ORDER BY reviews.collected_at DESC, reviews.observation_id DESC
+        LIMIT 1
+    )), 2),
     ROUND(AVG(details.metacritic_score), 2)
 FROM game_details AS details
-LEFT JOIN latest_reviews
-    ON latest_reviews.appid = details.appid
 WHERE details.release_date IS NOT NULL
 GROUP BY YEAR(details.release_date);

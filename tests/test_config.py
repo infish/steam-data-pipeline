@@ -5,6 +5,7 @@ from unittest.mock import patch
 from config import (
     get_catalog_from_valve_charts,
     get_details_refresh_days,
+    get_quiet_reviews_refresh_days,
     get_refresh_max_requests,
     get_review_summaries_per_run,
     get_reviews_refresh_days,
@@ -24,6 +25,7 @@ class CatalogSettingsTests(unittest.TestCase):
             self.assertEqual(get_tag_refresh_days(), 30)
             self.assertEqual(get_details_refresh_days(), 7)
             self.assertEqual(get_reviews_refresh_days(), 1)
+            self.assertEqual(get_quiet_reviews_refresh_days(), 3)
             self.assertEqual(get_refresh_max_requests(), 300)
             # Per-run counts are derived unless overridden (ADR 6).
             self.assertIsNone(get_store_details_per_run())

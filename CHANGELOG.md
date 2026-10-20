@@ -9,6 +9,21 @@ This file records user-visible changes to the Steam data pipeline.
 - Store price checks ask for 200 games per request instead of 50, tested live
   up to 500. The daily price check for 5,040 games goes from 101 requests and
   211 s to 26 requests and 53 s (docs/optimizations.md, entry 3).
+- Review summaries (`appreviews`) have their own pacer at 1.2 s instead of
+  sharing the Store's 2.1 s; a live probe ran 300 per 5 minutes without a
+  refusal. `refresh_hourly` goes from about 503 s to 313 s (entry 4).
+- Quiet games get their review summary less often: a game whose last two
+  summaries had the same review total waits `QUIET_REVIEWS_REFRESH_DAYS`
+  (default 3) instead of `REVIEWS_REFRESH_DAYS` (1); a changed total makes
+  it daily again. `0` turns this off (entry 5).
+
+### Fixed
+
+- The genre, tag and release-year marts looked up each game's latest review
+  summary through a join that grew with the review history, so every run's
+  mart rebuild got slower (49 s for the tag mart after 48 simulated hours at
+  5,000 games). They now read it through the `(appid, collected_at)` index:
+  0.11 s, identical results (entry 6).
 
 ## v1.2.0 — 2026-10-17
 

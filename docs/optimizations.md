@@ -125,3 +125,111 @@ requests are still paced at 2.1 s, there are fewer of them, and each answer
 is about 1 s even at 500 IDs. A batch that fails is a run warning and keeps
 the previous prices, as before, so a future URL limit would show up as a
 warning, not as wrong data.
+
+## 4. Review summaries at 1.2 s instead of 2.1 s (v1.2.1)
+
+**Found:** on TrueNAS, `refresh_hourly` took about 508 s an hour, and 443 s of
+it was 211 review summaries at the 2.1 s Store interval. That interval comes
+from the reported limit for `api/appdetails`; the review endpoint
+(`appreviews`) was only *assumed* to share it.
+
+**Tested** (live, 2026-10-20, 11:47–12:07, a window in which TrueNAS sent no
+Store requests): a probe asked for review summaries at rising rates, five
+minutes each, without automatic retries, ready to stop at the first refusal
+or slowdown.
+
+| Spacing | Requests in 5 minutes | Refusals | Median answer |
+| --- | ---: | ---: | ---: |
+| 1.8 s | 168 | 0 | 0.21 s |
+| 1.5 s | 200 | 0 | 0.21 s |
+| 1.2 s | 250 | 0 | 0.21 s |
+| 1.0 s | 300 | 0 | 0.22 s |
+
+**Changed:** review summaries have their own pacer, `store_reviews`, at 1.2 s
+(250 per 5 minutes), one step below the fastest rate tested. Store details,
+prices and histograms stay at 2.1 s. In `refresh_hourly` the two kinds of
+request run one after the other, never interleaved, so their rates do not
+add up.
+
+**Measured** (local stack, live APIs, 30 Store details and 210 summaries per
+run):
+
+| | Before (run 74) | After (run 76) |
+| --- | --- | --- |
+| `review_summaries` step | 441.0 s | 251.0 s (−43%) |
+| Whole `refresh_hourly` run | 502.7 s | 312.6 s (−38%) |
+
+**Why it is safe:** the rate stays 20% below a rate that ran for five minutes
+without refusal. A 429 answer is retried with growing pauses (honouring
+`Retry-After`) and then becomes a run warning that keeps the previous data,
+so overshooting would cost a delay, not data.
+
+## 5. Quiet games get their review summary every 3 days (v1.2.1)
+
+**Found:** `refresh_hourly` asks for every game's review summary every day
+(`REVIEWS_REFRESH_DAYS` 1), but many games get no new reviews from one day
+to the next. On TrueNAS about 45 of the 211 summaries in a run (21%) had
+the same review total as the game's previous summary: the request told us
+nothing new.
+
+**Changed:** a game whose last two summaries had the same `total_reviews`
+is *quiet* and waits `QUIET_REVIEWS_REFRESH_DAYS` (default 3) for its next
+summary; every other game stays daily. As soon as a total changes, the game
+is daily again. Each run picks the games that are due, the longest-overdue
+first, up to the same slice size as before, so a run with fewer games due
+simply makes fewer requests. `0` turns quiet games off.
+
+**Measured** (scale test, 1,000 synthetic games, 6 simulated days; the
+synthetic totals never change, so every game turns quiet after its second
+summary):
+
+| Simulated day | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `refresh_hourly` runs | 4 | 24 | 24 | 24 | 24 | 24 | 20 |
+| Review summaries | 172 | 1,027 | 855 | 0 | 172 | 984 | 860 |
+
+Each game gets its first and second summary in the first two days, then
+waits three days; the next round starts on day 5, three days after the
+second. The schedule ran 6 days from 20:00, hence the partial first and
+last days. A quiet game costs a third of the requests of a daily one.
+
+**Expected on live data:** if 21% of games are quiet, the daily review
+summaries drop from about 5,040 to about 4,330 (0.79 + 0.21 ÷ 3 = 0.86,
+−14%), and `review_summaries` from about 251 s to about 216 s a run. Games
+go in and out of quiet as their reviews come and go, so the share is
+measured after the release on TrueNAS, not assumed.
+
+**Why it is safe:** active games keep their daily series. A quiet game's
+newest review total can be up to three days old instead of one; its last
+two summaries said it was not changing, and the first changed total puts
+it back on the daily schedule. The tracked games are not affected:
+`reviews_daily` fetches theirs every day.
+
+## 6. Latest-review lookup in the catalog marts (v1.2.1)
+
+**Found:** a 48-hour scale test at 5,000 games (docs/scale.md) slowed down
+run after run. `run_steps` showed the cause: rebuilding `mart_tag_summary`
+took 47.8 s, then 55.3 s, growing with every run, and the genre and
+release-year marts grew too. On TrueNAS the mart phase had grown from 0.5 s
+to 1.6 s in three days. The marts joined a derived "latest review summary
+per game" table (`MAX(observation_id) ... GROUP BY appid`). MySQL evaluated
+it against every game-tag row, so the cost grew with the review history
+times the tag links. Marts are rebuilt after every job, so every hourly run
+would have slowed down as the daily review series grew.
+
+**Changed:** each mart looks up a game's latest summary with a correlated
+subquery (`ORDER BY collected_at DESC, observation_id DESC LIMIT 1`). That
+query is answered from the existing `(appid, collected_at)` index, one short
+index read per game.
+
+**Measured** (the scale-test database, 26,400 tag links and 9,230 review
+summaries; the tag mart's query):
+
+| `mart_tag_summary` query | Before | After |
+| --- | --- | --- |
+| Duration | 49.4 s | 0.11 s |
+
+**Why it is safe:** it is the same definition of "latest summary", read
+through an index. The rebuilt marts are compared row for row with the old
+query in the same database, and the mart tests (keys, ranges, not empty)
+still pass.

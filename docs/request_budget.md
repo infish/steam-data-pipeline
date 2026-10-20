@@ -16,7 +16,7 @@ the number of app IDs in `STEAM_TRACKED_APPIDS` (default 3).
 | | | Steam Store price batch | catalog games ÷ 200 (≈ 26 at 5,000 games) | ≈ 26 |
 | `refresh_hourly` | 24 | Steam Store `api/appdetails` | catalog ÷ (`DETAILS_REFRESH_DAYS` × 24): ≈ 31 at 5,000 games | ≈ 740 |
 | | | SteamSpy `request=appdetails` (tags) | the refreshed games whose tags are missing or older than `TAG_REFRESH_DAYS` (30) | ≈ 170 once every game has tags |
-| | | Steam review summary | catalog ÷ (`REVIEWS_REFRESH_DAYS` × 24): ≈ 211 at 5,000 games | ≈ 5,040 |
+| | | Steam review summary | the games due: daily, or every `QUIET_REVIEWS_REFRESH_DAYS` (3) for games whose total did not change; at most catalog ÷ (`REVIEWS_REFRESH_DAYS` × 24) ≈ 211 at 5,000 games | ≤ 5,040; ≈ 4,330 if 21% are quiet |
 | `reviews_daily` | 1 | Steam review summary | tracked apps (3) | 3 |
 | | | Steam review histogram | tracked apps (3) | 3 |
 | | | Steam news | tracked apps (3) | 3 |
@@ -29,7 +29,8 @@ the number of app IDs in `STEAM_TRACKED_APPIDS` (default 3).
 | Valve Web API (top concurrent, current players, most played, news) | ≤ 123 | ≤ 5 per hourly run | keep modest; no published keyless limit | n/a |
 | SteamSpy `request=all` | ≈ 0.14 | 1 per week | 1 per 60 s | ample |
 | SteamSpy other requests | ≤ 123 | at most 1 per 1.1 s (paced) | 1 per s | the interval is 10% above the limit |
-| Steam Store (`api/appdetails`, price batches, `appreviews`, `appreviewhistogram`) | ≈ 5,830 at 5,000 games | at most 1 per 2.1 s (paced, all four) | 150 per 5 min | every run stays under 143 per 5 minutes by its pacing, and the scheduler runs one job at a time |
+| Steam Store (`api/appdetails`, price batches, `appreviewhistogram`) | ≈ 770 at 5,000 games | at most 1 per 2.1 s (paced) | 150 per 5 min | every run stays under 143 per 5 minutes by its pacing, and the scheduler runs one job at a time |
+| Steam Store `appreviews` | ≤ 5,040 at 5,000 games | at most 1 per 1.2 s (paced) | 250 per 5 min | tested without refusal at 300 per 5 minutes (optimizations.md, entry 4) |
 
 ## How the limits are enforced
 
@@ -38,24 +39,28 @@ Each rate-limited API has a pacer per run (`src/api/pacing.py`,
 passed since the **start** of the previous request to the same API, and no
 longer. Time spent on the previous response, on parsing and loading, or on
 requests to other APIs counts towards the interval. Request starts are
-therefore never closer than 2.1 s for the Store or 1.1 s for SteamSpy, the
-same guarantee as the fixed pause before every request used before v1.1.0,
+therefore never closer than 2.1 s for the Store (1.2 s for review
+summaries) or 1.1 s for SteamSpy, the same guarantee as the fixed pause before every request used before v1.1.0,
 without its extra waiting ([`optimizations.md`](optimizations.md)). The
 SteamSpy page request counts towards SteamSpy's interval, and one Store
 pacer covers details, price batches and histograms in a run. Review
-summaries (`appreviews`) are paced with the same Store pacer since v1.2.0,
-when they grew from 3 to 123 a day.
+summaries (`appreviews`) shared that pacer in v1.2.0; since v1.2.1 they
+have their own (`store_reviews`, 1.2 s), because a live probe showed the
+endpoint accepts 300 per 5 minutes. In a run the two kinds of Store request
+come one after the other, never interleaved, so their rates do not add up.
 
 ## Notes
 
 - `refresh_hourly` alternates one Store details request with one SteamSpy
-  tag request per refreshed game, then fetches its review summaries. The
-  Store interval sets the pace: about 242 Store requests take about 8.5
-  minutes and never exceed either limit. `REFRESH_MAX_REQUESTS` (300, about
+  tag request per refreshed game, then fetches its review summaries. About
+  31 details take about 1 minute at 2.1 s and 211 summaries about 4.2
+  minutes at 1.2 s: about 5.2 minutes a run, within both limits. `REFRESH_MAX_REQUESTS` (300, about
   10.5 minutes) caps a run; both slices shrink in proportion above it
   (ADR 6, docs/scale.md).
-- At 5,000 games the Store total is about 5,830 requests a day: 14% of the
-  roughly 41,000 that 2.1 s pacing would allow.
+- At 5,000 games the Store total is at most about 5,810 requests a day:
+  about 770 at 2.1 s (details, prices, histograms) and at most 5,040 review
+  summaries at 1.2 s. That is 2% and 7% of what each pacer would allow in a
+  day (about 41,000 and 72,000).
 - The most-played leaderboard changes once a day but is fetched every hour,
   because a missed day cannot be fetched later. Repeated identical responses
   cost only a metadata row in the raw landing layer.

@@ -60,6 +60,12 @@ STEAMSPY_REQUEST_INTERVAL_SECONDS = 1.1
 # requests (details, price batches, review histograms).
 STORE_REQUEST_INTERVAL_SECONDS = 2.1
 
+# Review summaries (store.steampowered.com/appreviews) have their own, higher
+# limit: a live probe on 2026-10-20 ran 168, 200, 250 and then 300 requests
+# per 5 minutes with no refusal or slowdown. 1.2 s (250 per 5 minutes) keeps
+# a step below the fastest rate tested (docs/optimizations.md, entry 4).
+STORE_REVIEWS_INTERVAL_SECONDS = 1.2
+
 # SteamSpy allows one request=all page per 60 seconds.
 STEAMSPY_PAGE_INTERVAL_SECONDS = 61
 
@@ -68,6 +74,7 @@ API_INTERVALS = {
     "steamspy": STEAMSPY_REQUEST_INTERVAL_SECONDS,
     "steamspy_all": STEAMSPY_PAGE_INTERVAL_SECONDS,
     "store": STORE_REQUEST_INTERVAL_SECONDS,
+    "store_reviews": STORE_REVIEWS_INTERVAL_SECONDS,
 }
 
 # The SteamSpy catalog fields run_pipeline reads from a page row.
