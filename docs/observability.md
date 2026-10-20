@@ -140,7 +140,7 @@ fails a run. The run log line also ends with the phase times, for example
 `took 412.3 s: setup 0.1 s, job 408.9 s, finish 0.0 s, marts 2.1 s,
 checks 1.2 s`.
 
-The dashboard's **Steps** tab (Pipeline health) shows the latest run of each
+The dashboard's **Steps** tab (Pipeline) shows the latest run of each
 job split into working and waiting time per step, run time by phase over the
 last 14 days, and every step of the latest run.
 

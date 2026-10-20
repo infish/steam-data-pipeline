@@ -6,6 +6,8 @@ This file records user-visible changes to the Steam data pipeline.
 
 ### Changed
 
+- Dashboard: the Operate pages are renamed **Pipeline** (was Pipeline
+  health) and **Explorer** (was SQL explorer). Their URLs are unchanged.
 - Store price checks ask for 200 games per request instead of 50, tested live
   up to 500. The daily price check for 5,040 games goes from 101 requests and
   211 s to 26 requests and 53 s (docs/optimizations.md, entry 3).

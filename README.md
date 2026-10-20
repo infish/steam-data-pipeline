@@ -315,7 +315,7 @@ How long each step of a run took, one row per step: the run's phases
 mart and each group of data checks. Per step: duration, the part spent
 waiting between API requests on purpose (`wait_ms`), API requests made and,
 where reported, rows written. A failed run keeps its steps up to the one
-that failed. The dashboard's **Steps** tab on Pipeline health shows them.
+that failed. The dashboard's **Steps** tab on Pipeline shows them.
 
 SteamSpy rows are validated before loading. Problems with the whole response
 fail the run: an empty response, missing columns, or duplicate app IDs.
@@ -347,9 +347,9 @@ Every chart has a caption saying where its numbers come from and what its
 timestamp means.
 
 The sidebar groups the pages into **Explore** (Overview, Game detail, Market
-explorer) and **Operate** (Pipeline health, SQL explorer), and shows a status
+explorer) and **Operate** (Pipeline, Explorer), and shows a status
 badge for each job's latest run (ok, warnings, late, failed) with its age,
-plus a link to Pipeline health when data checks fail. Each page opens with
+plus a link to Pipeline when data checks fail. Each page opens with
 bordered headline numbers and then splits its detail into tabs. Charts share
 one style (`src/dashboard_style.py`): a palette checked for colour-vision
 deficiency, where a colour always means the same job or series, blue/red only
@@ -362,22 +362,22 @@ palette.
 | Overview | players right now (Valve) with the change since the previous hour, games in the catalog, sources fresh; most played now; biggest week-over-week moves; links to the other pages |
 | Game detail | Store attributes and SteamSpy tags; daily peak, average and 7-day average players with patch-notes markers; top-100 rank; hourly players; review sentiment drift and monthly review history; price history as a step chart |
 | Market explorer | genre and tag summaries, release-year groups, free versus paid |
-| Pipeline health | jobs healthy, sources fresh, checks failing and the busiest Store window at a glance; tabs for run history and durations per job, where each job's latest run spent its time (steps, rate-limit waiting, requests) and run time by phase over 14 days, freshness per source, checks not passing now, SteamSpy staleness and raw duplicate rates, request budget used versus planned |
-| SQL explorer | tables, views and marts with their columns, and predefined example queries |
+| Pipeline | jobs healthy, sources fresh, checks failing and the busiest Store window at a glance; tabs for run history and durations per job, where each job's latest run spent its time (steps, rate-limit waiting, requests) and run time by phase over 14 days, freshness per source, checks not passing now, SteamSpy staleness and raw duplicate rates, request budget used versus planned |
+| Explorer | tables, views and marts with their columns, and predefined example queries |
 
 ![Overview](docs/screenshots/overview.jpg)
 
 More screenshots: [game detail](docs/screenshots/game-detail.jpg),
 [market explorer](docs/screenshots/market-explorer.jpg),
-[pipeline health](docs/screenshots/pipeline-health.jpg),
-[SQL explorer](docs/screenshots/sql-explorer.jpg). They were taken on a
+[pipeline](docs/screenshots/pipeline-health.jpg),
+[explorer](docs/screenshots/sql-explorer.jpg). They were taken on a
 throwaway stack seeded from the recorded API responses, so trends cover a
 single day.
 
 Behaviour shared by all pages:
 
 - Query results are cached for 5 minutes, so a finished run can take up to
-  5 minutes to appear. The SQL explorer's "Run example" button always queries
+  5 minutes to appear. The Explorer's "Run example" button always queries
   the database directly.
 - Series built per run or per day have one point per run or day, and a run
   or day without data leaves a gap instead of a line drawn across it.

@@ -111,7 +111,7 @@ sources.metric(
     border=True,
     help=(
         "Sources whose newest successful response is within 1.5 times the "
-        "expected interval. Details on Pipeline health."
+        "expected interval. Details on the Pipeline page."
     ),
 )
 
@@ -213,12 +213,12 @@ with links[1]:
 
 with links[2]:
     st.page_link("dashboard_pages/3_Pipeline_health.py",
-                 label="Pipeline health", icon=":material/monitor_heart:")
+                 label="Pipeline", icon=":material/monitor_heart:")
     st.caption("Runs, freshness, data-quality checks, request budget.")
 
 with links[3]:
     st.page_link("dashboard_pages/4_SQL_explorer.py",
-                 label="SQL explorer", icon=":material/database:")
+                 label="Explorer", icon=":material/database:")
     st.caption("Browse tables and marts, run example queries.")
 
 cache_note()

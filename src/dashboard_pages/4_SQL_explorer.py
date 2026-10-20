@@ -1,4 +1,4 @@
-"""SQL explorer: browse tables and views, run predefined example queries."""
+"""Explorer: browse tables and views, run predefined example queries."""
 
 import streamlit as st
 
@@ -7,7 +7,7 @@ from dashboard_style import card, page_header
 
 
 page_header(
-    "SQL explorer",
+    "Explorer",
     "Browse the tables, views and marts, and run predefined example "
     "queries. Read-only: the dashboard's database account can only SELECT."
 )
