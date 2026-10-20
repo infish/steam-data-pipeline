@@ -255,8 +255,11 @@ Caveats:
 - A game with no price (free to play) returns `"data": []`, **an empty list,
   not an object**. Parsers must handle both.
 - The currency follows `cc`; `cc=us` returned `USD`. Never mix currencies.
-- The maximum number of app IDs per request is not documented. The pipeline
-  uses batches of 50; only batches of 3 were recorded.
+- The maximum number of app IDs per request is not documented. A live test
+  on 2026-10-20 got every requested entry back for 50, 100, 200, 300 and 500
+  app IDs (0.35 s to 1.1 s per request); 1,000 failed with `414 Request-URI
+  Too Large`, so the limit is the URL length. The pipeline uses batches of
+  200 (docs/optimizations.md, entry 3).
 
 Fixtures: `store_price_batch/batch.json`, `batch_without_filter.json`.
 
