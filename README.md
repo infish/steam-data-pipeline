@@ -1030,7 +1030,7 @@ The TrueNAS deployment runs:
 The application image is pinned to a release tag:
 
 ```text
-ghcr.io/infish/steam-data-pipeline:v1.2.0
+ghcr.io/infish/steam-data-pipeline:v1.2.1
 ```
 
 Deploy only a tag whose image has been published (see
