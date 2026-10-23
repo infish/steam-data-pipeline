@@ -1057,6 +1057,12 @@ Paste the resulting YAML into the Custom App editor and deploy it. Flyway
 applies additive migrations before the scheduler and dashboard start. Updating
 the app recreates containers but preserves the MySQL host-path data.
 
+TrueNAS shows every YAML app with a blank icon, and the YAML cannot set one.
+`scripts/truenas_set_app_icon.py` writes the Steam logo's URL (linked from
+Valve's Store, not copied) into the app's TrueNAS metadata; run it once on
+TrueNAS with `sudo python3 truenas_set_app_icon.py`. The icon survives edits
+and updates of the app.
+
 ### Upgrading an existing TrueNAS deployment
 
 Deployments created before the writer account existed connect the scheduler as
