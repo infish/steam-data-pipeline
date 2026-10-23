@@ -2,6 +2,16 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## v1.2.3 — 2026-10-23
+
+### Changed
+
+- Releases also move a `stable` image tag, and the TrueNAS YAML follows it
+  instead of a fixed version. After this one last YAML change, a new
+  release shows up as an update in TrueNAS **Apps** and installs with one
+  click. Pin a `vX.Y.Z` tag to hold or roll back a version. The code is the
+  same as v1.2.2.
+
 ## v1.2.2 — 2026-10-23
 
 ### Fixed

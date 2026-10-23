@@ -981,15 +981,16 @@ Each published image gets these tags:
 | full commit SHA | every build |
 | `latest` | builds from `main` only |
 | `vX.Y.Z` | builds from a pushed `vX.Y.Z` git tag |
+| `stable` | moves to each `vX.Y.Z` release (since v1.2.3) |
 
-A release tag never moves `latest`. `deploy/truenas-compose.yml` references a
-`vX.Y.Z` tag, never `latest`.
+A release tag never moves `latest`, and `main` never moves `stable`.
+`deploy/truenas-compose.yml` follows `stable`, so the app only ever runs a
+release whose tests passed, never unreleased code from `main`.
 
 To cut a release:
 
-1. On a branch, set the new version in all four `image:` lines of
-   `deploy/truenas-compose.yml`, and add the version to the top `CHANGELOG.md`
-   heading. Merge the branch into `main`.
+1. On a branch, add the version to the top `CHANGELOG.md` heading and to the
+   image example in this README. Merge the branch into `main`.
 2. Tag the merge commit on `main` and push the tag:
 
    ```bash
@@ -1005,11 +1006,15 @@ To cut a release:
    docker pull ghcr.io/infish/steam-data-pipeline:v1.0.1
    ```
 
-4. In TrueNAS, edit the app's YAML to use the new tag and save.
+4. In TrueNAS, open **Apps**: once TrueNAS notices the newer `stable`
+   image (it checks periodically), the app shows an update; click
+   **Update** to pull it and recreate the containers. No YAML edit is
+   needed unless the release notes add a setting you want to change.
 
-To roll back, change the tag back to the previous release. This is safe only
-if the newer release added no database migrations, because Flyway migrations
-are not reversed.
+To roll back, or to hold the app on one version, replace `stable` with a
+`vX.Y.Z` tag in the app's YAML. Rolling back is safe only if the newer
+release added no database migrations, because Flyway migrations are not
+reversed.
 
 ## TrueNAS SCALE deployment
 
@@ -1027,15 +1032,17 @@ The TrueNAS deployment runs:
 - the Streamlit dashboard
 - an optional manual one-shot pipeline service
 
-The application image is pinned to a release tag:
+The application image follows the `stable` tag, which moves to each
+published release (currently v1.2.3):
 
 ```text
-ghcr.io/infish/steam-data-pipeline:v1.2.2
+ghcr.io/infish/steam-data-pipeline:stable
 ```
 
-Deploy only a tag whose image has been published (see
-[Releases and image tags](#releases-and-image-tags)). Pinning means updating
-the app never picks up unreleased changes from `main`.
+A new release then appears as an update in TrueNAS **Apps** (see
+[Releases and image tags](#releases-and-image-tags)). `stable` only moves
+when a release's tests pass, so updating never picks up unreleased changes
+from `main`. To hold a version, use its `vX.Y.Z` tag instead.
 
 Before installing `deploy/truenas-compose.yml`:
 

@@ -38,8 +38,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Every build gets the full commit SHA tag; main also moves `latest`;
-      # a vX.Y.Z git tag adds the matching vX.Y.Z image tag. latest=false
-      # stops release tags from also moving `latest`.
+      # a vX.Y.Z git tag adds the matching vX.Y.Z image tag and moves
+      # `stable`, the tag the TrueNAS app follows (its Update button pulls
+      # the newest release). latest=false stops release tags from also
+      # moving `latest`.
       - name: Compute image tags
         id: meta
         uses: docker/metadata-action@v6
@@ -51,6 +53,7 @@ jobs:
             type=sha,format=long,prefix=
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern=v{{version}}
+            type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
