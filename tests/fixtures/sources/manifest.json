@@ -100,7 +100,7 @@
     "trimmed": "none"
   },
   {
-    "fixture": "review_summary/730.json",
+    "fixture": "review_summary_appreviews/730.json",
     "url": "https://store.steampowered.com/appreviews/730",
     "params": {
       "json": 1,
@@ -117,7 +117,7 @@
     "trimmed": "dropped reviews (user-written text) and cursor"
   },
   {
-    "fixture": "review_summary/427520.json",
+    "fixture": "review_summary_appreviews/427520.json",
     "url": "https://store.steampowered.com/appreviews/427520",
     "params": {
       "json": 1,
@@ -134,7 +134,7 @@
     "trimmed": "dropped reviews (user-written text) and cursor"
   },
   {
-    "fixture": "review_summary/620.json",
+    "fixture": "review_summary_appreviews/620.json",
     "url": "https://store.steampowered.com/appreviews/620",
     "params": {
       "json": 1,
@@ -284,5 +284,50 @@
     "fetched_at_utc": "2026-10-01T17:47:06+00:00",
     "response_bytes": 354962,
     "trimmed": "kept the 3 tracked apps out of 1000 rows"
+  },
+  {
+    "fixture": "review_summary/730.json",
+    "url": "https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/",
+    "params": {
+      "appid": 730,
+      "num_per_page": 1,
+      "languages[0]": "all",
+      "purchase_type": 1,
+      "filter_offtopic_activity": 0
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-23T10:47:36+00:00",
+    "response_bytes": 1156,
+    "trimmed": "kept only response.query_summary; the review, cursor, day_range_used and total_matching removed"
+  },
+  {
+    "fixture": "review_summary/620.json",
+    "url": "https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/",
+    "params": {
+      "appid": 620,
+      "num_per_page": 1,
+      "languages[0]": "all",
+      "purchase_type": 1,
+      "filter_offtopic_activity": 0
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-23T10:47:39+00:00",
+    "response_bytes": 953,
+    "trimmed": "kept only response.query_summary; the review, cursor, day_range_used and total_matching removed"
+  },
+  {
+    "fixture": "review_summary/427520.json",
+    "url": "https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/",
+    "params": {
+      "appid": 427520,
+      "num_per_page": 1,
+      "languages[0]": "all",
+      "purchase_type": 1,
+      "filter_offtopic_activity": 0
+    },
+    "http_status": 200,
+    "fetched_at_utc": "2026-10-23T10:47:41+00:00",
+    "response_bytes": 10421,
+    "trimmed": "kept only response.query_summary; the review, cursor, day_range_used and total_matching removed"
   }
 ]

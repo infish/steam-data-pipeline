@@ -1,11 +1,12 @@
 {
-  "success": 1,
-  "query_summary": {
-    "num_reviews": 1,
-    "review_score": 9,
-    "review_score_desc": "Overwhelmingly Positive",
-    "total_positive": 461335,
-    "total_negative": 6051,
-    "total_reviews": 467386
+  "response": {
+    "query_summary": {
+      "num_reviews": 1,
+      "review_score": 9,
+      "review_score_desc": "Overwhelmingly Positive",
+      "total_positive": 462774,
+      "total_negative": 6066,
+      "total_reviews": 468840
+    }
   }
 }

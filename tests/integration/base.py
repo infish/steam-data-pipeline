@@ -83,13 +83,14 @@ def steamspy_game(appid, name, owners, positive, negative):
 
 def review_summary(positive, negative, label="Very Positive"):
     return {
-        "success": 1,
-        "query_summary": {
-            "total_positive": positive,
-            "total_negative": negative,
-            "total_reviews": positive + negative,
-            "review_score": 8,
-            "review_score_desc": label,
+        "response": {
+            "query_summary": {
+                "total_positive": positive,
+                "total_negative": negative,
+                "total_reviews": positive + negative,
+                "review_score": 8,
+                "review_score_desc": label,
+            },
         },
     }
 

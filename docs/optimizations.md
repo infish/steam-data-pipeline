@@ -159,6 +159,11 @@ run):
 | `review_summaries` step | 441.0 s | 251.0 s (−43%) |
 | Whole `refresh_hourly` run | 502.7 s | 312.6 s (−38%) |
 
+**Since v1.2.2:** Valve switched `appreviews` off on 2026-10-22; summaries
+come from the Web API's GetAppReviews. A probe of that endpoint on
+2026-10-23 (144, 201, 251, 301 requests per 5 minutes, no refusal) kept the
+1.2 s pacing; the pacer is now called `reviews`.
+
 **Why it is safe:** the rate stays 20% below a rate that ran for five minutes
 without refusal. A 429 answer is retried with growing pauses (honouring
 `Retry-After`) and then becomes a run warning that keeps the previous data,

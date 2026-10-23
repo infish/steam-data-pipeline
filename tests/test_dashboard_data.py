@@ -198,8 +198,8 @@ class RequestBudgetTests(unittest.TestCase):
 
         self.assertLessEqual(300 / API_INTERVALS["store"],
                              limits["Steam Store"])
-        self.assertLessEqual(300 / API_INTERVALS["store_reviews"],
-                             limits["Steam Store reviews"])
+        self.assertLessEqual(300 / API_INTERVALS["reviews"],
+                             limits["Steam reviews"])
 
 
 

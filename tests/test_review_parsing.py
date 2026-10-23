@@ -54,7 +54,9 @@ class HistogramTests(unittest.TestCase):
 
 class ReconciliationTests(unittest.TestCase):
     def summary(self, appid):
-        query = fixture(f"review_summary/{appid}.json")["query_summary"]
+        query = fixture(
+            f"review_summary_appreviews/{appid}.json"
+        )["query_summary"]
         return {
             "positive_reviews": query["total_positive"],
             "total_reviews": query["total_reviews"],

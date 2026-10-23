@@ -181,14 +181,14 @@ class SyntheticSession(FixtureSession):
         rng = rng_for(int(key), "reviews")
         positive = rng.randint(10, 500000)
         negative = rng.randint(1, max(2, positive // 4))
-        return {"success": 1, "query_summary": {
+        return {"response": {"query_summary": {
             "num_reviews": 0,
             "review_score": 8,
             "review_score_desc": "Very Positive",
             "total_positive": positive,
             "total_negative": negative,
             "total_reviews": positive + negative,
-        }}
+        }}}
 
     def _steam_review_histogram(self, key):
         rng = rng_for(int(key), "histogram")

@@ -44,10 +44,11 @@ REQUEST_BUDGET = [
         "limit": "150 per 5 min (paced 2.1 s)",
         "window_limit": 150,
     },
-    # Review summaries have their own, higher limit: tested without refusal
-    # at 300 per 5 minutes, paced at 1.2 s (250 per 5 minutes).
+    # Review summaries (Web API GetAppReviews, keyless) have their own
+    # limit: tested without refusal at 300 per 5 minutes, paced at 1.2 s
+    # (250 per 5 minutes).
     {
-        "budget": "Steam Store reviews",
+        "budget": "Steam reviews",
         "sources": ("steam_review_summary",),
         "planned_per_day": 5040,
         "limit": "300 per 5 min tested (paced 1.2 s)",

@@ -30,7 +30,7 @@ the number of app IDs in `STEAM_TRACKED_APPIDS` (default 3).
 | SteamSpy `request=all` | ≈ 0.14 | 1 per week | 1 per 60 s | ample |
 | SteamSpy other requests | ≤ 123 | at most 1 per 1.1 s (paced) | 1 per s | the interval is 10% above the limit |
 | Steam Store (`api/appdetails`, price batches, `appreviewhistogram`) | ≈ 770 at 5,000 games | at most 1 per 2.1 s (paced) | 150 per 5 min | every run stays under 143 per 5 minutes by its pacing, and the scheduler runs one job at a time |
-| Steam Store `appreviews` | ≤ 5,040 at 5,000 games | at most 1 per 1.2 s (paced) | 250 per 5 min | tested without refusal at 300 per 5 minutes (optimizations.md, entry 4) |
+| Web API `GetAppReviews` (review summaries) | ≤ 5,040 at 5,000 games | at most 1 per 1.2 s (paced) | 250 per 5 min | tested without refusal at 300 per 5 minutes (sources.md, rate limits) |
 
 ## How the limits are enforced
 
@@ -44,10 +44,11 @@ summaries) or 1.1 s for SteamSpy, the same guarantee as the fixed pause before e
 without its extra waiting ([`optimizations.md`](optimizations.md)). The
 SteamSpy page request counts towards SteamSpy's interval, and one Store
 pacer covers details, price batches and histograms in a run. Review
-summaries (`appreviews`) shared that pacer in v1.2.0; since v1.2.1 they
-have their own (`store_reviews`, 1.2 s), because a live probe showed the
-endpoint accepts 300 per 5 minutes. In a run the two kinds of Store request
-come one after the other, never interleaved, so their rates do not add up.
+summaries shared that pacer in v1.2.0; since v1.2.1 they have their own
+(`reviews`, 1.2 s), because a live probe showed the endpoint accepts 300 per
+5 minutes. Since v1.2.2 they come from the Web API's GetAppReviews, probed
+the same way. In a run the details and the summaries come one after the
+other, never interleaved.
 
 ## Notes
 

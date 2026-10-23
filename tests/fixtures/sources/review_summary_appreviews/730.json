@@ -1,0 +1,11 @@
+{
+  "success": 1,
+  "query_summary": {
+    "num_reviews": 1,
+    "review_score": 8,
+    "review_score_desc": "Very Positive",
+    "total_positive": 8493072,
+    "total_negative": 1402334,
+    "total_reviews": 9895406
+  }
+}
