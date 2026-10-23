@@ -19,7 +19,12 @@ STEAM_TOP_PLAYERS_URL = (
     "https://api.steampowered.com/"
     "ISteamChartsService/GetGamesByConcurrentPlayers/v1/"
 )
-STEAM_REVIEWS_URL = "https://store.steampowered.com/appreviews/{appid}"
+# Review summaries come from the Web API since v1.2.2: Valve switched the
+# Store's appreviews endpoint off on 2026-10-22 (it now redirects to the
+# Store home page). No key is needed; keyless calls share a lower limit.
+STEAM_REVIEWS_URL = (
+    "https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/"
+)
 STORE_APPDETAILS_URL = "https://store.steampowered.com/api/appdetails"
 STEAM_REVIEW_HISTOGRAM_URL = (
     "https://store.steampowered.com/appreviewhistogram/{appid}"
@@ -60,11 +65,12 @@ STEAMSPY_REQUEST_INTERVAL_SECONDS = 1.1
 # requests (details, price batches, review histograms).
 STORE_REQUEST_INTERVAL_SECONDS = 2.1
 
-# Review summaries (store.steampowered.com/appreviews) have their own, higher
-# limit: a live probe on 2026-10-20 ran 168, 200, 250 and then 300 requests
-# per 5 minutes with no refusal or slowdown. 1.2 s (250 per 5 minutes) keeps
-# a step below the fastest rate tested (docs/optimizations.md, entry 4).
-STORE_REVIEWS_INTERVAL_SECONDS = 1.2
+# Review summaries (IUserReviewsService/GetAppReviews) have their own limit,
+# separate from the Store's. Keyless calls share an unpublished lower limit;
+# a live probe on 2026-10-23 ran 144, 201, 251 and then 301 requests per
+# 5 minutes with no refusal or slowdown. 1.2 s (250 per 5 minutes) keeps a
+# step below the fastest rate tested (docs/sources.md, rate limits).
+REVIEWS_INTERVAL_SECONDS = 1.2
 
 # SteamSpy allows one request=all page per 60 seconds.
 STEAMSPY_PAGE_INTERVAL_SECONDS = 61
@@ -74,7 +80,7 @@ API_INTERVALS = {
     "steamspy": STEAMSPY_REQUEST_INTERVAL_SECONDS,
     "steamspy_all": STEAMSPY_PAGE_INTERVAL_SECONDS,
     "store": STORE_REQUEST_INTERVAL_SECONDS,
-    "store_reviews": STORE_REVIEWS_INTERVAL_SECONDS,
+    "reviews": REVIEWS_INTERVAL_SECONDS,
 }
 
 # The SteamSpy catalog fields run_pipeline reads from a page row.
@@ -132,6 +138,18 @@ def fetch_json(session, store, source, url, params=None):
     except requests.RequestException as error:
         store.record(source, url, params, error=str(error))
         raise
+
+    if response.history:
+        # A JSON API that redirects has moved or been switched off (the
+        # Store's appreviews went to the home page on 2026-10-22). Record a
+        # failed request, so freshness checks see the source go stale,
+        # instead of storing the page it redirected to as a success.
+        error = (
+            f"redirected ({response.history[0].status_code}) to "
+            f"{response.url}"
+        )
+        store.record(source, url, params, error=error)
+        raise requests.HTTPError(error, response=response)
 
     response_id = store.record(source, url, params, response=response)
     response.raise_for_status()
@@ -295,14 +313,15 @@ def get_tracked_app_details(session, appids, store=None, pace=None):
     return rows, warnings
 
 
+# GetAppReviews with plain parameters (input_json is optional). The totals
+# count every purchase (purchase_type 1 = all, as appreviews'
+# purchase_type=all did; 0 counts only Steam purchases) in every language,
+# review bombs included. Tested live on 2026-10-23.
 REVIEW_PARAMS = {
-    "json": 1,
-    "filter": "recent",
-    "language": "all",
-    "review_type": "all",
-    "purchase_type": "all",
     "num_per_page": 1,
-    "filter_offtopic_activity": 0
+    "languages[0]": "all",
+    "purchase_type": 1,
+    "filter_offtopic_activity": 0,
 }
 
 
@@ -359,21 +378,40 @@ def fetch_current_players(session, store, appid):
     }
 
 
+def review_query_summary(reviews_data, appid):
+    """The query_summary of a review answer.
+
+    GetAppReviews wraps it in "response" and has no success flag (an error
+    is an HTTP status). Raw payloads stored before v1.2.2 come from the
+    Store's appreviews, which answered {"success": 1, "query_summary": ...}.
+    """
+    if not isinstance(reviews_data, dict):
+        raise ValueError(
+            f"Steam review answer is not an object for app {appid}"
+        )
+
+    if "response" in reviews_data:
+        reviews_data = reviews_data["response"]
+    elif reviews_data.get("success") != 1:
+        raise ValueError(f"Steam review request failed for app {appid}")
+
+    summary = reviews_data.get("query_summary")
+
+    if not isinstance(summary, dict):
+        raise ValueError(f"Steam review summary is missing for app {appid}")
+
+    return summary
+
+
 def fetch_review_summary(session, store, appid):
     reviews_data = fetch_json(
         session,
         store,
         SOURCE_REVIEW_SUMMARY,
-        STEAM_REVIEWS_URL.format(appid=appid),
-        REVIEW_PARAMS
+        STEAM_REVIEWS_URL,
+        {"appid": appid, **REVIEW_PARAMS}
     )
-
-    if reviews_data.get("success") != 1:
-        raise ValueError(
-            f"Steam review request failed for app {appid}"
-        )
-
-    summary = reviews_data.get("query_summary", {})
+    summary = review_query_summary(reviews_data, appid)
     positive = summary.get("total_positive")
     negative = summary.get("total_negative")
     total = summary.get("total_reviews")
@@ -439,8 +477,7 @@ def get_player_measurements(session, store=None):
 def get_review_summaries(session, appids, store=None, pace=None):
     """Return (summaries, warnings); a failed lookup skips that app.
 
-    pace() is called before each request (RunContext.pace("store")); the
-    review summary is a Store endpoint.
+    pace() is called before each request (RunContext.pace("reviews")).
     """
     store = store or MemoryRawStore()
     summaries = []

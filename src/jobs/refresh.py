@@ -129,10 +129,14 @@ def select_review_rotation(cursor, exclude, limit, now=None,
 
 def rotation_in_run(cursor, run_id, exclude):
     """The rotated games a past run fetched summaries for (reprocessing)."""
-    # The app ID is the last part of the endpoint (.../appreviews/<appid>).
+    # The app ID is a request parameter (GetAppReviews, since v1.2.2) or
+    # the last part of the endpoint (.../appreviews/<appid>, before).
     cursor.execute(
         """
-        SELECT SUBSTRING_INDEX(endpoint, '/', -1)
+        SELECT COALESCE(
+                   JSON_UNQUOTE(JSON_EXTRACT(request_params, '$.appid')),
+                   SUBSTRING_INDEX(endpoint, '/', -1)
+               )
         FROM raw_api_responses
         WHERE run_id = %s AND source = 'steam_review_summary'
         ORDER BY response_id
@@ -182,7 +186,7 @@ def run_refresh(ctx):
             ctx.session,
             rotation,
             ctx.store,
-            pace=lambda: ctx.pace("store_reviews")
+            pace=lambda: ctx.pace("reviews")
         )
 
     ctx.warn(*warnings)

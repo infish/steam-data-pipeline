@@ -2,6 +2,29 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## v1.2.2 — 2026-10-23
+
+### Fixed
+
+- Review summaries come from the Web API's
+  `IUserReviewsService/GetAppReviews` (no key). Valve switched off the
+  Store's `appreviews` endpoint on 2026-10-22; it redirected to the Store
+  home page, so from about 01:30 on 2026-10-23 every summary failed with a
+  warning. Same totals (all purchases, all languages), same 1.2 s pacing,
+  probed live up to 300 requests per 5 minutes. The rotation resumes with
+  the games whose summary is oldest.
+- A JSON API answer reached through a redirect is now recorded as a failed
+  request instead of storing the page it redirected to as a success. The
+  freshness check would have flagged the outage above within hours.
+- The dashboard shows viewers a generic message instead of a Python
+  traceback when something fails (`client.showErrorDetails = "none"`), so a
+  public dashboard does not reveal file paths or the database user.
+- Dashboard request budget: review summaries are counted against their own
+  limit (tested at 300 per 5 minutes, paced at 250) instead of the Store's
+  150, which marked the Store as over its limit after v1.2.1. The planned
+  daily volumes now match the 5,000-game catalog (docs/request_budget.md):
+  Store 770, reviews 5,040, SteamSpy 173 a day.
+
 ## v1.2.1 — 2026-10-20
 
 ### Changed

@@ -32,17 +32,27 @@ REQUEST_BUDGET = [
     {
         "budget": "SteamSpy other requests",
         "sources": ("steamspy_appdetails",),
-        "planned_per_day": 123,
-        "limit": "1 per s (paused 1.1 s)",
+        "planned_per_day": 173,
+        "limit": "1 per s (paced 1.1 s)",
         "window_limit": None,
     },
     {
         "budget": "Steam Store",
         "sources": ("store_appdetails", "store_prices",
-                    "steam_review_summary", "steam_review_histogram"),
-        "planned_per_day": 146,
-        "limit": "150 per 5 min",
+                    "steam_review_histogram"),
+        "planned_per_day": 770,
+        "limit": "150 per 5 min (paced 2.1 s)",
         "window_limit": 150,
+    },
+    # Review summaries (Web API GetAppReviews, keyless) have their own
+    # limit: tested without refusal at 300 per 5 minutes, paced at 1.2 s
+    # (250 per 5 minutes).
+    {
+        "budget": "Steam reviews",
+        "sources": ("steam_review_summary",),
+        "planned_per_day": 5040,
+        "limit": "300 per 5 min tested (paced 1.2 s)",
+        "window_limit": 300,
     },
 ]
 

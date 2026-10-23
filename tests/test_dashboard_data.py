@@ -3,6 +3,8 @@ from datetime import datetime
 
 import pandas as pd
 
+from api.steam_api import API_INTERVALS
+from dashboard_common import REQUEST_BUDGET
 from dashboard_data import (
     build_measurement_series,
     latest_values_identical,
@@ -180,6 +182,24 @@ class RequestBudgetTests(unittest.TestCase):
         self.assertEqual(usage["used_pct_of_plan"], 50.0)
         self.assertEqual(usage["busiest_5_min"], 25)
         self.assertTrue(usage["within_limit"])
+
+    def test_every_source_counts_in_one_budget(self):
+        sources = [
+            source for entry in REQUEST_BUDGET for source in entry["sources"]
+        ]
+
+        self.assertEqual(len(sources), len(set(sources)))
+
+    def test_paced_rates_fit_the_window_limits(self):
+        # A paced API never exceeds 300 s / interval requests per window.
+        limits = {
+            entry["budget"]: entry["window_limit"] for entry in REQUEST_BUDGET
+        }
+
+        self.assertLessEqual(300 / API_INTERVALS["store"],
+                             limits["Steam Store"])
+        self.assertLessEqual(300 / API_INTERVALS["reviews"],
+                             limits["Steam reviews"])
 
 
 

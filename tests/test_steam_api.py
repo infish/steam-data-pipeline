@@ -52,13 +52,23 @@ def players(count):
 
 def reviews(positive, negative, total=None):
     return response({
-        "success": 1,
-        "query_summary": {
-            "total_positive": positive,
-            "total_negative": negative,
-            "total_reviews": positive + negative if total is None else total
+        "response": {
+            "query_summary": {
+                "total_positive": positive,
+                "total_negative": negative,
+                "total_reviews": (
+                    positive + negative if total is None else total
+                )
+            }
         }
     })
+
+
+def redirected(to="https://store.example.test/"):
+    """A 200 page reached by following a 302, as requests returns it."""
+    page = make_response(to, 200, b"<!DOCTYPE html><html>Welcome</html>")
+    page.history = [make_response("https://x.test", 302, b"")]
+    return page
 
 
 def spy_details(appid, name="Factorio"):
@@ -128,6 +138,22 @@ class FetchJsonTests(unittest.TestCase):
 
         self.assertIsNone(store.rows[0]["http_status"])
         self.assertEqual(store.rows[0]["error"], "refused")
+
+    def test_a_redirect_is_recorded_as_a_failed_request(self):
+        # The Store's appreviews redirected to the home page from
+        # 2026-10-22; storing that page as a 200 hid the outage.
+        store = MemoryRawStore()
+
+        with self.assertRaisesRegex(requests.HTTPError, "redirected"):
+            fetch_json(session_with(redirected()), store, "src",
+                       "https://x.test")
+
+        self.assertIsNone(store.rows[0]["http_status"])
+        self.assertIsNone(store.rows[0]["body"])
+        self.assertEqual(
+            store.rows[0]["error"],
+            "redirected (302) to https://store.example.test/"
+        )
 
 
 class SteamSpyTests(unittest.TestCase):
@@ -325,7 +351,7 @@ class ReviewSummaryTests(unittest.TestCase):
     def test_returns_totals_and_steam_rating_label(self):
         summary = reviews(90, 10)
         body = json.loads(summary.content)
-        body["query_summary"].update(
+        body["response"]["query_summary"].update(
             review_score=8,
             review_score_desc="Very Positive"
         )
@@ -344,18 +370,44 @@ class ReviewSummaryTests(unittest.TestCase):
             "review_score_desc": "Very Positive"
         }])
         session.get.assert_called_once_with(
-            STEAM_REVIEWS_URL.format(appid=730),
+            STEAM_REVIEWS_URL,
             params={
-                "json": 1,
-                "filter": "recent",
-                "language": "all",
-                "review_type": "all",
-                "purchase_type": "all",
+                "appid": 730,
                 "num_per_page": 1,
-                "filter_offtopic_activity": 0
+                "languages[0]": "all",
+                "purchase_type": 1,
+                "filter_offtopic_activity": 0,
             },
             timeout=(5, 45)
         )
+
+    def test_a_stored_appreviews_answer_still_parses(self):
+        # Raw payloads from before v1.2.2 have the Store's shape.
+        old = response({"success": 1, "query_summary": {
+            "total_positive": 9, "total_negative": 1, "total_reviews": 10,
+        }})
+
+        result, warnings = get_review_summaries(session_with(old), [730])
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(result[0]["total_reviews"], 10)
+
+    def test_a_missing_summary_is_skipped_with_a_warning(self):
+        result, warnings = get_review_summaries(
+            session_with(response({"response": {}})),
+            [730]
+        )
+
+        self.assertEqual(result, [])
+        self.assertIn("summary is missing for app 730", warnings[0])
+
+    def test_a_redirected_lookup_is_skipped_with_a_warning(self):
+        result, warnings = get_review_summaries(
+            session_with(redirected()), [730]
+        )
+
+        self.assertEqual(result, [])
+        self.assertIn("redirected (302)", warnings[0])
 
     def test_inconsistent_summary_is_skipped_with_a_warning(self):
         result, warnings = get_review_summaries(

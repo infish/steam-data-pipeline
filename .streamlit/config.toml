@@ -24,3 +24,6 @@ gatherUsageStats = false
 [client]
 # Hide developer options such as Deploy; viewers only need Rerun/Settings.
 toolbarMode = "viewer"
+# The dashboard can be public: show viewers a generic message instead of a
+# traceback, which would reveal file paths and the database user.
+showErrorDetails = "none"

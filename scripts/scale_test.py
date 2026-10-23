@@ -34,7 +34,7 @@ SOURCE_API = {
     "steamspy_appdetails": "steamspy",
     "store_appdetails": "store",
     "store_prices": "store",
-    "steam_review_summary": "store_reviews",
+    "steam_review_summary": "reviews",
     "steam_review_histogram": "store",
 }
 

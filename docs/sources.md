@@ -54,7 +54,8 @@ pipeline plans around; Phase 12 turns them into a per-job request budget.
 | SteamSpy `request=all` | 1 request per 60 s | SteamSpy API documentation |
 | SteamSpy other requests | 1 request per s | SteamSpy API documentation |
 | Store `api/appdetails` (incl. price batch) | 150 requests per 5 min | informally reported ~200 per 5 min, with a margin |
-| Store `appreviews` | 250 requests per 5 min | undocumented; a live probe on 2026-10-20 ran 168, 200, 250 and 300 per 5 minutes without refusal or slowdown |
+| Web API `IUserReviewsService/GetAppReviews` (keyless) | 250 requests per 5 min | unpublished ("a lower rate limit" without a key, 429 when exceeded); a live probe on 2026-10-23 ran 144, 201, 251 and 301 per 5 minutes without refusal or slowdown |
+| Store `appreviews` (switched off 2026-10-22) | — | was tested to 300 per 5 minutes on 2026-10-20 |
 | Store `appreviewhistogram` | shares the Store budget | undocumented; assumed |
 | Valve Web API (`api.steampowered.com`) | keep modest, no key used | no published keyless limit |
 
@@ -177,23 +178,38 @@ first (ADR 5, ADR 6); a game whose last two summaries had the same total
 waits `QUIET_REVIEWS_REFRESH_DAYS` (3) instead. The catalog marts' review
 score comes from it. Paced at 1.2 s, its own limit (see Rate limits).
 
-- URL: `https://store.steampowered.com/appreviews/<appid>`
-- Parameters: `json=1`, `filter=recent`, `language=all`, `review_type=all`,
-  `purchase_type=all`, `num_per_page=1`, `filter_offtopic_activity=0`.
-- Fields used: `success` (must be `1`), `query_summary.total_positive`,
-  `total_negative`, `total_reviews`.
-- **Confirmed present:** `query_summary.review_score` (integer, e.g. `9`) and
-  `review_score_desc` (e.g. `"Very Positive"`, `"Overwhelmingly Positive"`).
+- URL: `https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/`
+  (Web API, no key; since v1.2.2).
+- Parameters: `appid`, `num_per_page=1`, `languages[0]=all`,
+  `purchase_type=1` (all purchases; `0` counts only Steam purchases),
+  `filter_offtopic_activity=0`. Plain parameters work; `input_json` is
+  optional.
+- Fields used: `response.query_summary.total_positive`, `total_negative`,
+  `total_reviews`, `review_score`, `review_score_desc`. There is no `success`
+  flag; an error is an HTTP status (429 when rate-limited).
+- Checked on 2026-10-23: `purchase_type=1` gave 9,938,301 reviews for app
+  730, the sum of Steam (5,319,280) and other purchases (4,619,079), the
+  same set the Store's `appreviews` counted with `purchase_type=all`.
 
 Timestamps: none; totals are as of the fetch.
 
-Freshness: `Cache-Control: private, max-age=600` (10 minutes).
+Freshness: `Cache-Control: public, max-age=600` (10 minutes).
 
-Caveats: the response also contains one full user review and a paging cursor;
-neither is used or stored. Totals can decrease when Steam reclassifies
-reviews.
+Caveats: the response also contains one full user review, a paging cursor,
+`day_range_used` and `total_matching`; none is used or stored. Totals can
+decrease when Steam reclassifies reviews.
 
-Fixtures: `review_summary/<appid>.json` (the review text is removed).
+**History:** until v1.2.1 the summary came from the Store's
+`https://store.steampowered.com/appreviews/<appid>?json=1` (deprecated in
+favour of GetAppReviews). From 2026-10-22 it redirected to the Store home
+page. The pipeline followed the redirect and stored the page as a
+successful answer, so the summaries failed as warnings while the freshness
+check still passed. Since v1.2.2 a redirected API answer is recorded as a
+failed request.
+
+Fixtures: `review_summary/<appid>.json` (GetAppReviews, only
+`query_summary` kept); `review_summary_appreviews/<appid>.json` (the
+retired endpoint, kept for the reconciliation test).
 
 ## Store app details
 

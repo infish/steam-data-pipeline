@@ -133,11 +133,10 @@ REQUIRED_FIELDS = {
     ],
     "valve_current_players": ["response.player_count", "response.result"],
     "steam_review_summary": [
-        "success",
-        "query_summary.total_positive",
-        "query_summary.total_negative",
-        "query_summary.total_reviews",
-        "query_summary.review_score_desc",
+        "response.query_summary.total_positive",
+        "response.query_summary.total_negative",
+        "response.query_summary.total_reviews",
+        "response.query_summary.review_score_desc",
     ],
     "steam_review_histogram": [
         "success",
