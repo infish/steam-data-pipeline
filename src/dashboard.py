@@ -7,7 +7,11 @@ Streamlit would also pick up on its own).
 import pandas as pd
 import streamlit as st
 
-from dashboard_common import current_check_results, latest_runs
+from dashboard_common import (
+    DashboardBusy,
+    current_check_results,
+    latest_runs,
+)
 from dashboard_style import run_badge, time_ago
 
 
@@ -34,9 +38,8 @@ navigation = st.navigation({
     ],
 })
 
-with st.sidebar:
-    st.markdown("### :orange[λ] Steam Data Pipeline")
-    st.caption("SteamSpy catalog, Valve players, Steam Store and reviews.")
+def data_status():
+    """The sidebar's latest run per job and failing checks."""
     st.markdown("**Data status**")
 
     runs = latest_runs()
@@ -72,4 +75,22 @@ with st.sidebar:
             icon=":material/error:",
         )
 
-navigation.run()
+
+BUSY_NOTE = (
+    "Many people are looking at the dashboard right now; try again in a "
+    "minute."
+)
+
+with st.sidebar:
+    st.markdown("### :orange[λ] Steam Data Pipeline")
+    st.caption("SteamSpy catalog, Valve players, Steam Store and reviews.")
+
+    try:
+        data_status()
+    except DashboardBusy:
+        st.caption(BUSY_NOTE)
+
+try:
+    navigation.run()
+except DashboardBusy:
+    st.info(BUSY_NOTE, icon=":material/hourglass_top:")

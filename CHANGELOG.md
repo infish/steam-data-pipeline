@@ -2,6 +2,36 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## v1.3.1 — 2026-10-24
+
+Fixes from a review of v1.3.0, each checked against the code and fixed in
+its own commit with a test that fails without it.
+
+### Fixed
+
+- **Reprocessing** a run in which a request succeeded on a retry dropped
+  that request's data while reporting success: the replay used the stored
+  retried attempt (a failed row) instead of the answer. Replays and the
+  per-run game lists now skip retried-attempt rows. Do not reprocess runs
+  from v1.3.0 with the old code; reprocessing them again with v1.3.1
+  restores them while their raw payloads are kept (30 days).
+- **`mart_review_trends`** gives a renamed game's older rows its current
+  name, as a full rebuild would (the incremental build of v1.3.0 kept the
+  old name in rows older than two days).
+- **Request counts during an outage:** when every try of a request fails
+  on a connection error or timeout, each attempt is recorded, not one.
+- **reviews_daily's time limit** also stops its histogram and news
+  requests.
+- **The failure streak** counts a redirect or a non-JSON answer (a moved or
+  switched-off API) as struggling.
+- **Releases** publish one at a time, so two tags pushed close together
+  cannot move `stable` backwards.
+- **Dashboard:** when every database connection stays busy, visitors see
+  "try again in a minute" instead of an error box.
+- The worst case of one request is 135 s (v1.3.0 said about 90 s, leaving
+  out the capped `Retry-After` waits), and one integration test no longer
+  relies on a sleep.
+
 ## v1.3.0 — 2026-10-24
 
 Fixes from an independent code review: all 13 findings were checked against

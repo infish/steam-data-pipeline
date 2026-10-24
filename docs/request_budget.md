@@ -61,11 +61,15 @@ the jobs after it (the scheduler runs one job at a time):
   tried at most three times. Retries wait 5 s and then 10 s, never
   immediately, which is longer than any pacer's interval, so retries never
   exceed an API's paced rate. A `Retry-After` header is honoured up to
-  30 s. Worst case about 90 s; before v1.3.0 it was 253 s (five tries of up
-  to 45 s, an immediate first retry and no cap on `Retry-After`).
+  30 s. Worst case 135 s (three tries of 25 s and two waits of 30 s); before
+  v1.3.0 it was 253 s (five tries of up to 45 s, an immediate first retry
+  and no cap on `Retry-After`). v1.3.0's notes said "about 90 s", which
+  left out the `Retry-After` waits.
 - **Retried attempts are recorded** in `raw_api_responses` as failed rows
   (`error_message` "retried: HTTP 503"), so the request counts in
-  `run_steps` and on the dashboard show the real load.
+  `run_steps` and on the dashboard show the real load, also when every try
+  fails (v1.3.1). Replaying a run for reprocessing skips them: they are
+  attempts, not answers.
 - **Five struggling answers in a row** (no connection, a timeout, or 429/5xx
   after retries) stop a run's requests to that API, with a warning; the
   games not reached keep their previous data and are next in line in the

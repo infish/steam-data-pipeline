@@ -7,8 +7,10 @@ import logging
 
 from api.steam_api import (
     ENRICHMENT_ERRORS,
+    FailureStreak,
     fetch_news,
     fetch_review_histogram,
+    stopped_early,
 )
 from parsing.reviews import parse_histogram, parse_news, reconcile
 
@@ -118,12 +120,30 @@ def load_events(cursor, events, run_id, first_seen_at):
     return new
 
 
+def should_stop(ctx, streak, what, done, total):
+    """Stop at the run's time limit or after repeated failures (warned)."""
+    reason = (
+        "run time limit" if ctx.out_of_time()
+        else f"{streak.limit} failed requests in a row"
+        if streak.tripped else None
+    )
+
+    if reason:
+        ctx.warn(stopped_early(what, done, total, reason))
+
+    return reason is not None
+
+
 def collect_histograms(ctx, appids, summaries=None):
     """Fetch and upsert histograms; reconcile with summaries when given."""
     summaries = {row["appid"]: row for row in summaries or []}
     loaded = 0
+    streak = FailureStreak()
 
-    for appid in appids:
+    for done, appid in enumerate(appids):
+        if should_stop(ctx, streak, "review histograms", done, len(appids)):
+            break
+
         ctx.pace("store")
 
         try:
@@ -131,7 +151,9 @@ def collect_histograms(ctx, appids, summaries=None):
                 fetch_review_histogram(ctx.session, ctx.store, appid),
                 ctx.load_time()
             )
+            streak.record()
         except ENRICHMENT_ERRORS as error:
+            streak.record(error)
             ctx.warn(
                 f"Steam review histogram failed for app {appid}, skipped:"
                 f" {error}"
@@ -170,13 +192,19 @@ def collect_histograms(ctx, appids, summaries=None):
 
 def collect_news(ctx, appids, count=DAILY_NEWS_COUNT):
     new_events = 0
+    streak = FailureStreak()
 
-    for appid in appids:
+    for done, appid in enumerate(appids):
+        if should_stop(ctx, streak, "news", done, len(appids)):
+            break
+
         try:
             events = parse_news(
                 fetch_news(ctx.session, ctx.store, appid, count)
             )
+            streak.record()
         except ENRICHMENT_ERRORS as error:
+            streak.record(error)
             ctx.warn(f"Steam news failed for app {appid}, skipped: {error}")
             continue
 

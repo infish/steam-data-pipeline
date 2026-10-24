@@ -5,14 +5,23 @@ import unittest
 import zlib
 from collections import Counter
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import patch
+
+from urllib3.util.retry import RequestHistory
 
 from database.mysql_database import get_connection
 from ingest.raw_store import read_payload
+from ingest.replay import FixtureSession, route_for
 from jobs.base import utc_now
 from reprocess import reprocess_run
 
-from .base import CANNED_RESPONSES, TRACKED_APPIDS, IntegrationTestCase
+from .base import (
+    CANNED_RESPONSES,
+    TRACKED_APPIDS,
+    IntegrationTestCase,
+    review_summary,
+)
 
 
 CHANGED_CHART = {
@@ -23,6 +32,25 @@ CHANGED_CHART = {
         }
     }
 }
+
+
+class RetriedOnce(FixtureSession):
+    """Answers like FixtureSession; the given routes look as if the HTTP
+    session had retried them once (a 503) before this answer."""
+
+    def __init__(self, routes, overrides):
+        super().__init__(overrides)
+        self.routes = routes
+
+    def get(self, url, params=None, timeout=None):
+        response = super().get(url, params, timeout)
+
+        if route_for(url, params) in self.routes:
+            response.raw = SimpleNamespace(retries=SimpleNamespace(
+                history=(RequestHistory("GET", url, None, 503, None),)
+            ))
+
+        return response
 
 
 class RawLayerIntegrationTests(IntegrationTestCase):
@@ -214,6 +242,48 @@ class RawLayerIntegrationTests(IntegrationTestCase):
                 " FROM pipeline_runs ORDER BY run_id"
             ),
         )
+
+    @patch.dict(os.environ, {"REVIEW_SUMMARIES_PER_RUN": "5"})
+    def test_reprocessing_a_run_with_retried_requests(self):
+        # Since v1.3.0 each attempt the HTTP session retried is stored as a
+        # failed row just before the answer. Replaying such a run must use
+        # the answer, not fail the request on the retried row.
+        self.run_job("catalog_daily")
+        session = RetriedOnce(
+            {"store_appdetails:570", "steam_review_summary:570"},
+            {**CANNED_RESPONSES,
+             "steam_review_summary:570": review_summary(800, 200)}
+        )
+        run_id = self.run_job("refresh_hourly", session=session)
+
+        details = self.query("SELECT * FROM game_details WHERE appid = 570")
+        reviews = self.query(
+            "SELECT appid, total_reviews FROM review_observations"
+            " WHERE run_id = %s", (run_id,)
+        )
+        (retried,) = self.query(
+            "SELECT COUNT(*) AS n FROM raw_api_responses"
+            " WHERE run_id = %s AND error_message LIKE 'retried:%%'",
+            (run_id,)
+        )
+        self.assertEqual(retried["n"], 2)
+        self.assertEqual(reviews, [{"appid": 570, "total_reviews": 1000}])
+
+        with patch.dict(os.environ, {"STEAM_TRACKED_APPIDS": TRACKED_APPIDS}):
+            reprocess_run(run_id)
+
+        self.assertEqual(
+            self.query("SELECT * FROM game_details WHERE appid = 570"),
+            details
+        )
+        self.assertEqual(
+            self.query(
+                "SELECT appid, total_reviews FROM review_observations"
+                " WHERE run_id = %s", (run_id,)
+            ),
+            reviews
+        )
+        self.assertIsNone(self.run_row(run_id)["warning_message"])
 
     def test_reprocessing_runs_rebuilds_identical_rows(self):
         runs = self.run_pipeline({

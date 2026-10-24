@@ -35,7 +35,7 @@ from config import (
     get_tracked_appids,
 )
 from database.mysql_database import get_connection
-from ingest.raw_store import RawStore
+from ingest.raw_store import NOT_RETRIED_SQL, RawStore
 from jobs.base import Job
 from jobs.dimensions import refresh_details
 from jobs.reviews import load_review_observations
@@ -181,13 +181,14 @@ def rotation_in_run(cursor, run_id, exclude):
     # The app ID is a request parameter (GetAppReviews, since v1.2.2) or
     # the last part of the endpoint (.../appreviews/<appid>, before).
     cursor.execute(
-        """
+        f"""
         SELECT COALESCE(
                    JSON_UNQUOTE(JSON_EXTRACT(request_params, '$.appid')),
                    SUBSTRING_INDEX(endpoint, '/', -1)
                )
         FROM raw_api_responses
         WHERE run_id = %s AND source = 'steam_review_summary'
+          AND {NOT_RETRIED_SQL}
         ORDER BY response_id
         """,
         (run_id,)

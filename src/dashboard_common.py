@@ -20,6 +20,11 @@ MAX_DB_CONNECTIONS = 10
 DB_WAIT_SECONDS = 30
 _db_connections = threading.BoundedSemaphore(MAX_DB_CONNECTIONS)
 
+
+class DashboardBusy(RuntimeError):
+    """Every database connection stayed in use for DB_WAIT_SECONDS; the
+    pages show a short note instead of an error (dashboard.py)."""
+
 # Planned requests per day and the limits they are measured against
 # (docs/request_budget.md).
 REQUEST_BUDGET = [
@@ -68,7 +73,7 @@ REQUEST_BUDGET = [
 
 def read_sql(query, params=()):
     if not _db_connections.acquire(timeout=DB_WAIT_SECONDS):
-        raise RuntimeError("The dashboard is busy; try again in a minute.")
+        raise DashboardBusy("The dashboard is busy; try again in a minute.")
 
     try:
         return _read_sql(query, params)

@@ -1,11 +1,13 @@
 """ADR 6: the hourly refresh slices and a multi-page SteamSpy catalog."""
 import os
-import time
+import threading
 import unittest
 from datetime import datetime
 from unittest.mock import patch
 
 import requests
+
+import jobs.refresh
 
 from .base import (
     CANNED_TOP_GAMES,
@@ -162,11 +164,22 @@ class QuietReviewsIntegrationTests(IntegrationTestCase):
     def test_a_failed_run_does_not_hold_back_its_games(self):
         self.run_job("catalog_daily", now_fn=at(1))
 
+        fetched = threading.Event()
+        fetch = jobs.refresh.get_review_summaries
+
+        def fetch_then_signal(*args, **kwargs):
+            try:
+                return fetch(*args, **kwargs)
+            finally:
+                fetched.set()
+
         def store_step_fails(ctx, limit):
-            time.sleep(0.5)  # the review worker fetches 570 meanwhile
+            # Fail only once the worker has fetched 570's summary.
+            self.assertTrue(fetched.wait(timeout=30))
             raise RuntimeError("store step broke")
 
-        with patch("jobs.refresh.refresh_details", store_step_fails):
+        with patch("jobs.refresh.get_review_summaries", fetch_then_signal), \
+                patch("jobs.refresh.refresh_details", store_step_fails):
             with self.assertRaises(RuntimeError):
                 self.refresh(1, 10, 800)
 

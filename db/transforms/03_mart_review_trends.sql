@@ -9,7 +9,9 @@
 -- earlier days. Older rows of other games cannot change: a new observation
 -- always lands on the current day. Reprocessing (@mart_full_rebuild = 1)
 -- and an empty mart rebuild everything. A full rebuild of the whole history
--- after each of about 50 runs a day grew without bound.
+-- after each of about 50 runs a day grew without bound. Last, a renamed
+-- game's older rows take its current name, as a full rebuild would give
+-- them (v1.3.1).
 -- new_reviews is the change in total reviews since the game's previous
 -- observation (it can be negative when Steam reclassifies reviews). The
 -- 30-day positive share comes from the histogram's daily buckets for the 30
@@ -114,3 +116,25 @@ LEFT JOIN LATERAL (
           BETWEEN observed.observation_date - INTERVAL 29 DAY
               AND observed.observation_date
 ) AS last_30_days ON TRUE;
+
+-- Rows before the window share one name per game, so comparing each game's
+-- newest earlier row with games.name finds every rename (one primary-key
+-- lookup per game). GROUP BY makes MySQL materialize the derived table, so
+-- it may read the table being updated.
+UPDATE mart_review_trends AS mart
+JOIN (
+    SELECT games.appid, games.name
+    FROM games
+    JOIN mart_review_trends AS older
+        ON older.appid = games.appid
+       AND older.observation_date = (
+           SELECT MAX(earlier.observation_date)
+           FROM mart_review_trends AS earlier
+           WHERE earlier.appid = games.appid
+             AND earlier.observation_date < @review_trends_from
+       )
+    WHERE NOT (older.name <=> games.name)
+    GROUP BY games.appid, games.name
+) AS renamed ON renamed.appid = mart.appid
+SET mart.name = renamed.name
+WHERE mart.observation_date < @review_trends_from;

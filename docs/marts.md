@@ -23,9 +23,11 @@ incrementally: the days from two days before the newest observation, plus
 every day of the tracked apps, whose 30-day histogram share can change for
 earlier days. Older rows of other games cannot change, because a new
 observation always lands on the current day. Reprocessing sets
-`@mart_full_rebuild` and rebuilds it completely, as does an empty mart. An
-integration test checks that six days of incremental builds equal a full
-rebuild row for row.
+`@mart_full_rebuild` and rebuilds it completely, as does an empty mart.
+Each row also carries the game's name, so after the insert a renamed game's
+older rows take its current name (v1.3.1), found with one primary-key lookup
+per game. An integration test checks that six days of incremental builds,
+with a rename among them, equal a full rebuild row for row.
 
 | Mart | Grain | Sources |
 | --- | --- | --- |

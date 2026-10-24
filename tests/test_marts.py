@@ -44,22 +44,26 @@ class TransformFileTests(unittest.TestCase):
                 self.assertTrue(text.startswith(f"-- {mart}\n"))
                 for heading in ("-- Grain:", "-- Sources:", "-- Refresh:"):
                     self.assertIn(heading, text)
-                self.assertTrue(
-                    statements[-1].startswith(f"INSERT INTO {mart} (")
-                )
-
                 if mart in INCREMENTAL_MARTS:
-                    # Window, then conditional deletes, then the insert; a
-                    # full rebuild when the builder asks for one.
+                    # Window, conditional deletes, the insert, then the name
+                    # refresh; a full rebuild when the builder asks for one.
                     self.assertIn("@mart_full_rebuild", statements[0])
                     self.assertTrue(statements[0].startswith("SET @"))
                     self.assertTrue(all(
                         statement.startswith(f"DELETE FROM {mart}\nWHERE")
-                        for statement in statements[1:-1]
+                        for statement in statements[1:-2]
                     ))
-                    self.assertGreater(len(statements), 2)
+                    self.assertTrue(
+                        statements[-2].startswith(f"INSERT INTO {mart} (")
+                    )
+                    self.assertTrue(
+                        statements[-1].startswith(f"UPDATE {mart} AS")
+                    )
                 else:
                     self.assertEqual(statements[0], f"DELETE FROM {mart}")
+                    self.assertTrue(
+                        statements[1].startswith(f"INSERT INTO {mart} (")
+                    )
                     self.assertEqual(len(statements), 2)
 
                 marts.append(mart)

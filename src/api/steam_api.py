@@ -4,11 +4,12 @@ from itertools import takewhile
 import requests
 from datetime import datetime, timezone
 from requests.adapters import HTTPAdapter
+from urllib3.exceptions import MaxRetryError
 from urllib3.util.retry import Retry
 
 from api.pacing import Pacer
 from config import get_steamspy_config, get_tracked_appids
-from ingest.raw_store import MemoryRawStore
+from ingest.raw_store import RETRIED_PREFIX, MemoryRawStore
 
 
 STEAMSPY_URL = "https://steamspy.com/api.php"
@@ -107,8 +108,9 @@ CATALOG_ROW_FIELDS = (
 
 
 # How long one logical request may take (docs/request_budget.md, "When an
-# API fails"). Before v1.3.0 a request could take 253 s: five tries of up to
-# 45 s, the first retry immediate, Retry-After honoured without a cap.
+# API fails"): three tries of up to 25 s plus two waits of at most 30 s,
+# 135 s. Before v1.3.0 it was 253 s: five tries of up to 45 s, the first
+# retry immediate, Retry-After honoured without a cap.
 REQUEST_TIMEOUT = (5, 20)  # seconds to connect, seconds to wait for data
 RETRY_ATTEMPTS = 2  # retries after the first try: at most three tries
 RETRY_BACKOFF_SECONDS = 5  # 5 s before the first retry, 10 s before the next
@@ -141,6 +143,15 @@ class BoundedRetry(Retry):
         seconds = super().get_retry_after(response)
         return None if seconds is None else min(seconds,
                                                  RETRY_AFTER_CAP_SECONDS)
+
+    def increment(self, *args, **kwargs):
+        # MaxRetryError does not say how many attempts came before the last
+        # one; attach them, so fetch_json can record each (retried_attempts).
+        try:
+            return super().increment(*args, **kwargs)
+        except MaxRetryError as error:
+            error.retry_history = self.history
+            raise
 
 
 def create_session():
@@ -177,6 +188,15 @@ def fetch_json(session, store, source, url, params=None):
     try:
         response = session.get(url, params=params, timeout=REQUEST_TIMEOUT)
     except requests.RequestException as error:
+        # Attempts the session made before giving up (BoundedRetry attaches
+        # them) are requests too, so an outage shows its real request count.
+        cause = error.args[0] if error.args else None
+
+        for attempt in describe_attempts(
+            getattr(cause, "retry_history", None) or ()
+        ):
+            store.record(source, url, params, error=attempt)
+
         store.record(source, url, params, error=str(error))
         raise
 
@@ -205,20 +225,35 @@ def fetch_json(session, store, source, url, params=None):
 def retried_attempts(response):
     """Errors of the attempts the HTTP session retried before `response`."""
     retries = getattr(getattr(response, "raw", None), "retries", None)
+    return describe_attempts(getattr(retries, "history", None) or ())
+
+
+def describe_attempts(history):
+    """'retried: ...' error messages for urllib3 retry history entries."""
     return [
-        f"retried: HTTP {attempt.status}" if attempt.status
-        else f"retried: {attempt.error}"
-        for attempt in getattr(retries, "history", None) or ()
+        f"{RETRIED_PREFIX}HTTP {attempt.status}" if attempt.status
+        else f"{RETRIED_PREFIX}{attempt.error}"
+        for attempt in history
         if attempt.redirect_location is None
     ]
 
 
 def api_struggling(error):
     """Whether an error says the API itself is struggling: no connection, a
-    timeout, or 429/5xx after retries. Any other answer (a 404 for one game,
-    an empty summary) shows the API is up."""
+    timeout, 429/5xx after retries, a redirect (the API moved or was
+    switched off, as the Store's appreviews on 2026-10-22), or an answer
+    that is not JSON at all (an HTML page). Any other answer (a 404 for one
+    game, an empty summary) shows the API is up."""
+    if isinstance(error, json.JSONDecodeError):
+        return True
+
     if isinstance(error, requests.HTTPError):
-        status = getattr(error.response, "status_code", None)
+        response = error.response
+
+        if getattr(response, "history", None):
+            return True
+
+        status = getattr(response, "status_code", None)
         return status is None or status == 429 or status >= 500
 
     return isinstance(error, requests.RequestException)

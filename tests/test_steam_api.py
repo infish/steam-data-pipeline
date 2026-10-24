@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
+from urllib3.exceptions import MaxRetryError, ReadTimeoutError
 from urllib3.util.retry import RequestHistory
 
 from api.steam_api import (
@@ -12,6 +13,7 @@ from api.steam_api import (
     CONSECUTIVE_FAILURE_LIMIT,
     REQUEST_TIMEOUT,
     RETRY_AFTER_CAP_SECONDS,
+    RETRY_ATTEMPTS,
     STEAMSPY_REQUEST_INTERVAL_SECONDS,
     STEAMSPY_URL,
     STEAM_CURRENT_PLAYERS_URL,
@@ -107,6 +109,56 @@ def session_with(*responses):
 
 
 class FetchJsonTests(unittest.TestCase):
+    def test_a_request_that_fails_every_try_records_each_attempt(self):
+        store = MemoryRawStore()
+        exhausted = MaxRetryError(
+            None, "/", reason=ReadTimeoutError(None, "/", "timed out")
+        )
+        exhausted.retry_history = tuple(
+            RequestHistory("GET", "/", "ReadTimeoutError()", None, None)
+            for _ in range(RETRY_ATTEMPTS)
+        )
+
+        with self.assertRaises(requests.ConnectionError):
+            fetch_json(
+                session_with(requests.ConnectionError(exhausted)),
+                store, "src", "https://x.test"
+            )
+
+        errors = [row["error"] for row in store.rows]
+        self.assertEqual(len(errors), 1 + RETRY_ATTEMPTS)
+        self.assertTrue(all(
+            error.startswith("retried: ") for error in errors[:-1]
+        ))
+        self.assertFalse(errors[-1].startswith("retried: "))
+
+    def test_a_failure_without_retries_is_one_request(self):
+        # Even when it says "max retries exceeded" (an adapter without
+        # retries raises MaxRetryError after one attempt).
+        for error in (
+            requests.ConnectionError("refused"),
+            requests.ConnectionError(MaxRetryError(None, "/", reason=None)),
+        ):
+            store = MemoryRawStore()
+
+            with self.assertRaises(requests.ConnectionError):
+                fetch_json(session_with(error), store, "src",
+                           "https://x.test")
+
+            self.assertEqual(len(store.rows), 1)
+
+    def test_the_retry_policy_attaches_its_attempts_to_the_error(self):
+        retries = create_session().get_adapter("https://").max_retries
+
+        with self.assertRaises(MaxRetryError) as raised:
+            for _ in range(RETRY_ATTEMPTS + 1):
+                retries = retries.increment(
+                    "GET", "/", error=ReadTimeoutError(None, "/", "slow")
+                )
+
+        self.assertEqual(len(raised.exception.retry_history),
+                         RETRY_ATTEMPTS)
+
     def test_retried_attempts_are_recorded_as_failed_requests(self):
         store = MemoryRawStore()
         answer = response({"ok": 1})
@@ -240,11 +292,13 @@ class SteamSpyTests(unittest.TestCase):
             session.close()
 
     def test_one_request_is_bounded(self):
-        # Three tries of up to 20 s plus the two waits, with room to spare;
-        # before v1.3.0 it was 253 s.
-        tries = 1 + create_session().get_adapter("https://").max_retries.total
-        worst = tries * sum(REQUEST_TIMEOUT) + 5 + 10
-        self.assertLessEqual(worst, 90)
+        # Three tries of up to 25 s (connect and read) plus two waits, each
+        # at most the Retry-After cap; before v1.3.0 it was 253 s.
+        retries = create_session().get_adapter("https://").max_retries
+        tries = 1 + retries.total
+        longest_wait = max(RETRY_AFTER_CAP_SECONDS, 5 * 2)
+        worst = tries * sum(REQUEST_TIMEOUT) + retries.total * longest_wait
+        self.assertEqual(worst, 135)
 
     def test_tracked_app_details_are_shaped_like_page_rows(self):
         paced = []
@@ -480,6 +534,16 @@ class ReviewSummaryTests(unittest.TestCase):
             f" failed requests in a row): {CONSECUTIVE_FAILURE_LIMIT} of 10",
             warnings[-1]
         )
+
+    def test_a_redirect_or_an_html_page_counts_as_struggling(self):
+        # The Store's appreviews redirected to its home page (2026-10-22).
+        html = make_response("https://x.test", 200, b"<!DOCTYPE html>")
+
+        for answers in ([redirected()] * 8, [html] * 8):
+            session = session_with(*answers)
+            get_review_summaries(session, list(range(1, 9)))
+            self.assertEqual(session.get.call_count,
+                             CONSECUTIVE_FAILURE_LIMIT)
 
     def test_a_not_found_answer_does_not_count_as_struggling(self):
         session = session_with(*[failing(404)] * 8)
