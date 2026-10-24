@@ -535,6 +535,16 @@ class ReviewSummaryTests(unittest.TestCase):
             warnings[-1]
         )
 
+    def test_a_redirect_or_an_html_page_counts_as_struggling(self):
+        # The Store's appreviews redirected to its home page (2026-10-22).
+        html = make_response("https://x.test", 200, b"<!DOCTYPE html>")
+
+        for answers in ([redirected()] * 8, [html] * 8):
+            session = session_with(*answers)
+            get_review_summaries(session, list(range(1, 9)))
+            self.assertEqual(session.get.call_count,
+                             CONSECUTIVE_FAILURE_LIMIT)
+
     def test_a_not_found_answer_does_not_count_as_struggling(self):
         session = session_with(*[failing(404)] * 8)
 

@@ -240,10 +240,20 @@ def describe_attempts(history):
 
 def api_struggling(error):
     """Whether an error says the API itself is struggling: no connection, a
-    timeout, or 429/5xx after retries. Any other answer (a 404 for one game,
-    an empty summary) shows the API is up."""
+    timeout, 429/5xx after retries, a redirect (the API moved or was
+    switched off, as the Store's appreviews on 2026-10-22), or an answer
+    that is not JSON at all (an HTML page). Any other answer (a 404 for one
+    game, an empty summary) shows the API is up."""
+    if isinstance(error, json.JSONDecodeError):
+        return True
+
     if isinstance(error, requests.HTTPError):
-        status = getattr(error.response, "status_code", None)
+        response = error.response
+
+        if getattr(response, "history", None):
+            return True
+
+        status = getattr(response, "status_code", None)
         return status is None or status == 429 or status >= 500
 
     return isinstance(error, requests.RequestException)
