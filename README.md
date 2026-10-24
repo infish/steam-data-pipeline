@@ -369,8 +369,10 @@ means something:
   run failed. Hovering shows the job, how long it has run or when it last
   ran. The dashboard checks every 3 seconds with one small query shared by
   all visitors.
-- **Charts** fill from the bottom up when they appear: the bars and lines
-  rise into place, while axes and labels are there at once.
+- **Charts** draw themselves when they appear: each bar grows from its base
+  (left to right, bottom to top, or outward from zero for a negative value),
+  lines draw from left to right and points pop in, while axes and labels are
+  there at once.
 - **Sidebar:** each job's dot breathes while it runs.
 - **Gauges:** the Store-peak tile fills to the share of its limit used, and
   each source on the Freshness tab drains as its data ages and refills on

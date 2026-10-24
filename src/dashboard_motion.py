@@ -77,10 +77,6 @@ MOTION_CSS = """
   35% { filter: drop-shadow(0 0 9px var(--g)) drop-shadow(0 0 24px var(--g)); }
   100% { filter: drop-shadow(0 0 3px var(--g)) drop-shadow(0 0 8px var(--g2)); }
 }
-@keyframes m-fill-up {
-  from { clip-path: inset(100% 0 0 0); }
-  to { clip-path: inset(0 0 0 0); }
-}
 @keyframes m-ripple {
   from { transform: scale(1); opacity: .9; stroke-width: 2.5; }
   to { transform: scale(1.9); opacity: 0; stroke-width: .5; }
@@ -118,12 +114,6 @@ MOTION_CSS = """
   animation: m-ripple 1s ease-out forwards;
 }
 
-/* Charts fill from the bottom up when they appear: only the plot area,
-   so axes, labels and the legend are there at once. */
-[data-testid="stPlotlyChart"] .overplot {
-  animation: m-fill-up 1.2s var(--m-ease) both;
-}
-
 /* Liquid gauge tiles, matching st.metric(border=True). */
 .m-tile {
   position: relative; border: 1px solid var(--m-border); border-radius: 5.6px;
@@ -143,8 +133,8 @@ MOTION_CSS = """
 
 @media (prefers-reduced-motion: reduce) {
   .m-wave, .m-wave2, .m-live,
-  #m-bubbles .m-bub, #m-bubbles .m-ripple, #m-bubbles .m-bub.m-done .m-glow,
-  [data-testid="stPlotlyChart"] .overplot { animation: none; }
+  #m-bubbles .m-bub, #m-bubbles .m-ripple,
+  #m-bubbles .m-bub.m-done .m-glow { animation: none; }
 }
 """
 
@@ -554,8 +544,70 @@ function createMotion() {
     // number on screen.
     setTimeout(() => write(text), 1000);
   }
-  const scan = () => document
-    .querySelectorAll('[data-testid="stMetricValue"]').forEach(animateNumber);
+  // Charts: when a chart first appears, each bar grows from its base (left
+  // to right, bottom to top, or outward from zero for a negative value),
+  // each line draws from left to right, and points pop in. Plotly updates
+  // a drawn chart in place, so this plays once per chart.
+  const drawn = new WeakSet();
+  const GROW = { duration: 900, easing: "cubic-bezier(.22, 1, .36, 1)",
+                 fill: "backwards" };
+  function animateCharts() {
+    if (reduced()) return;
+    const charts = '[data-testid="stPlotlyChart"] ';
+    document.querySelectorAll(charts + ".barlayer .trace").forEach(trace => {
+      const info = trace.__data__ && trace.__data__[0] && trace.__data__[0].trace;
+      const horizontal = !!info && info.orientation === "h";
+      const bars = [...trace.querySelectorAll(".point path")];
+      bars.forEach((bar, index) => {
+        if (drawn.has(bar)) return;
+        // Horizontal bars start from the top (Plotly draws the bottom one
+        // first); vertical bars go left to right.
+        const order = horizontal ? bars.length - 1 - index : index;
+        drawn.add(bar);
+        // A bar's outline starts at its base corner: "M base,side V ...".
+        const d = bar.getAttribute("d") || "";
+        const start = d.match(/^M\s*([-0-9.e]+)[ ,]([-0-9.e]+)/);
+        if (!start) return;
+        const across = d.match(horizontal ? /H\s*([-0-9.e]+)/ : /V\s*([-0-9.e]+)/);
+        if (!across) return;
+        const base = parseFloat(horizontal ? start[1] : start[2]);
+        const end = parseFloat(across[1]);
+        bar.style.transformBox = "fill-box";
+        bar.style.transformOrigin = horizontal
+          ? (end >= base ? "left center" : "right center")
+          : (end <= base ? "center bottom" : "center top");
+        bar.animate(
+          [{ transform: horizontal ? "scaleX(0)" : "scaleY(0)" },
+           { transform: "none" }],
+          Object.assign({ delay: Math.min(order * 30, 450) }, GROW));
+      });
+    });
+    document.querySelectorAll(charts + ".scatterlayer .js-line").forEach(line => {
+      if (drawn.has(line) || !line.getTotalLength) return;
+      drawn.add(line);
+      const length = line.getTotalLength();
+      if (!length) return;
+      line.animate(
+        [{ strokeDasharray: length + " " + length, strokeDashoffset: length },
+         { strokeDasharray: length + " " + length, strokeDashoffset: 0 }],
+        { duration: 1100, easing: "cubic-bezier(.65, 0, .35, 1)" });
+    });
+    document.querySelectorAll(charts + ".scatterlayer .points path").forEach((point, index) => {
+      if (drawn.has(point)) return;
+      drawn.add(point);
+      point.style.transformBox = "fill-box";
+      point.style.transformOrigin = "center";
+      point.animate([{ transform: "scale(0)" }, { transform: "none" }],
+        { duration: 500, delay: Math.min(index * 8, 700),
+          easing: "cubic-bezier(.34, 1.56, .64, 1)", fill: "backwards" });
+    });
+  }
+
+  const scan = () => {
+    document.querySelectorAll('[data-testid="stMetricValue"]')
+      .forEach(animateNumber);
+    animateCharts();
+  };
   new MutationObserver(scan).observe(document.body,
     { childList: true, subtree: true, characterData: true });
   scan();
