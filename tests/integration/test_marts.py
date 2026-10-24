@@ -110,6 +110,15 @@ class MartIntegrationTests(IntegrationTestCase):
             day = datetime.combine(FIRST_DAY + timedelta(days=index),
                                    datetime.min.time())
             morning, evening = day.replace(hour=10), day.replace(hour=18)
+
+            if index == 5:
+                # Renamed (as a Store details refresh would): a full rebuild
+                # shows the new name on every day, and so must the mart.
+                self.execute(
+                    "UPDATE games SET name = 'Dota 2 (renamed)'"
+                    " WHERE appid = 570"
+                )
+
             self.run_job(
                 "refresh_hourly",
                 {"steam_review_summary:570": review_summary(800 + index, 200)},
@@ -129,6 +138,7 @@ class MartIntegrationTests(IntegrationTestCase):
         self.assertEqual(self.mart("mart_review_trends", order), incremental)
         dota = [row for row in incremental if row["appid"] == 570]
         self.assertEqual([row["new_reviews"] for row in dota[-3:]], [1, 1, 1])
+        self.assertEqual({row["name"] for row in dota}, {"Dota 2 (renamed)"})
 
     def test_marts_build_from_collected_data(self):
         self.seed_daily_players()
