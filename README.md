@@ -655,7 +655,7 @@ interfaces. Restrict it with a firewall or change the mapping to
 
 ## Run jobs manually
 
-Run all three jobs once, in order (catalog, players, reviews):
+Run all four jobs once, in order (catalog, players, refresh, reviews):
 
 ```bash
 docker compose run --rm pipeline
@@ -874,7 +874,16 @@ a MySQL service container migrated with Flyway.
   mapping determines where the dashboard is exposed.
 - Python services run as an unprivileged container user.
 
-Do not expose the Streamlit port directly to the public internet. Use an authenticated reverse proxy or a private network such as Tailscale if remote access is required.
+To make the dashboard public, put it behind a reverse proxy with TLS (with
+WebSocket support, which Streamlit needs) rather than forwarding port 8501
+directly, and never expose MySQL or the TrueNAS interface. The dashboard is
+built to be public: it connects with a read-only account, runs no SQL a
+visitor types (the Explorer offers fixed examples only), never renders
+Steam's text as HTML, shows viewers no tracebacks
+(`client.showErrorDetails = "none"`), and holds at most 10 database
+connections at once however many people visit (the account is also limited
+to 20 by `MAX_USER_CONNECTIONS`). Use an authenticated proxy or a private
+network such as Tailscale for anything that should stay private.
 
 ## Stale-data incident: September 2026
 
