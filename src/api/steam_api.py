@@ -4,6 +4,7 @@ from itertools import takewhile
 import requests
 from datetime import datetime, timezone
 from requests.adapters import HTTPAdapter
+from urllib3.exceptions import MaxRetryError
 from urllib3.util.retry import Retry
 
 from api.pacing import Pacer
@@ -142,6 +143,15 @@ class BoundedRetry(Retry):
         return None if seconds is None else min(seconds,
                                                  RETRY_AFTER_CAP_SECONDS)
 
+    def increment(self, *args, **kwargs):
+        # MaxRetryError does not say how many attempts came before the last
+        # one; attach them, so fetch_json can record each (retried_attempts).
+        try:
+            return super().increment(*args, **kwargs)
+        except MaxRetryError as error:
+            error.retry_history = self.history
+            raise
+
 
 def create_session():
     retry_policy = BoundedRetry(
@@ -177,6 +187,15 @@ def fetch_json(session, store, source, url, params=None):
     try:
         response = session.get(url, params=params, timeout=REQUEST_TIMEOUT)
     except requests.RequestException as error:
+        # Attempts the session made before giving up (BoundedRetry attaches
+        # them) are requests too, so an outage shows its real request count.
+        cause = error.args[0] if error.args else None
+
+        for attempt in describe_attempts(
+            getattr(cause, "retry_history", None) or ()
+        ):
+            store.record(source, url, params, error=attempt)
+
         store.record(source, url, params, error=str(error))
         raise
 
@@ -205,10 +224,15 @@ def fetch_json(session, store, source, url, params=None):
 def retried_attempts(response):
     """Errors of the attempts the HTTP session retried before `response`."""
     retries = getattr(getattr(response, "raw", None), "retries", None)
+    return describe_attempts(getattr(retries, "history", None) or ())
+
+
+def describe_attempts(history):
+    """'retried: ...' error messages for urllib3 retry history entries."""
     return [
         f"{RETRIED_PREFIX}HTTP {attempt.status}" if attempt.status
         else f"{RETRIED_PREFIX}{attempt.error}"
-        for attempt in getattr(retries, "history", None) or ()
+        for attempt in history
         if attempt.redirect_location is None
     ]
 

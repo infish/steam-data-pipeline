@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
+from urllib3.exceptions import MaxRetryError, ReadTimeoutError
 from urllib3.util.retry import RequestHistory
 
 from api.steam_api import (
@@ -12,6 +13,7 @@ from api.steam_api import (
     CONSECUTIVE_FAILURE_LIMIT,
     REQUEST_TIMEOUT,
     RETRY_AFTER_CAP_SECONDS,
+    RETRY_ATTEMPTS,
     STEAMSPY_REQUEST_INTERVAL_SECONDS,
     STEAMSPY_URL,
     STEAM_CURRENT_PLAYERS_URL,
@@ -107,6 +109,56 @@ def session_with(*responses):
 
 
 class FetchJsonTests(unittest.TestCase):
+    def test_a_request_that_fails_every_try_records_each_attempt(self):
+        store = MemoryRawStore()
+        exhausted = MaxRetryError(
+            None, "/", reason=ReadTimeoutError(None, "/", "timed out")
+        )
+        exhausted.retry_history = tuple(
+            RequestHistory("GET", "/", "ReadTimeoutError()", None, None)
+            for _ in range(RETRY_ATTEMPTS)
+        )
+
+        with self.assertRaises(requests.ConnectionError):
+            fetch_json(
+                session_with(requests.ConnectionError(exhausted)),
+                store, "src", "https://x.test"
+            )
+
+        errors = [row["error"] for row in store.rows]
+        self.assertEqual(len(errors), 1 + RETRY_ATTEMPTS)
+        self.assertTrue(all(
+            error.startswith("retried: ") for error in errors[:-1]
+        ))
+        self.assertFalse(errors[-1].startswith("retried: "))
+
+    def test_a_failure_without_retries_is_one_request(self):
+        # Even when it says "max retries exceeded" (an adapter without
+        # retries raises MaxRetryError after one attempt).
+        for error in (
+            requests.ConnectionError("refused"),
+            requests.ConnectionError(MaxRetryError(None, "/", reason=None)),
+        ):
+            store = MemoryRawStore()
+
+            with self.assertRaises(requests.ConnectionError):
+                fetch_json(session_with(error), store, "src",
+                           "https://x.test")
+
+            self.assertEqual(len(store.rows), 1)
+
+    def test_the_retry_policy_attaches_its_attempts_to_the_error(self):
+        retries = create_session().get_adapter("https://").max_retries
+
+        with self.assertRaises(MaxRetryError) as raised:
+            for _ in range(RETRY_ATTEMPTS + 1):
+                retries = retries.increment(
+                    "GET", "/", error=ReadTimeoutError(None, "/", "slow")
+                )
+
+        self.assertEqual(len(raised.exception.retry_history),
+                         RETRY_ATTEMPTS)
+
     def test_retried_attempts_are_recorded_as_failed_requests(self):
         store = MemoryRawStore()
         answer = response({"ok": 1})
