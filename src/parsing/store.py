@@ -156,12 +156,27 @@ def parse_price_batch(appids, payload):
     Each state has price_state ('priced', 'no_price' or 'unavailable') and,
     when priced, currency and amounts in minor units. A game the Store sells
     without a price comes back as "data": [] (a list), not an object.
+
+    Only an explicit "success": false is 'unavailable'. A game missing from
+    the answer gets no state, so its current price stays as it is: the Store
+    sometimes answers a whole batch with null, and treating that as 200
+    games going unavailable (and back the next day) would write false price
+    history. An answer that is not an object raises ValueError, which fails
+    the batch with a warning.
     """
-    payload = payload or {}
+    if not isinstance(payload, dict):
+        raise ValueError(
+            f"Store price batch answer is not an object: {payload!r:.40}"
+        )
+
     states = {}
 
     for appid in appids:
-        entry = payload.get(str(appid)) or {}
+        entry = payload.get(str(appid))
+
+        if not isinstance(entry, dict) or "success" not in entry:
+            continue
+
         data = entry.get("data")
         price = data.get("price_overview") if isinstance(data, dict) else None
 

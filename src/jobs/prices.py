@@ -97,6 +97,7 @@ def check_prices(ctx, appids):
     appids = sorted(set(appids))
     states = {}
     failed_batches = []
+    missing = []
 
     for start in range(0, len(appids), PRICE_BATCH_SIZE):
         batch = appids[start:start + PRICE_BATCH_SIZE]
@@ -109,15 +110,26 @@ def check_prices(ctx, appids):
                 batch,
                 country
             )
-            states.update(parse_price_batch(batch, payload))
+            batch_states = parse_price_batch(batch, payload)
         except ENRICHMENT_ERRORS as error:
             failed_batches.append((batch, error))
+            continue
+
+        states.update(batch_states)
+        missing.extend(appid for appid in batch if appid not in batch_states)
 
     if failed_batches:
         skipped = sum(len(batch) for batch, _ in failed_batches)
         ctx.warn(
             f"Store price check failed for {len(failed_batches)} batch(es)"
             f" ({skipped} games, prices unchanged): {failed_batches[0][1]}"
+        )
+
+    if missing:
+        ctx.warn(
+            f"Store price answers left out {len(missing)} game(s), prices"
+            f" unchanged: {', '.join(map(str, missing[:10]))}"
+            + (f" and {len(missing) - 10} more" if len(missing) > 10 else "")
         )
 
     opened, unchanged = apply_price_states(
