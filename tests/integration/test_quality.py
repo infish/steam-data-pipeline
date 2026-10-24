@@ -1,6 +1,8 @@
 import calendar
+import os
 import unittest
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 from .base import CANNED_RESPONSES, IntegrationTestCase
 
@@ -174,6 +176,24 @@ class QualityIntegrationTests(IntegrationTestCase):
             "changing again after being frozen since 2026-10-11",
             staleness["details"]
         )
+
+    @patch.dict(os.environ, {"STEAMSPY_PAGE_INTERVAL_DAYS": "7"})
+    def test_weekly_pages_are_compared_with_the_previous_page_day(self):
+        # As deployed: SteamSpy pages once a week, so the catalog run before
+        # a page day has no snapshots to compare with.
+        self.run_job("catalog_daily", now_fn=at(NOW - timedelta(days=7)))
+        self.run_job("catalog_daily", now_fn=at(NOW - timedelta(days=6)))
+        page_day = self.run_job("catalog_daily", now_fn=at(NOW))
+        next_day = self.run_job(
+            "catalog_daily", now_fn=at(NOW + timedelta(days=1))
+        )
+
+        for run_id in (page_day, next_day):
+            (staleness,) = self.results(
+                run_id, "steamspy_unchanged_fields"
+            ).values()
+            self.assertEqual(staleness["status"], "warn")
+            self.assertEqual(staleness["observed_value"], "100.0%")
 
     def test_repeated_chart_payloads_warn_on_duplicate_rate(self):
         self.run_job("catalog_daily", now_fn=at(NOW - timedelta(hours=3)))
