@@ -52,14 +52,41 @@ main thread does the Store details and tags. The two go to different
 servers with separate limits, and each keeps its own pacer, so neither
 sees a faster pace than before.
 
+## When an API fails
+
+Since v1.3.0 every failure is bounded, so a struggling API cannot hold up
+the jobs after it (the scheduler runs one job at a time):
+
+- **One request** waits at most 5 s to connect and 20 s for data, and is
+  tried at most three times. Retries wait 5 s and then 10 s, never
+  immediately, which is longer than any pacer's interval, so retries never
+  exceed an API's paced rate. A `Retry-After` header is honoured up to
+  30 s. Worst case about 90 s; before v1.3.0 it was 253 s (five tries of up
+  to 45 s, an immediate first retry and no cap on `Retry-After`).
+- **Retried attempts are recorded** in `raw_api_responses` as failed rows
+  (`error_message` "retried: HTTP 503"), so the request counts in
+  `run_steps` and on the dashboard show the real load.
+- **Five struggling answers in a row** (no connection, a timeout, or 429/5xx
+  after retries) stop a run's requests to that API, with a warning; the
+  games not reached keep their previous data and are next in line in the
+  following run. An answer about one game (a 404, an empty summary) shows
+  the API is up and does not count.
+- **Each job has a time limit** (`Job.time_limit_minutes`): `refresh_hourly`
+  20 minutes (it starts at :37 and the next players run is at :07),
+  `catalog_daily` 25, `reviews_daily` 15. Past it, a run makes no new
+  requests, loads what it has and succeeds with a warning.
+  `players_hourly`, with a handful of requests, has none.
+
 ## Notes
 
 - `refresh_hourly` alternates one Store details request with one SteamSpy
-  tag request per refreshed game, then fetches its review summaries. About
-  31 details take about 1 minute at 2.1 s and 211 summaries about 4.2
-  minutes at 1.2 s: about 5.2 minutes a run, within both limits. `REFRESH_MAX_REQUESTS` (300, about
-  10.5 minutes) caps a run; both slices shrink in proportion above it
-  (ADR 6, docs/scale.md).
+  tag request per refreshed game, while a second thread fetches the review
+  summaries (since v1.2.4). About 31 details take about 1 minute at 2.1 s,
+  and at most 211 summaries about 4.2 minutes at 1.2 s, so a run takes as
+  long as the longer of the two; with quiet games (entry 5 in
+  optimizations.md) it is often about a minute. `REFRESH_MAX_REQUESTS`
+  (300) caps a run's slices; both shrink in proportion above it (ADR 6,
+  docs/scale.md).
 - At 5,000 games the Store total is at most about 5,810 requests a day:
   about 770 at 2.1 s (details, prices, histograms) and at most 5,040 review
   summaries at 1.2 s. That is 2% and 7% of what each pacer would allow in a

@@ -1,5 +1,6 @@
 """ADR 6: the hourly refresh slices and a multi-page SteamSpy catalog."""
 import os
+import time
 import unittest
 from datetime import datetime
 from unittest.mock import patch
@@ -156,6 +157,25 @@ class QuietReviewsIntegrationTests(IntegrationTestCase):
         self.assertNotIn("review lookup failed",
                          self.run_row(next_hour)["warning_message"] or "")
         self.assertEqual(self.summary_requests(next_day), 1)
+
+    @patch.dict(os.environ, SETTINGS)
+    def test_a_failed_run_does_not_hold_back_its_games(self):
+        self.run_job("catalog_daily", now_fn=at(1))
+
+        def store_step_fails(ctx, limit):
+            time.sleep(0.5)  # the review worker fetches 570 meanwhile
+            raise RuntimeError("store step broke")
+
+        with patch("jobs.refresh.refresh_details", store_step_fails):
+            with self.assertRaises(RuntimeError):
+                self.refresh(1, 10, 800)
+
+        (failed,) = self.query(
+            "SELECT run_id FROM pipeline_runs WHERE status = 'FAILED'"
+        )
+        self.assertEqual(self.summary_requests(failed["run_id"]), 1)
+        # The failed run rolled its summary back; the next run catches up.
+        self.assertEqual(self.reviewed(self.refresh(1, 11, 800)), [570])
 
     def summary_requests(self, run_id):
         (row,) = self.query(

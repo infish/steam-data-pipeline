@@ -3,6 +3,13 @@
 import streamlit as st
 
 from dashboard_common import cached_read_sql, read_sql
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def run_example(query):
+    # At most a minute old: on a public dashboard, repeated clicks by many
+    # visitors then cost one query a minute, not one per click.
+    return read_sql(query)
 from dashboard_style import card, page_header
 
 
@@ -142,9 +149,8 @@ with examples:
 
         if st.button("Run example", type="primary",
                      icon=":material/play_arrow:"):
-            # Deliberately uncached: the result reflects the database now.
             st.dataframe(
-                read_sql(query),
+                run_example(query),
                 use_container_width=True,
                 hide_index=True,
             )

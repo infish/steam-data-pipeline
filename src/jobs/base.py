@@ -47,6 +47,10 @@ class Job:
     reaps: tuple = ()
     # Rebuild and test the analytics marts after a successful run.
     build_marts: bool = True
+    # After this many minutes a run makes no new requests and keeps what it
+    # has, so a struggling API cannot hold up the jobs after it (the
+    # scheduler runs one job at a time). None: no limit.
+    time_limit_minutes: Optional[float] = None
 
     @property
     def lock_name(self):
@@ -78,6 +82,8 @@ class RunContext:
     # factory None and runs everything on one thread.
     session_factory: Optional[Callable] = None
     base_sleep_fn: Callable = time.sleep
+    # time.monotonic() value after which the run stops making requests.
+    deadline: Optional[float] = None
 
     def pace(self, api):
         """Wait until api's minimum interval since its last request passed.
@@ -88,6 +94,11 @@ class RunContext:
             self.pacers[api] = Pacer(API_INTERVALS[api], self.sleep_fn)
 
         self.pacers[api].wait()
+
+    def out_of_time(self):
+        """Whether the run passed its time limit (Job.time_limit_minutes);
+        loops check it before each request and stop with a warning."""
+        return self.deadline is not None and time.monotonic() >= self.deadline
 
     def step(self, name):
         """Time a block of the job as one step: `with ctx.step("load"):`."""
@@ -212,7 +223,10 @@ def set_run_warnings(cursor, run_id, warnings):
 def refresh_marts(connection, cursor, ctx):
     """Rebuild the marts after a committed load; problems become warnings."""
     try:
-        mart_warnings, results = build_and_test_marts(connection, ctx.step)
+        # Reprocessing can change any past day: rebuild everything.
+        mart_warnings, results = build_and_test_marts(
+            connection, ctx.step, full=ctx.replay
+        )
     except Exception as error:
         logging.exception("Mart build failed")
         mart_warnings, results = [f"Mart build failed: {error}"], []
@@ -344,7 +358,11 @@ def run_job(
                 job_name=job.name,
                 timer=timer,
                 session_factory=session_factory,
-                base_sleep_fn=sleep_fn
+                base_sleep_fn=sleep_fn,
+                deadline=(
+                    None if job.time_limit_minutes is None
+                    else time.monotonic() + job.time_limit_minutes * 60
+                )
             )
 
         with timer.step("job"):

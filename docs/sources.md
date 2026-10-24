@@ -260,7 +260,10 @@ Fixtures: `store_appdetails/<appid>.json` (trimmed to the fields above).
 ## Store price batch
 
 **Status:** in use: `catalog_daily` checks all catalog games in batches of
-50 and versions changes in `game_price_history`. Only with
+200 (`PRICE_BATCH_SIZE`; docs/optimizations.md, entry 3) and versions
+changes in `game_price_history`. A game missing from an answer keeps its
+price (a warning), and an answer that is not an object fails the batch
+(v1.3.0); only an explicit `"success": false` is "unavailable". Only with
 `filters=price_overview`.
 
 - URL: `https://store.steampowered.com/api/appdetails?appids=<a>,<b>,...&cc=us&filters=price_overview`

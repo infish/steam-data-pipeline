@@ -58,7 +58,8 @@ def run_reviews(ctx):
             ctx.session,
             appids,
             ctx.store,
-            pace=lambda: ctx.pace("reviews")
+            pace=lambda: ctx.pace("reviews"),
+            keep_going=lambda: not ctx.out_of_time()
         )
 
     ctx.warn(*warnings)
@@ -101,5 +102,6 @@ REVIEWS_JOB = Job(
     clear_run=clear_reviews_run,
     load_time_sql=(
         "SELECT MIN(collected_at) FROM review_observations WHERE run_id = %s"
-    )
+    ),
+    time_limit_minutes=15
 )

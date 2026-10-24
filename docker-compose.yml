@@ -67,6 +67,8 @@ services:
         GRANT SELECT, SHOW VIEW
           ON \`$${MYSQL_DATABASE}\`.*
           TO '$${DASHBOARD_DB_USER}'@'%';
+        ALTER USER '$${DASHBOARD_DB_USER}'@'%'
+          WITH MAX_USER_CONNECTIONS 20;
 
         CREATE USER IF NOT EXISTS '$${WRITER_DB_USER}'@'%'
           IDENTIFIED BY '$${WRITER_DB_PASSWORD}';

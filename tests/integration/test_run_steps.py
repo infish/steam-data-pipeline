@@ -1,6 +1,9 @@
 import os
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
+
+from jobs.registry import JOBS
 
 from .base import IntegrationTestCase, review_summary
 
@@ -100,6 +103,44 @@ class RunStepsIntegrationTests(IntegrationTestCase):
         self.assertEqual(run["status"], "FAILED")
         self.assertIn("store step broke", run["error_message"])
         self.assertEqual(self.count("review_observations"), 0)
+
+    @patch.dict(os.environ, {"REVIEW_SUMMARIES_PER_RUN": "5"})
+    def test_an_error_on_the_review_worker_fails_the_run(self):
+        self.run_job("catalog_daily")
+
+        with patch(
+            "jobs.refresh.get_review_summaries",
+            side_effect=RuntimeError("worker broke")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "worker broke"):
+                self.run_job("refresh_hourly")
+
+        (run,) = self.query(
+            "SELECT status, error_message FROM pipeline_runs"
+            " WHERE job_name = 'refresh_hourly'"
+        )
+        self.assertEqual(run["status"], "FAILED")
+        self.assertIn("worker broke", run["error_message"])
+
+    @patch.dict(os.environ, {"REVIEW_SUMMARIES_PER_RUN": "5"})
+    def test_a_run_past_its_time_limit_stops_requesting_and_succeeds(self):
+        self.run_job("catalog_daily")
+        out_of_time = replace(JOBS["refresh_hourly"], time_limit_minutes=0)
+
+        with patch.dict(JOBS, {"refresh_hourly": out_of_time}):
+            run_id = self.run_job("refresh_hourly")
+
+        run = self.run_row(run_id)
+        self.assertEqual(run["status"], "SUCCESS")
+        self.assertIn("Stopped Store details and tags early (run time limit)",
+                      run["warning_message"])
+        self.assertIn("Stopped review summaries early (run time limit)",
+                      run["warning_message"])
+        (raw,) = self.query(
+            "SELECT COUNT(*) AS n FROM raw_api_responses WHERE run_id = %s",
+            (run_id,)
+        )
+        self.assertEqual(raw["n"], 0)
 
     def test_a_failed_run_stores_its_steps_up_to_the_failure(self):
         with patch(

@@ -225,11 +225,21 @@ class PriceBatchTests(unittest.TestCase):
             "discount_percent": None,
         })
 
-    def test_unsuccessful_or_missing_entries_are_unavailable(self):
-        states = parse_price_batch([1, 2], {"1": {"success": False}})
+    def test_only_an_explicit_failure_is_unavailable(self):
+        states = parse_price_batch(
+            [1, 2, 3], {"1": {"success": False}, "3": {}}
+        )
 
         self.assertEqual(states[1]["price_state"], "unavailable")
-        self.assertEqual(states[2]["price_state"], "unavailable")
+        # Missing or without "success": no state, the price stays as it is.
+        self.assertNotIn(2, states)
+        self.assertNotIn(3, states)
+
+    def test_an_answer_that_is_not_an_object_fails_the_batch(self):
+        for payload in (None, [], "null"):
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(ValueError, "not an object"):
+                    parse_price_batch([1, 2], payload)
 
     def test_a_price_without_currency_is_an_error(self):
         with self.assertRaisesRegex(ValueError, "no currency"):

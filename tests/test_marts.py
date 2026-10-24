@@ -26,6 +26,10 @@ class SplitStatementsTests(unittest.TestCase):
             split_statements("DELETE FROM mart_x")
 
 
+# Marts over ever-growing history, rebuilt incrementally (docs/marts.md).
+INCREMENTAL_MARTS = {"mart_review_trends"}
+
+
 class TransformFileTests(unittest.TestCase):
     def test_every_transform_documents_and_rebuilds_one_tested_mart(self):
         paths = transform_paths()
@@ -40,11 +44,24 @@ class TransformFileTests(unittest.TestCase):
                 self.assertTrue(text.startswith(f"-- {mart}\n"))
                 for heading in ("-- Grain:", "-- Sources:", "-- Refresh:"):
                     self.assertIn(heading, text)
-                self.assertEqual(statements[0], f"DELETE FROM {mart}")
                 self.assertTrue(
-                    statements[1].startswith(f"INSERT INTO {mart} (")
+                    statements[-1].startswith(f"INSERT INTO {mart} (")
                 )
-                self.assertEqual(len(statements), 2)
+
+                if mart in INCREMENTAL_MARTS:
+                    # Window, then conditional deletes, then the insert; a
+                    # full rebuild when the builder asks for one.
+                    self.assertIn("@mart_full_rebuild", statements[0])
+                    self.assertTrue(statements[0].startswith("SET @"))
+                    self.assertTrue(all(
+                        statement.startswith(f"DELETE FROM {mart}\nWHERE")
+                        for statement in statements[1:-1]
+                    ))
+                    self.assertGreater(len(statements), 2)
+                else:
+                    self.assertEqual(statements[0], f"DELETE FROM {mart}")
+                    self.assertEqual(len(statements), 2)
+
                 marts.append(mart)
 
         self.assertEqual(sorted(marts), sorted(MART_TESTS))

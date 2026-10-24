@@ -282,7 +282,7 @@ Steam review summary per game per run (all languages and purchase types): the tr
 | `observation_id` | bigint unsigned | no | PK |  |
 | `run_id` | bigint unsigned | no | index |  |
 | `appid` | int unsigned | no | index |  |
-| `collected_at` | datetime(6) | no |  | Load time of the run (the summary has no source time). |
+| `collected_at` | datetime(6) | no | index | Load time of the run (the summary has no source time). |
 | `positive_reviews` | int unsigned | no |  |  |
 | `negative_reviews` | int unsigned | no |  |  |
 | `total_reviews` | int unsigned | no |  |  |

@@ -1,8 +1,10 @@
 import calendar
 import json
+import os
 import unittest
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from database.mysql_database import get_connection
 from marts.build import build_marts
@@ -93,6 +95,40 @@ class MartIntegrationTests(IntegrationTestCase):
             return dict(cursor.fetchall())
         finally:
             connection.close()
+
+    @patch.dict(os.environ, {
+        "STORE_DETAILS_PER_RUN": "0",
+        "REVIEW_SUMMARIES_PER_RUN": "",
+        "REVIEWS_REFRESH_DAYS": "1",
+        "QUIET_REVIEWS_REFRESH_DAYS": "0",
+    })
+    def test_incremental_review_trends_equal_a_full_rebuild(self):
+        # Six days of hourly-refresh summaries (570) and daily tracked
+        # summaries with histograms; each run rebuilds the mart
+        # incrementally (only the last days, plus the tracked apps).
+        for index in range(1, 7):
+            day = datetime.combine(FIRST_DAY + timedelta(days=index),
+                                   datetime.min.time())
+            morning, evening = day.replace(hour=10), day.replace(hour=18)
+            self.run_job(
+                "refresh_hourly",
+                {"steam_review_summary:570": review_summary(800 + index, 200)},
+                now_fn=lambda moment=morning: moment
+            )
+            self.run_job("reviews_daily", now_fn=lambda moment=evening: moment)
+
+        order = "ORDER BY appid, observation_date"
+        incremental = self.mart("mart_review_trends", order)
+        connection = get_connection()
+
+        try:
+            self.assertEqual(build_marts(connection, full=True), [])
+        finally:
+            connection.close()
+
+        self.assertEqual(self.mart("mart_review_trends", order), incremental)
+        dota = [row for row in incremental if row["appid"] == 570]
+        self.assertEqual([row["new_reviews"] for row in dota[-3:]], [1, 1, 1])
 
     def test_marts_build_from_collected_data(self):
         self.seed_daily_players()

@@ -5,8 +5,13 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
+from urllib3.util.retry import RequestHistory
+
 from api.steam_api import (
     CATALOG_ROW_FIELDS,
+    CONSECUTIVE_FAILURE_LIMIT,
+    REQUEST_TIMEOUT,
+    RETRY_AFTER_CAP_SECONDS,
     STEAMSPY_REQUEST_INTERVAL_SECONDS,
     STEAMSPY_URL,
     STEAM_CURRENT_PLAYERS_URL,
@@ -102,6 +107,23 @@ def session_with(*responses):
 
 
 class FetchJsonTests(unittest.TestCase):
+    def test_retried_attempts_are_recorded_as_failed_requests(self):
+        store = MemoryRawStore()
+        answer = response({"ok": 1})
+        answer.raw = MagicMock()
+        answer.raw.retries.history = (
+            RequestHistory("GET", "/", None, 503, None),
+            RequestHistory("GET", "/", "ReadTimeoutError()", None, None),
+        )
+
+        fetch_json(session_with(answer), store, "src", "https://x.test")
+
+        self.assertEqual(
+            [row["error"] for row in store.rows],
+            ["retried: HTTP 503", "retried: ReadTimeoutError()", None]
+        )
+        self.assertEqual(store.rows[-1]["http_status"], 200)
+
     def test_records_the_response_before_parsing_and_parses_the_stored_copy(self):
         store = MemoryRawStore()
         store.read_payload = MagicMock(wraps=store.read_payload)
@@ -169,7 +191,7 @@ class SteamSpyTests(unittest.TestCase):
         session.get.assert_called_once_with(
             STEAMSPY_URL,
             params={"request": "all", "page": 0},
-            timeout=(5, 45)
+            timeout=REQUEST_TIMEOUT
         )
         self.assertEqual(result, {"1": {"name": "Test Game"}})
 
@@ -189,13 +211,40 @@ class SteamSpyTests(unittest.TestCase):
         try:
             retries = session.get_adapter("https://").max_retries
 
-            self.assertEqual(retries.total, 4)
-            self.assertEqual(retries.backoff_factor, 2)
+            self.assertEqual(retries.total, 2)
+            self.assertFalse(retries.raise_on_status)
             self.assertIn(429, retries.status_forcelist)
             self.assertIn(500, retries.status_forcelist)
             self.assertIn("GET", retries.allowed_methods)
+
+            # Never an immediate retry: 5 s, then 10 s.
+            waits = []
+
+            for failures in (1, 2):
+                failed = retries.new(history=tuple(
+                    RequestHistory("GET", "/", None, 503, None)
+                    for _ in range(failures)
+                ))
+                waits.append(failed.get_backoff_time())
+
+            self.assertEqual(waits, [5, 10])
+
+            # A Retry-After of an hour waits the cap, not an hour.
+            answer = MagicMock()
+            answer.headers = {"Retry-After": "3600"}
+            answer.get_redirect_location.return_value = None
+            self.assertEqual(
+                retries.get_retry_after(answer), RETRY_AFTER_CAP_SECONDS
+            )
         finally:
             session.close()
+
+    def test_one_request_is_bounded(self):
+        # Three tries of up to 20 s plus the two waits, with room to spare;
+        # before v1.3.0 it was 253 s.
+        tries = 1 + create_session().get_adapter("https://").max_retries.total
+        worst = tries * sum(REQUEST_TIMEOUT) + 5 + 10
+        self.assertLessEqual(worst, 90)
 
     def test_tracked_app_details_are_shaped_like_page_rows(self):
         paced = []
@@ -222,7 +271,7 @@ class SteamSpyTests(unittest.TestCase):
         session.get.assert_any_call(
             STEAMSPY_URL,
             params={"request": "appdetails", "appid": 427520},
-            timeout=(5, 45)
+            timeout=REQUEST_TIMEOUT
         )
 
     def test_tracked_app_details_failures_become_warnings(self):
@@ -282,7 +331,7 @@ class PlayerMeasurementTests(unittest.TestCase):
         session.get.assert_called_once_with(
             STEAM_TOP_PLAYERS_URL,
             params=None,
-            timeout=(5, 45)
+            timeout=REQUEST_TIMEOUT
         )
 
     def test_uses_direct_player_lookup_when_tracked_game_is_outside_top_100(self):
@@ -297,7 +346,7 @@ class PlayerMeasurementTests(unittest.TestCase):
         session.get.assert_any_call(
             STEAM_CURRENT_PLAYERS_URL,
             params={"appid": 620},
-            timeout=(5, 45)
+            timeout=REQUEST_TIMEOUT
         )
 
     def test_chart_failure_falls_back_to_direct_player_lookups(self):
@@ -378,7 +427,7 @@ class ReviewSummaryTests(unittest.TestCase):
                 "purchase_type": 1,
                 "filter_offtopic_activity": 0,
             },
-            timeout=(5, 45)
+            timeout=REQUEST_TIMEOUT
         )
 
     def test_a_stored_appreviews_answer_still_parses(self):
@@ -418,6 +467,47 @@ class ReviewSummaryTests(unittest.TestCase):
         self.assertEqual([row["appid"] for row in result], [620])
         self.assertEqual(len(warnings), 1)
         self.assertIn("inconsistent for app 730", warnings[0])
+
+    def test_repeated_failed_requests_stop_the_loop(self):
+        appids = list(range(1, 11))
+        session = session_with(*[failing(503)] * len(appids))
+
+        result, warnings = get_review_summaries(session, appids)
+
+        self.assertEqual(session.get.call_count, CONSECUTIVE_FAILURE_LIMIT)
+        self.assertIn(
+            f"Stopped review summaries early ({CONSECUTIVE_FAILURE_LIMIT}"
+            f" failed requests in a row): {CONSECUTIVE_FAILURE_LIMIT} of 10",
+            warnings[-1]
+        )
+
+    def test_a_not_found_answer_does_not_count_as_struggling(self):
+        session = session_with(*[failing(404)] * 8)
+
+        get_review_summaries(session, list(range(1, 9)))
+
+        self.assertEqual(session.get.call_count, 8)
+
+    def test_an_unusable_answer_ends_a_failure_streak(self):
+        # 4 failures, an empty summary (the API is up), 4 more: no stop.
+        answers = ([failing(503)] * 4 + [response({"response": {}})]
+                   + [failing(503)] * 4)
+        session = session_with(*answers)
+
+        get_review_summaries(session, list(range(1, 10)))
+
+        self.assertEqual(session.get.call_count, 9)
+
+    def test_the_run_time_limit_stops_the_loop(self):
+        session = session_with(reviews(9, 1), reviews(8, 2))
+        calls = iter([True, False])
+
+        result, warnings = get_review_summaries(
+            session, [1, 2, 3], keep_going=lambda: next(calls)
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertIn("(run time limit): 1 of 3 done", warnings[-1])
 
     def test_http_failure_is_skipped_with_a_warning(self):
         result, warnings = get_review_summaries(
@@ -460,7 +550,7 @@ class MostPlayedTests(unittest.TestCase):
         session.get.assert_called_once_with(
             STEAM_MOST_PLAYED_URL,
             params=None,
-            timeout=(5, 45)
+            timeout=REQUEST_TIMEOUT
         )
 
     def test_incomplete_leaderboard_raises(self):

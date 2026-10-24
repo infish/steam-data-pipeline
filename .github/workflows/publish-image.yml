@@ -26,6 +26,29 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          # Every tag, to compare this release with the others.
+          fetch-depth: 0
+
+      # `stable` moves only for a plain vX.Y.Z tag that is the highest
+      # release: not for v1.3.0-rc.1, and not for a fix like v1.2.5 tagged
+      # after v1.3.0, which would move the app back while its database
+      # migrations cannot run backwards. The tag comes from the environment,
+      # never pasted into the script.
+      - name: Decide whether this release moves stable
+        id: stable
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          highest="$(git tag --list 'v*' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)"
+
+          if [[ "$GITHUB_REF" == refs/tags/* \
+                && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ \
+                && "$tag" == "$highest" ]]; then
+            echo "move=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "move=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -38,9 +61,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Every build gets the full commit SHA tag; main also moves `latest`;
-      # a vX.Y.Z git tag adds the matching vX.Y.Z image tag and moves
-      # `stable`, the tag the TrueNAS app follows (its Update button pulls
-      # the newest release). latest=false stops release tags from also
+      # a vX.Y.Z git tag adds the matching vX.Y.Z image tag and, when it is
+      # the highest release, moves `stable`, the tag the TrueNAS app follows
+      # (its Update button pulls the newest release). latest=false stops release tags from also
       # moving `latest`.
       - name: Compute image tags
         id: meta
@@ -53,7 +76,7 @@ jobs:
             type=sha,format=long,prefix=
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern=v{{version}}
-            type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=stable,enable=${{ steps.stable.outputs.move == 'true' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6

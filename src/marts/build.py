@@ -3,6 +3,11 @@
 Each transform file rebuilds one mart (DELETE + INSERT) in its own
 transaction, so readers see either the old or the new contents and one
 failing mart does not block the others. Files run in name order.
+
+A transform over ever-growing history may rebuild only what can have
+changed (03_mart_review_trends); it rebuilds everything when the session
+variable @mart_full_rebuild is 1, which reprocessing sets, because a
+reprocessed run can change any past day.
 """
 
 import logging
@@ -49,7 +54,8 @@ def split_statements(sql):
     return statements
 
 
-def build_marts(connection, directory=TRANSFORM_DIR, step=no_step):
+def build_marts(connection, directory=TRANSFORM_DIR, step=no_step,
+                full=False):
     """Run every transform; return [(mart file, error)] for failures.
 
     step times each mart (jobs.timing); a failed mart does not raise.
@@ -58,6 +64,8 @@ def build_marts(connection, directory=TRANSFORM_DIR, step=no_step):
     cursor = connection.cursor()
 
     try:
+        cursor.execute("SET @mart_full_rebuild = %s", (1 if full else 0,))
+
         for path in transform_paths(directory):
             try:
                 with step(path.stem):
@@ -75,9 +83,9 @@ def build_marts(connection, directory=TRANSFORM_DIR, step=no_step):
     return failures
 
 
-def build_and_test_marts(connection, step=no_step):
+def build_and_test_marts(connection, step=no_step, full=False):
     """Rebuild and test the marts; return (warnings, test results)."""
-    failures = build_marts(connection, step=step)
+    failures = build_marts(connection, step=step, full=full)
 
     with step("mart_tests"):
         results = run_mart_tests(connection)

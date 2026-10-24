@@ -202,24 +202,28 @@ def purge_raw_payloads(cursor, retention_days, now):
     duplicate is old enough too, so recent runs stay reprocessable.
     """
     cutoff = now - timedelta(days=retention_days)
+    # Candidates are originals whose body is still stored (index
+    # idx_raw_unpurged_originals), and only duplicates inside the window can
+    # keep one: both scans stay the size of the retention window, not of the
+    # whole history (before v1.3.0 both read every row ever stored).
     cursor.execute(
         """
         UPDATE raw_api_responses AS raw
         LEFT JOIN (
-            SELECT is_duplicate_of AS original_id,
-                   MAX(fetched_at) AS last_reference_at
+            SELECT DISTINCT is_duplicate_of AS original_id
             FROM raw_api_responses
             WHERE is_duplicate_of IS NOT NULL
-            GROUP BY is_duplicate_of
-        ) AS refs
-            ON refs.original_id = raw.response_id
+              AND fetched_at >= %s
+        ) AS recent_refs
+            ON recent_refs.original_id = raw.response_id
         SET raw.payload = NULL,
             raw.payload_purged_at = %s
-        WHERE raw.payload IS NOT NULL
+        WHERE raw.is_duplicate_of IS NULL
+          AND raw.payload_purged_at IS NULL
           AND raw.fetched_at < %s
-          AND (refs.last_reference_at IS NULL
-               OR refs.last_reference_at < %s)
+          AND raw.payload IS NOT NULL
+          AND recent_refs.original_id IS NULL
         """,
-        (now, cutoff, cutoff)
+        (cutoff, now, cutoff)
     )
     return cursor.rowcount

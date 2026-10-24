@@ -194,6 +194,30 @@ class PriceHistoryIntegrationTests(IntegrationTestCase):
             self.run_row(run_id)["warning_message"]
         )
 
+    def test_a_null_or_partial_answer_writes_no_price_history(self):
+        # The Store sometimes answers a whole batch with null; before
+        # v1.3.0 every game in it went "unavailable" (and back next day).
+        self.check(1)
+        before = self.query("SELECT * FROM game_price_history")
+        batch = "store_prices:570,620,730,427520"
+
+        with self.assertLogs(level="WARNING"):
+            null_run = self.run_job("catalog_daily", {batch: None},
+                                    now_fn=at(2))
+            partial_run = self.run_job(
+                "catalog_daily",
+                {batch: {"730": {"success": True, "data": []}}},
+                now_fn=at(3)
+            )
+
+        self.assertEqual(
+            self.query("SELECT * FROM game_price_history"), before
+        )
+        self.assertIn("Store price check failed for 1 batch(es)",
+                      self.run_row(null_run)["warning_message"])
+        self.assertIn("left out 3 game(s), prices unchanged",
+                      self.run_row(partial_run)["warning_message"])
+
 
 if __name__ == "__main__":
     unittest.main()

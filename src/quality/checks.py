@@ -523,12 +523,19 @@ def staleness_checks(cursor, now, job_name=None):
     if not runs_after("catalog_daily", job_name):
         return results + duplicate_rate_checks(cursor, now, job_name)
 
+    # The last two successful catalog runs that loaded SteamSpy snapshots:
+    # with weekly pages (STEAMSPY_PAGE_INTERVAL_DAYS 7) most catalog runs
+    # load none, and comparing two neighbouring runs found no rows, so no
+    # result was stored after 2026-10-17.
     cursor.execute(
         """
-        SELECT run_id FROM pipeline_runs
-        WHERE status = 'SUCCESS'
-          AND job_name IN ('catalog_daily', 'daily_legacy')
-        ORDER BY run_id DESC
+        SELECT snapshots.run_id
+        FROM game_metric_snapshots AS snapshots
+        JOIN pipeline_runs AS runs ON runs.run_id = snapshots.run_id
+        WHERE runs.status = 'SUCCESS'
+          AND runs.job_name IN ('catalog_daily', 'daily_legacy')
+        GROUP BY snapshots.run_id
+        ORDER BY snapshots.run_id DESC
         LIMIT 2
         """
     )

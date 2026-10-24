@@ -9,11 +9,15 @@ stalest games per run, new games first.
 
 import logging
 
+import requests
+
 from api.steam_api import (
     ENRICHMENT_ERRORS,
+    FailureStreak,
     SteamSpyUnknownApp,
     fetch_steamspy_appdetails_payload,
     fetch_store_app_details,
+    stopped_early,
 )
 from config import (
     get_store_country,
@@ -159,8 +163,10 @@ def select_stalest(cursor, limit):
     1. games added from Valve's charts or tracked that have no details yet,
        so a new game gets its real name the next day (ADR 5);
     2. other games without details;
-    3. games whose name does not come from the Store yet (details fetched
-       before v1.2.0 stored names);
+    3. games the Store sells whose name does not come from the Store yet
+       (details fetched before v1.2.0 stored names). A game the Store does
+       not sell never gets a Store name, so it waits for its turn instead:
+       before v1.3.0 every such game was refreshed every hour;
     4. the oldest refresh; ties by appid.
     """
     if limit == 0:
@@ -176,7 +182,8 @@ def select_stalest(cursor, limit):
         ORDER BY (details.appid IS NULL
                   AND games.catalog_source <> 'steamspy') DESC,
                  details.details_fetched_at IS NOT NULL,
-                 games.name_source = 'store',
+                 NOT (details.store_available
+                      AND games.name_source <> 'store'),
                  details.details_fetched_at,
                  games.appid
         LIMIT %s
@@ -184,6 +191,40 @@ def select_stalest(cursor, limit):
         (limit,)
     )
     return [row[0] for row in cursor.fetchall()]
+
+
+def not_overwritten(cursor, appids, with_tags, fetched_at):
+    """The games, and the games with tags, whose stored data is not newer
+    than fetched_at: reprocessing an older run must not let its data
+    overwrite a later refresh. A run's own rows carry its own time, so
+    reprocessing the newest run still replays everything.
+    """
+    if not appids:
+        return [], set()
+
+    placeholders = ", ".join(["%s"] * len(appids))
+    cursor.execute(
+        f"""
+        SELECT appid, details_fetched_at, tags_fetched_at
+        FROM game_details
+        WHERE appid IN ({placeholders})
+        """,
+        tuple(appids)
+    )
+    stored = {row[0]: row[1:] for row in cursor.fetchall()}
+
+    def not_newer(value):
+        return value is None or value <= fetched_at
+
+    chosen = [
+        appid for appid in appids
+        if not_newer(stored.get(appid, (None, None))[0])
+    ]
+    tags = {
+        appid for appid in with_tags
+        if not_newer(stored.get(appid, (None, None))[1])
+    }
+    return chosen, tags
 
 
 def refreshed_in_run(cursor, run_id):
@@ -407,8 +448,12 @@ def refresh_details(ctx, limit):
     TAG_REFRESH_DAYS.
     """
     if ctx.replay:
-        chosen = refreshed_in_run(ctx.cursor, ctx.run_id)
-        with_tags = tags_fetched_in_run(ctx.cursor, ctx.run_id)
+        chosen, with_tags = not_overwritten(
+            ctx.cursor,
+            refreshed_in_run(ctx.cursor, ctx.run_id),
+            tags_fetched_in_run(ctx.cursor, ctx.run_id),
+            ctx.load_time()
+        )
     else:
         chosen = select_stalest(ctx.cursor, limit)
         with_tags = tags_due(
@@ -422,7 +467,23 @@ def refresh_details(ctx, limit):
     unknown_to_steamspy = 0
     unparsed_dates = []
 
-    for appid in chosen:
+    store_streak = FailureStreak()
+    tags_streak = FailureStreak()
+
+    for done, appid in enumerate(chosen):
+        reason = (
+            "run time limit" if ctx.out_of_time()
+            else f"{store_streak.limit} failed Store requests in a row"
+            if store_streak.tripped else None
+        )
+
+        if reason:
+            ctx.warn(stopped_early(
+                "Store details and tags", done, len(chosen), reason
+            ))
+            chosen = chosen[:done]
+            break
+
         ctx.pace("store")
 
         try:
@@ -432,6 +493,7 @@ def refresh_details(ctx, limit):
                 appid,
                 country
             )
+            store_streak.record()
             details = parse_store_details(appid, payload)
             load_store_details(ctx.cursor, details, ctx.run_id, fetched_at)
 
@@ -447,7 +509,17 @@ def refresh_details(ctx, limit):
         except ENRICHMENT_ERRORS as error:
             store_failures.append((appid, error))
 
+            if isinstance(error, requests.RequestException):
+                store_streak.record(error)
+            else:
+                store_streak.record()  # the Store answered
+
         if appid not in with_tags:
+            continue
+
+        if tags_streak.tripped:
+            # SteamSpy keeps failing: the remaining games keep their tags.
+            tag_failures.append((appid, "skipped after repeated failures"))
             continue
 
         # The Store pause above usually covers this already; pace() then
@@ -460,6 +532,7 @@ def refresh_details(ctx, limit):
                 ctx.store,
                 appid
             )
+            tags_streak.record()
             load_tags(
                 ctx.cursor,
                 appid,
@@ -469,9 +542,11 @@ def refresh_details(ctx, limit):
         except SteamSpyUnknownApp:
             # Newer than SteamSpy's frozen data: record "no tags" so it is
             # asked again only after TAG_REFRESH_DAYS, without a warning.
+            tags_streak.record()
             load_tags(ctx.cursor, appid, [], fetched_at)
             unknown_to_steamspy += 1
         except ENRICHMENT_ERRORS as error:
+            tags_streak.record(error)
             tag_failures.append((appid, error))
 
     if store_failures:

@@ -5,7 +5,9 @@ import logging
 from api.steam_api import (
     ENRICHMENT_ERRORS,
     PRICE_BATCH_SIZE,
+    FailureStreak,
     fetch_store_prices,
+    stopped_early,
 )
 from config import get_store_country
 from parsing.store import PRICE_FIELDS, parse_price_batch
@@ -97,8 +99,24 @@ def check_prices(ctx, appids):
     appids = sorted(set(appids))
     states = {}
     failed_batches = []
+    missing = []
 
-    for start in range(0, len(appids), PRICE_BATCH_SIZE):
+    streak = FailureStreak()
+    batches = range(0, len(appids), PRICE_BATCH_SIZE)
+
+    for number, start in enumerate(batches):
+        reason = (
+            "run time limit" if ctx.out_of_time()
+            else f"{streak.limit} failed requests in a row"
+            if streak.tripped else None
+        )
+
+        if reason:
+            ctx.warn(stopped_early(
+                "the price check", number, len(batches), reason
+            ))
+            break
+
         batch = appids[start:start + PRICE_BATCH_SIZE]
         ctx.pace("store")
 
@@ -109,15 +127,28 @@ def check_prices(ctx, appids):
                 batch,
                 country
             )
-            states.update(parse_price_batch(batch, payload))
+            batch_states = parse_price_batch(batch, payload)
+            streak.record()
         except ENRICHMENT_ERRORS as error:
+            streak.record(error)
             failed_batches.append((batch, error))
+            continue
+
+        states.update(batch_states)
+        missing.extend(appid for appid in batch if appid not in batch_states)
 
     if failed_batches:
         skipped = sum(len(batch) for batch, _ in failed_batches)
         ctx.warn(
             f"Store price check failed for {len(failed_batches)} batch(es)"
             f" ({skipped} games, prices unchanged): {failed_batches[0][1]}"
+        )
+
+    if missing:
+        ctx.warn(
+            f"Store price answers left out {len(missing)} game(s), prices"
+            f" unchanged: {', '.join(map(str, missing[:10]))}"
+            + (f" and {len(missing) - 10} more" if len(missing) > 10 else "")
         )
 
     opened, unchanged = apply_price_states(

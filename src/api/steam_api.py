@@ -1,4 +1,5 @@
 import json
+from itertools import takewhile
 
 import requests
 from datetime import datetime, timezone
@@ -105,16 +106,56 @@ CATALOG_ROW_FIELDS = (
 )
 
 
+# How long one logical request may take (docs/request_budget.md, "When an
+# API fails"). Before v1.3.0 a request could take 253 s: five tries of up to
+# 45 s, the first retry immediate, Retry-After honoured without a cap.
+REQUEST_TIMEOUT = (5, 20)  # seconds to connect, seconds to wait for data
+RETRY_ATTEMPTS = 2  # retries after the first try: at most three tries
+RETRY_BACKOFF_SECONDS = 5  # 5 s before the first retry, 10 s before the next
+RETRY_AFTER_CAP_SECONDS = 30
+# A run stops calling an API after this many failed requests in a row.
+CONSECUTIVE_FAILURE_LIMIT = 5
+
+
+class BoundedRetry(Retry):
+    """urllib3's Retry with no immediate first retry and a capped
+    Retry-After, so a struggling API gets room and a run gets a bound.
+
+    Retries are always at least RETRY_BACKOFF_SECONDS apart, longer than any
+    pacer's interval, so they never exceed an API's paced rate.
+    """
+
+    def get_backoff_time(self):
+        failures = len(list(takewhile(
+            lambda attempt: attempt.redirect_location is None,
+            reversed(self.history)
+        )))
+
+        if failures == 0:
+            return 0
+
+        return min(self.backoff_max,
+                   self.backoff_factor * 2 ** (failures - 1))
+
+    def get_retry_after(self, response):
+        seconds = super().get_retry_after(response)
+        return None if seconds is None else min(seconds,
+                                                 RETRY_AFTER_CAP_SECONDS)
+
+
 def create_session():
-    retry_policy = Retry(
-        total=4,
-        connect=4,
-        read=4,
-        status=4,
-        backoff_factor=2,
+    retry_policy = BoundedRetry(
+        total=RETRY_ATTEMPTS,
+        connect=RETRY_ATTEMPTS,
+        read=RETRY_ATTEMPTS,
+        status=RETRY_ATTEMPTS,
+        backoff_factor=RETRY_BACKOFF_SECONDS,
         status_forcelist=(429, 500, 502, 503, 504),
         allowed_methods=frozenset({"GET"}),
-        respect_retry_after_header=True
+        respect_retry_after_header=True,
+        # Return the last refused answer instead of raising, so it is
+        # recorded in the raw layer like any other answer.
+        raise_on_status=False
     )
 
     session = requests.Session()
@@ -134,10 +175,15 @@ def fetch_json(session, store, source, url, params=None):
     later reprocess reads exactly what this run read.
     """
     try:
-        response = session.get(url, params=params, timeout=(5, 45))
+        response = session.get(url, params=params, timeout=REQUEST_TIMEOUT)
     except requests.RequestException as error:
         store.record(source, url, params, error=str(error))
         raise
+
+    # Attempts the session retried are requests too: record each one, so
+    # the raw layer and the request counts show the real load.
+    for attempt in retried_attempts(response):
+        store.record(source, url, params, error=attempt)
 
     if response.history:
         # A JSON API that redirects has moved or been switched off (the
@@ -154,6 +200,55 @@ def fetch_json(session, store, source, url, params=None):
     response_id = store.record(source, url, params, response=response)
     response.raise_for_status()
     return json.loads(store.read_payload(response_id))
+
+
+def retried_attempts(response):
+    """Errors of the attempts the HTTP session retried before `response`."""
+    retries = getattr(getattr(response, "raw", None), "retries", None)
+    return [
+        f"retried: HTTP {attempt.status}" if attempt.status
+        else f"retried: {attempt.error}"
+        for attempt in getattr(retries, "history", None) or ()
+        if attempt.redirect_location is None
+    ]
+
+
+def api_struggling(error):
+    """Whether an error says the API itself is struggling: no connection, a
+    timeout, or 429/5xx after retries. Any other answer (a 404 for one game,
+    an empty summary) shows the API is up."""
+    if isinstance(error, requests.HTTPError):
+        status = getattr(error.response, "status_code", None)
+        return status is None or status == 429 or status >= 500
+
+    return isinstance(error, requests.RequestException)
+
+
+class FailureStreak:
+    """One API's struggling answers in a row, within a run (api_struggling).
+    Any other answer, even one that is unusable for its game, ends it.
+    """
+
+    def __init__(self, limit=CONSECUTIVE_FAILURE_LIMIT):
+        self.limit = limit
+        self.count = 0
+
+    def record(self, error=None):
+        if error is not None and api_struggling(error):
+            self.count += 1
+        else:
+            self.count = 0
+
+    @property
+    def tripped(self):
+        return self.count >= self.limit
+
+
+def stopped_early(what, done, total, reason):
+    return (
+        f"Stopped {what} early ({reason}): {done} of {total} done, the"
+        " rest keep their previous data"
+    )
 
 
 def get_top_games(session, store=None, page=None):
@@ -474,22 +569,40 @@ def get_player_measurements(session, store=None):
     return list(measurements.values()), warnings
 
 
-def get_review_summaries(session, appids, store=None, pace=None):
+def get_review_summaries(session, appids, store=None, pace=None,
+                         keep_going=None):
     """Return (summaries, warnings); a failed lookup skips that app.
 
     pace() is called before each request (RunContext.pace("reviews")).
+    The loop stops early when keep_going() turns false (the run's time
+    limit) or after CONSECUTIVE_FAILURE_LIMIT failed requests in a row.
     """
     store = store or MemoryRawStore()
     summaries = []
     warnings = []
+    streak = FailureStreak()
 
-    for appid in appids:
+    for done, appid in enumerate(appids):
+        reason = (
+            "run time limit" if keep_going and not keep_going()
+            else f"{streak.limit} failed requests in a row"
+            if streak.tripped else None
+        )
+
+        if reason:
+            warnings.append(stopped_early(
+                "review summaries", done, len(appids), reason
+            ))
+            break
+
         if pace:
             pace()
 
         try:
             summaries.append(fetch_review_summary(session, store, appid))
+            streak.record()
         except ENRICHMENT_ERRORS as error:
+            streak.record(error)
             warnings.append(
                 f"Steam review lookup failed for app {appid}, "
                 f"skipped: {error}"

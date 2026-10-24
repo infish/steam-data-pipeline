@@ -287,3 +287,45 @@ pacers, the same intervals and the same waiting, only no longer in a queue
 behind the other. The worker shares no connection or session with the main
 thread, and every request is still counted once (`job` requests equal the
 run's raw rows, tested).
+
+## 8. Work that grew with history (v1.3.0)
+
+**Found** by an independent code review: some queries read whole tables that
+grow forever (raw metadata is kept after payloads are purged; review
+observations have no retention), so their cost would keep rising, run after
+run.
+
+**Changed:**
+
+- `mart_review_trends` is rebuilt incrementally after each job: the newest
+  day of observations and the day before, plus every day of the apps with
+  histogram rollups (their 30-day share can change for earlier days).
+  Reprocessing rebuilds it in full. A game's first row in the window looks
+  up its previous total through the `(appid, collected_at)` index.
+- Migration V14 indexes the rest: freshness and schema drift read the
+  newest answer per source through `(source, http_status, fetched_at)`
+  ("Using index for group-by", one entry per source); the daily purge only
+  looks at originals still holding a body; the review rotation's recent
+  window uses `review_observations (collected_at)`.
+
+**Measured** (the scale-test database with 100 days of review history,
+512,907 observations; five consecutive builds after a warm-up, median;
+the machine was busy with other programs, so compare the rows, not the
+absolute seconds):
+
+| `mart_review_trends` | Median per build |
+| --- | ---: |
+| Before: full rebuild after every job | 25.0 s |
+| After: incremental after every job | 2.2 s (−91%) |
+| After: full rebuild (reprocessing only) | 25.6 s |
+
+The old cost grows with the history; the incremental build stays the size
+of two days.
+
+**Why it is safe:** after 100 days of history, the old full rebuild and the
+new one give identical rows (same count and checksum), and an integration
+test checks that six days of incremental builds equal a full rebuild row for
+row. Rows outside the window cannot change, because a new observation always
+lands on the current day; reprocessing, which can change any day, rebuilds
+in full.
+

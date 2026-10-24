@@ -110,7 +110,9 @@ def select_review_rotation(cursor, exclude, limit, now=None,
     )
     # Failed attempts within the last active_days (matched to their run's
     # stored summaries; the app ID is a request parameter of GetAppReviews
-    # or the end of the appreviews endpoint used before v1.2.2).
+    # or the end of the appreviews endpoint used before v1.2.2). Only runs
+    # that succeeded count: a run that failed rolled its summaries back, and
+    # its games are caught up by the next runs (ADR 6).
     attempted_since = (
         datetime(9999, 1, 1) if now is None
         else due_by - timedelta(minutes=active_minutes)
@@ -138,12 +140,17 @@ def select_review_rotation(cursor, exclude, limit, now=None,
             WHERE last.position = 1
         ),
         attempts AS (
-            SELECT run_id, CAST(COALESCE(
-                       JSON_UNQUOTE(JSON_EXTRACT(request_params, '$.appid')),
-                       SUBSTRING_INDEX(endpoint, '/', -1)
+            SELECT raw.run_id, CAST(COALESCE(
+                       JSON_UNQUOTE(
+                           JSON_EXTRACT(raw.request_params, '$.appid')
+                       ),
+                       SUBSTRING_INDEX(raw.endpoint, '/', -1)
                    ) AS UNSIGNED) AS appid
-            FROM raw_api_responses
-            WHERE source = 'steam_review_summary' AND fetched_at >= %s
+            FROM raw_api_responses AS raw
+            JOIN pipeline_runs AS runs ON runs.run_id = raw.run_id
+            WHERE raw.source = 'steam_review_summary'
+              AND raw.fetched_at >= %s
+              AND runs.status = 'SUCCESS'
         ),
         failed AS (
             SELECT DISTINCT attempts.appid
@@ -222,16 +229,21 @@ def fetch_summaries_on_worker(ctx, rotation, stop):
 
         pacer.wait()
 
-    session = ctx.session_factory()
-    connection = get_connection()
+    session = connection = None
 
     try:
+        session = ctx.session_factory()
+        connection = get_connection()
         store = RawStore(connection, ctx.run_id, ctx.now_fn)
         summaries, warnings = get_review_summaries(
-            session, rotation, store, pace=pace
+            session, rotation, store, pace=pace,
+            keep_going=lambda: not ctx.out_of_time()
         )
     finally:
         for closeable in (session, connection):
+            if closeable is None:
+                continue
+
             try:
                 closeable.close()
             except Exception:
@@ -307,7 +319,8 @@ def run_refresh(ctx):
                 ctx.session,
                 rotation,
                 ctx.store,
-                pace=lambda: ctx.pace("reviews")
+                pace=lambda: ctx.pace("reviews"),
+                keep_going=lambda: not ctx.out_of_time()
             )
 
     ctx.warn(*warnings)
@@ -351,5 +364,8 @@ REFRESH_JOB = Job(
         " UNION ALL"
         " SELECT run_id, details_fetched_at FROM game_details"
         ") AS loads WHERE run_id = %s"
-    )
+    ),
+    # Starts at :37 and normally takes 1 to 5 minutes; the next players run
+    # is at :07.
+    time_limit_minutes=20
 )

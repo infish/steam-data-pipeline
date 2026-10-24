@@ -2,6 +2,54 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## v1.3.0 — 2026-10-24
+
+Fixes from an independent code review: all 13 findings were checked against
+the code, confirmed and fixed, each in its own commit with a test that fails
+without the fix. Adds migration V14 (indexes only).
+
+### Fixed
+
+- **Price history:** a price answer that leaves games out, or is not an
+  object (the Store sometimes answers `null`), no longer marks those games
+  "unavailable" and back the next day, which counted a sale twice. A
+  missing game keeps its price with a warning; only `"success": false` is
+  unavailable.
+- **Store details:** a game the Store does not sell (delisted) no longer
+  takes a Store-details slot every hour; it waits for its turn.
+- **SteamSpy staleness check:** with weekly SteamSpy pages it never stored a
+  result after 2026-10-17; it now compares the last two runs that loaded
+  snapshots.
+- **Review rotation:** a run that failed no longer holds its games back for
+  a day; only attempts from successful runs count as a game's turn.
+- **Reprocessing** an older refresh run no longer overwrites newer Store
+  details, names and tags.
+- **Review worker:** closes its HTTP session when its database connection
+  fails; the stop logic and an error on the worker are now tested.
+
+### Changed
+
+- **Bounded failures:** a request is tried at most three times (20 s read
+  timeout, waits of 5 s then 10 s, `Retry-After` capped at 30 s): about
+  90 s worst case instead of 253 s. Retried attempts are recorded in the raw
+  layer. Five struggling answers in a row stop a run's requests to that API.
+  Each job has a time limit (refresh 20 min, catalog 25, reviews 15) after
+  which it keeps what it has, so a slow API cannot hold up the hourly
+  player counts (docs/request_budget.md, "When an API fails").
+- **Scale:** V14 indexes the queries over ever-growing history (freshness,
+  schema drift, the payload purge, the review rotation), and the purge only
+  looks at bodies still stored. `mart_review_trends` is rebuilt
+  incrementally (the last days plus the tracked apps); reprocessing rebuilds
+  it in full.
+- **Releases:** `stable` moves only for the highest plain `vX.Y.Z` tag, never
+  for a pre-release or an older-line fix.
+- **Public dashboard:** at most 10 database connections at once however many
+  visitors; Explorer examples cached for a minute; bootstrap limits the
+  dashboard account to 20 connections (applies when the TrueNAS YAML is next
+  pasted).
+- Docs that had drifted from the code (request budget, sources, README,
+  marts).
+
 ## v1.2.4 — 2026-10-24
 
 ### Changed
