@@ -227,16 +227,20 @@ def fetch_summaries_on_worker(ctx, rotation, stop):
 
         pacer.wait()
 
-    session = ctx.session_factory()
-    connection = get_connection()
+    session = connection = None
 
     try:
+        session = ctx.session_factory()
+        connection = get_connection()
         store = RawStore(connection, ctx.run_id, ctx.now_fn)
         summaries, warnings = get_review_summaries(
             session, rotation, store, pace=pace
         )
     finally:
         for closeable in (session, connection):
+            if closeable is None:
+                continue
+
             try:
                 closeable.close()
             except Exception:

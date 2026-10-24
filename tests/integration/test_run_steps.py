@@ -101,6 +101,24 @@ class RunStepsIntegrationTests(IntegrationTestCase):
         self.assertIn("store step broke", run["error_message"])
         self.assertEqual(self.count("review_observations"), 0)
 
+    @patch.dict(os.environ, {"REVIEW_SUMMARIES_PER_RUN": "5"})
+    def test_an_error_on_the_review_worker_fails_the_run(self):
+        self.run_job("catalog_daily")
+
+        with patch(
+            "jobs.refresh.get_review_summaries",
+            side_effect=RuntimeError("worker broke")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "worker broke"):
+                self.run_job("refresh_hourly")
+
+        (run,) = self.query(
+            "SELECT status, error_message FROM pipeline_runs"
+            " WHERE job_name = 'refresh_hourly'"
+        )
+        self.assertEqual(run["status"], "FAILED")
+        self.assertIn("worker broke", run["error_message"])
+
     def test_a_failed_run_stores_its_steps_up_to_the_failure(self):
         with patch(
             "jobs.catalog.load_company_links",
