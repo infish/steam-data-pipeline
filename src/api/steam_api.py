@@ -108,8 +108,9 @@ CATALOG_ROW_FIELDS = (
 
 
 # How long one logical request may take (docs/request_budget.md, "When an
-# API fails"). Before v1.3.0 a request could take 253 s: five tries of up to
-# 45 s, the first retry immediate, Retry-After honoured without a cap.
+# API fails"): three tries of up to 25 s plus two waits of at most 30 s,
+# 135 s. Before v1.3.0 it was 253 s: five tries of up to 45 s, the first
+# retry immediate, Retry-After honoured without a cap.
 REQUEST_TIMEOUT = (5, 20)  # seconds to connect, seconds to wait for data
 RETRY_ATTEMPTS = 2  # retries after the first try: at most three tries
 RETRY_BACKOFF_SECONDS = 5  # 5 s before the first retry, 10 s before the next

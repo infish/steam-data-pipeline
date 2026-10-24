@@ -292,11 +292,13 @@ class SteamSpyTests(unittest.TestCase):
             session.close()
 
     def test_one_request_is_bounded(self):
-        # Three tries of up to 20 s plus the two waits, with room to spare;
-        # before v1.3.0 it was 253 s.
-        tries = 1 + create_session().get_adapter("https://").max_retries.total
-        worst = tries * sum(REQUEST_TIMEOUT) + 5 + 10
-        self.assertLessEqual(worst, 90)
+        # Three tries of up to 25 s (connect and read) plus two waits, each
+        # at most the Retry-After cap; before v1.3.0 it was 253 s.
+        retries = create_session().get_adapter("https://").max_retries
+        tries = 1 + retries.total
+        longest_wait = max(RETRY_AFTER_CAP_SECONDS, 5 * 2)
+        worst = tries * sum(REQUEST_TIMEOUT) + retries.total * longest_wait
+        self.assertEqual(worst, 135)
 
     def test_tracked_app_details_are_shaped_like_page_rows(self):
         paced = []
