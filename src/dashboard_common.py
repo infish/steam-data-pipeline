@@ -1,6 +1,7 @@
 """Database access and formatting shared by the dashboard pages."""
 
 import re
+import threading
 
 import pandas as pd
 import streamlit as st
@@ -10,6 +11,14 @@ from database.mysql_database import get_connection
 
 QUERY_CACHE_SECONDS = 300
 PRAGUE = "Europe/Prague"
+
+# The dashboard is public: however many visitors, it holds at most this many
+# MySQL connections at once (all sessions share one process), so it can never
+# use up the server's connections and starve the pipeline's jobs. A query
+# waits up to DB_WAIT_SECONDS for a free one.
+MAX_DB_CONNECTIONS = 10
+DB_WAIT_SECONDS = 30
+_db_connections = threading.BoundedSemaphore(MAX_DB_CONNECTIONS)
 
 # Planned requests per day and the limits they are measured against
 # (docs/request_budget.md).
@@ -58,6 +67,16 @@ REQUEST_BUDGET = [
 
 
 def read_sql(query, params=()):
+    if not _db_connections.acquire(timeout=DB_WAIT_SECONDS):
+        raise RuntimeError("The dashboard is busy; try again in a minute.")
+
+    try:
+        return _read_sql(query, params)
+    finally:
+        _db_connections.release()
+
+
+def _read_sql(query, params):
     connection = get_connection()
 
     try:
