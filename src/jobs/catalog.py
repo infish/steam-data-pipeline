@@ -13,6 +13,7 @@ from api.steam_api import (
     ENRICHMENT_ERRORS,
     get_top_games,
     get_tracked_app_details,
+    stopped_early,
 )
 from config import (
     get_max_rejected_percent,
@@ -233,7 +234,16 @@ def load_steamspy_page(ctx):
     first_page = get_steamspy_config()["page"]
 
     with ctx.step("fetch_catalog"):
-        for page in range(first_page, first_page + get_steamspy_pages()):
+        pages = range(first_page, first_page + get_steamspy_pages())
+
+        for page in pages:
+            if ctx.out_of_time():
+                ctx.warn(stopped_early(
+                    "SteamSpy pages", page - first_page, len(pages),
+                    "run time limit"
+                ))
+                break
+
             # SteamSpy allows one page a minute; the page also counts
             # towards its 1-per-second interval for appdetails.
             ctx.pace("steamspy_all")
@@ -378,5 +388,7 @@ CATALOG_JOB = Job(
         "SELECT MIN(snapshot_time) FROM game_metric_snapshots"
         " WHERE run_id = %s"
     ),
-    reaps=("daily_legacy", "daily")
+    reaps=("daily_legacy", "daily"),
+    # Normally about a minute, about 8 on SteamSpy page days.
+    time_limit_minutes=25
 )

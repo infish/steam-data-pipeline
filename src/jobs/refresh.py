@@ -234,7 +234,8 @@ def fetch_summaries_on_worker(ctx, rotation, stop):
         connection = get_connection()
         store = RawStore(connection, ctx.run_id, ctx.now_fn)
         summaries, warnings = get_review_summaries(
-            session, rotation, store, pace=pace
+            session, rotation, store, pace=pace,
+            keep_going=lambda: not ctx.out_of_time()
         )
     finally:
         for closeable in (session, connection):
@@ -316,7 +317,8 @@ def run_refresh(ctx):
                 ctx.session,
                 rotation,
                 ctx.store,
-                pace=lambda: ctx.pace("reviews")
+                pace=lambda: ctx.pace("reviews"),
+                keep_going=lambda: not ctx.out_of_time()
             )
 
     ctx.warn(*warnings)
@@ -360,5 +362,8 @@ REFRESH_JOB = Job(
         " UNION ALL"
         " SELECT run_id, details_fetched_at FROM game_details"
         ") AS loads WHERE run_id = %s"
-    )
+    ),
+    # Starts at :37 and normally takes 1 to 5 minutes; the next players run
+    # is at :07.
+    time_limit_minutes=20
 )

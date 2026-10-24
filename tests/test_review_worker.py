@@ -14,6 +14,7 @@ def context(session):
         now_fn=lambda: datetime(2026, 10, 24, 12, 0),
         base_sleep_fn=lambda seconds: None,
         session_factory=lambda: session,
+        out_of_time=lambda: False,
     )
 
 

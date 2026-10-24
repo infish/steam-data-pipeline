@@ -9,11 +9,15 @@ stalest games per run, new games first.
 
 import logging
 
+import requests
+
 from api.steam_api import (
     ENRICHMENT_ERRORS,
+    FailureStreak,
     SteamSpyUnknownApp,
     fetch_steamspy_appdetails_payload,
     fetch_store_app_details,
+    stopped_early,
 )
 from config import (
     get_store_country,
@@ -463,7 +467,23 @@ def refresh_details(ctx, limit):
     unknown_to_steamspy = 0
     unparsed_dates = []
 
-    for appid in chosen:
+    store_streak = FailureStreak()
+    tags_streak = FailureStreak()
+
+    for done, appid in enumerate(chosen):
+        reason = (
+            "run time limit" if ctx.out_of_time()
+            else f"{store_streak.limit} failed Store requests in a row"
+            if store_streak.tripped else None
+        )
+
+        if reason:
+            ctx.warn(stopped_early(
+                "Store details and tags", done, len(chosen), reason
+            ))
+            chosen = chosen[:done]
+            break
+
         ctx.pace("store")
 
         try:
@@ -473,6 +493,7 @@ def refresh_details(ctx, limit):
                 appid,
                 country
             )
+            store_streak.record()
             details = parse_store_details(appid, payload)
             load_store_details(ctx.cursor, details, ctx.run_id, fetched_at)
 
@@ -488,7 +509,17 @@ def refresh_details(ctx, limit):
         except ENRICHMENT_ERRORS as error:
             store_failures.append((appid, error))
 
+            if isinstance(error, requests.RequestException):
+                store_streak.record(error)
+            else:
+                store_streak.record()  # the Store answered
+
         if appid not in with_tags:
+            continue
+
+        if tags_streak.tripped:
+            # SteamSpy keeps failing: the remaining games keep their tags.
+            tag_failures.append((appid, "skipped after repeated failures"))
             continue
 
         # The Store pause above usually covers this already; pace() then
@@ -501,6 +532,7 @@ def refresh_details(ctx, limit):
                 ctx.store,
                 appid
             )
+            tags_streak.record()
             load_tags(
                 ctx.cursor,
                 appid,
@@ -510,9 +542,11 @@ def refresh_details(ctx, limit):
         except SteamSpyUnknownApp:
             # Newer than SteamSpy's frozen data: record "no tags" so it is
             # asked again only after TAG_REFRESH_DAYS, without a warning.
+            tags_streak.record()
             load_tags(ctx.cursor, appid, [], fetched_at)
             unknown_to_steamspy += 1
         except ENRICHMENT_ERRORS as error:
+            tags_streak.record(error)
             tag_failures.append((appid, error))
 
     if store_failures:

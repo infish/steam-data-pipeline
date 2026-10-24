@@ -5,7 +5,9 @@ import logging
 from api.steam_api import (
     ENRICHMENT_ERRORS,
     PRICE_BATCH_SIZE,
+    FailureStreak,
     fetch_store_prices,
+    stopped_early,
 )
 from config import get_store_country
 from parsing.store import PRICE_FIELDS, parse_price_batch
@@ -99,7 +101,22 @@ def check_prices(ctx, appids):
     failed_batches = []
     missing = []
 
-    for start in range(0, len(appids), PRICE_BATCH_SIZE):
+    streak = FailureStreak()
+    batches = range(0, len(appids), PRICE_BATCH_SIZE)
+
+    for number, start in enumerate(batches):
+        reason = (
+            "run time limit" if ctx.out_of_time()
+            else f"{streak.limit} failed requests in a row"
+            if streak.tripped else None
+        )
+
+        if reason:
+            ctx.warn(stopped_early(
+                "the price check", number, len(batches), reason
+            ))
+            break
+
         batch = appids[start:start + PRICE_BATCH_SIZE]
         ctx.pace("store")
 
@@ -111,7 +128,9 @@ def check_prices(ctx, appids):
                 country
             )
             batch_states = parse_price_batch(batch, payload)
+            streak.record()
         except ENRICHMENT_ERRORS as error:
+            streak.record(error)
             failed_batches.append((batch, error))
             continue
 
