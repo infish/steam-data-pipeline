@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from ingest.raw_store import read_payload, request_hash
+from ingest.raw_store import NOT_RETRIED_SQL, read_payload, request_hash
 
 
 FIXTURE_DIR = (
@@ -180,12 +180,15 @@ class RawReplaySession:
         self.connection = connection
         self.responses = {}
         cursor = connection.cursor()
+        # The answers only: a retried attempt is stored just before the
+        # answer to the same request, and replaying it would fail a request
+        # that succeeded.
         cursor.execute(
-            """
+            f"""
             SELECT response_id, request_params_hash, http_status,
                    error_message
             FROM raw_api_responses
-            WHERE run_id = %s
+            WHERE run_id = %s AND {NOT_RETRIED_SQL}
             ORDER BY response_id
             """,
             (run_id,)

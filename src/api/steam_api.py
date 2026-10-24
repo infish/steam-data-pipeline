@@ -8,7 +8,7 @@ from urllib3.util.retry import Retry
 
 from api.pacing import Pacer
 from config import get_steamspy_config, get_tracked_appids
-from ingest.raw_store import MemoryRawStore
+from ingest.raw_store import RETRIED_PREFIX, MemoryRawStore
 
 
 STEAMSPY_URL = "https://steamspy.com/api.php"
@@ -206,8 +206,8 @@ def retried_attempts(response):
     """Errors of the attempts the HTTP session retried before `response`."""
     retries = getattr(getattr(response, "raw", None), "retries", None)
     return [
-        f"retried: HTTP {attempt.status}" if attempt.status
-        else f"retried: {attempt.error}"
+        f"{RETRIED_PREFIX}HTTP {attempt.status}" if attempt.status
+        else f"{RETRIED_PREFIX}{attempt.error}"
         for attempt in getattr(retries, "history", None) or ()
         if attempt.redirect_location is None
     ]

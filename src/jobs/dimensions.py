@@ -23,6 +23,7 @@ from config import (
     get_store_country,
     get_tag_refresh_days,
 )
+from ingest.raw_store import NOT_RETRIED_SQL
 from parsing.names import split_company_names
 from parsing.store import parse_steamspy_tags, parse_store_details
 
@@ -230,10 +231,11 @@ def not_overwritten(cursor, appids, with_tags, fetched_at):
 def refreshed_in_run(cursor, run_id):
     """The games a past run fetched Store details for (for reprocessing)."""
     cursor.execute(
-        """
+        f"""
         SELECT JSON_UNQUOTE(JSON_EXTRACT(request_params, '$.appids'))
         FROM raw_api_responses
         WHERE run_id = %s AND source = 'store_appdetails'
+          AND {NOT_RETRIED_SQL}
         ORDER BY response_id
         """,
         (run_id,)
@@ -266,10 +268,11 @@ def tags_due(cursor, appids, refresh_days, now):
 def tags_fetched_in_run(cursor, run_id):
     """The games a past run fetched SteamSpy appdetails for (reprocessing)."""
     cursor.execute(
-        """
+        f"""
         SELECT JSON_UNQUOTE(JSON_EXTRACT(request_params, '$.appid'))
         FROM raw_api_responses
         WHERE run_id = %s AND source = 'steamspy_appdetails'
+          AND {NOT_RETRIED_SQL}
         """,
         (run_id,)
     )

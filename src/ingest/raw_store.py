@@ -9,6 +9,15 @@ from datetime import timedelta
 
 COMPRESSION_LEVEL = 6
 
+# error_message of a row recording an attempt the HTTP session retried
+# (since v1.3.0). Such a row counts as a request, but it is not the answer:
+# replaying a run, or listing what it fetched, must skip it.
+RETRIED_PREFIX = "retried: "
+# For parameterised queries (% is doubled for the driver's formatting).
+NOT_RETRIED_SQL = (
+    "(error_message IS NULL OR error_message NOT LIKE 'retried:%%')"
+)
+
 
 def canonical_params(params):
     return json.dumps(
