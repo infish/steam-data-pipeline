@@ -72,9 +72,14 @@ def run(session, name, moment):
     return run_id, time.perf_counter() - started
 
 
-def api_seconds(run_id):
-    """What the run's requests would cost at the paced intervals."""
-    total = 0.0
+def api_seconds(run_id, job_name):
+    """What the run's requests would cost at the paced intervals.
+
+    refresh_hourly fetches review summaries on their own thread alongside
+    the rest of the run (jobs/refresh.py), so it takes the longer of the
+    two; other jobs make their requests one after the other.
+    """
+    main = reviews = 0.0
 
     for row in rows(
         "SELECT source, COUNT(*) AS n FROM raw_api_responses"
@@ -82,9 +87,17 @@ def api_seconds(run_id):
         (run_id,)
     ):
         api = SOURCE_API.get(row["source"])
-        total += row["n"] * API_INTERVALS[api] if api else 0
+        seconds = row["n"] * API_INTERVALS[api] if api else 0
 
-    return total
+        if api == "reviews":
+            reviews += seconds
+        else:
+            main += seconds
+
+    if job_name == "refresh_hourly":
+        return max(main, reviews)
+
+    return main + reviews
 
 
 def main(argv=None):
@@ -115,7 +128,7 @@ def main(argv=None):
 
     def record(name, moment):
         run_id, seconds = run(session, name, moment)
-        timings[name].append((run_id, seconds, api_seconds(run_id)))
+        timings[name].append((run_id, seconds, api_seconds(run_id, name)))
 
     record("catalog_daily", start)
 

@@ -1,7 +1,8 @@
+import os
 import unittest
 from unittest.mock import patch
 
-from .base import IntegrationTestCase
+from .base import IntegrationTestCase, review_summary
 
 
 class RunStepsIntegrationTests(IntegrationTestCase):
@@ -47,6 +48,58 @@ class RunStepsIntegrationTests(IntegrationTestCase):
                 if step["parent_step"] == "job"),
             raw["n"]
         )
+
+    # The baseline turns review summaries off; ask for a slice.
+    @patch.dict(os.environ, {"REVIEW_SUMMARIES_PER_RUN": "5"})
+    def test_review_summaries_run_alongside_the_store_work(self):
+        self.run_job("catalog_daily")
+        run_id = self.run_job(
+            "refresh_hourly",
+            {"steam_review_summary:570": review_summary(800, 200)}
+        )
+        steps = self.steps(run_id)
+        by_name = {step["step"]: step for step in steps}
+
+        # Both are children of the job; the summaries were fetched on the
+        # worker thread and loaded on the main thread afterwards.
+        self.assertEqual(by_name["review_summaries"]["parent_step"], "job")
+        self.assertEqual(
+            by_name["store_details_and_tags"]["parent_step"], "job"
+        )
+        self.assertGreater(by_name["review_summaries"]["requests"], 0)
+        self.assertGreater(self.count("review_observations"), 0)
+
+        # Every API response is still counted once, by exactly one step.
+        (raw,) = self.query(
+            "SELECT COUNT(*) AS n FROM raw_api_responses WHERE run_id = %s",
+            (run_id,)
+        )
+        self.assertEqual(by_name["job"]["requests"], raw["n"])
+        self.assertEqual(
+            sum(step["requests"] for step in steps
+                if step["parent_step"] == "job"),
+            raw["n"]
+        )
+
+    # The baseline turns review summaries off; ask for a slice.
+    @patch.dict(os.environ, {"REVIEW_SUMMARIES_PER_RUN": "5"})
+    def test_a_failed_store_step_stops_the_review_worker(self):
+        self.run_job("catalog_daily")
+
+        with patch(
+            "jobs.refresh.refresh_details",
+            side_effect=RuntimeError("store step broke")
+        ):
+            with self.assertRaises(RuntimeError):
+                self.run_job("refresh_hourly")
+
+        (run,) = self.query(
+            "SELECT status, error_message FROM pipeline_runs"
+            " WHERE job_name = 'refresh_hourly'"
+        )
+        self.assertEqual(run["status"], "FAILED")
+        self.assertIn("store step broke", run["error_message"])
+        self.assertEqual(self.count("review_observations"), 0)
 
     def test_a_failed_run_stores_its_steps_up_to_the_failure(self):
         with patch(

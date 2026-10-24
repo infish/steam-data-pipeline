@@ -66,14 +66,23 @@ SOURCE_JOBS = {
 # Tables whose daily row counts are compared with the previous 7 days:
 # table -> (time column, owning job; None checks after every job).
 # game_metric_snapshots is not here: SteamSpy is fetched weekly (ADR 5).
+# raw_api_responses is not here either: its daily count follows the request
+# schedule, which varies by design (quiet games, catch-up after an outage),
+# and an outage can keep it normal (a redirect stored as a 200 on
+# 2026-10-23). It is checked per source instead (RAW_CHECKED_TABLES).
 VOLUME_TABLES = {
     "player_observations": ("collected_at", "players_hourly"),
     "review_observations": ("collected_at", "refresh_hourly"),
-    "raw_api_responses": ("fetched_at", None),
     "data_quality_results": ("checked_at", None),
     "run_steps": ("started_at", None),
 }
+# Tables covered by the per-source checks (freshness, schema_drift,
+# raw_duplicate_rate) rather than by volume or an invariant.
+RAW_CHECKED_TABLES = {"raw_api_responses"}
 VOLUME_TOLERANCE_PERCENT = 30
+# Answers of the newest run checked for schema drift; one complete answer
+# passes (see schema_drift_checks).
+SCHEMA_DRIFT_ANSWERS = 20
 VOLUME_MIN_HISTORY_DAYS = 3
 
 # SteamSpy fields compared between the last two catalog snapshots.
@@ -410,13 +419,31 @@ def evaluate_volume(table, day, counts, job=None):
     )
 
 
+def volume_checked(cursor, table, day):
+    """Whether an earlier run already judged this table's day."""
+    cursor.execute(
+        """
+        SELECT 1 FROM data_quality_results
+        WHERE check_name = 'volume' AND target = %s AND details = %s
+        LIMIT 1
+        """,
+        (table, f"UTC day {day.isoformat()}")
+    )
+    return bool(cursor.fetchall())
+
+
 def volume_checks(cursor, now, job_name=None):
     # The last complete UTC day: today's partial count would always look low.
+    # A finished day's count does not change, so it is judged once, by the
+    # first run after midnight: one unusual day is one result, not one per
+    # run (about 50 a day before v1.2.4).
     day = now.date() - timedelta(days=1)
     results = []
 
     for table, (column, owner) in VOLUME_TABLES.items():
-        if not runs_after(owner, job_name):
+        if not runs_after(owner, job_name) or volume_checked(
+            cursor, table, day
+        ):
             continue
 
         cursor.execute(
@@ -605,36 +632,63 @@ def schema_drift_checks(connection, cursor, job_name=None):
         if not runs_after(SOURCE_JOBS[source], job_name):
             continue
 
+        # The newest run's answers: a format change hits every answer, while
+        # one game can legitimately answer without the fields (Steam gives
+        # some removed games an empty review summary).
         cursor.execute(
             """
             SELECT response_id FROM raw_api_responses
             WHERE source = %s
               AND http_status = 200
               AND payload_purged_at IS NULL
+              AND run_id = (
+                  SELECT run_id FROM raw_api_responses
+                  WHERE source = %s
+                    AND http_status = 200
+                    AND payload_purged_at IS NULL
+                  ORDER BY fetched_at DESC, response_id DESC
+                  LIMIT 1
+              )
             ORDER BY fetched_at DESC, response_id DESC
-            LIMIT 1
+            LIMIT %s
             """,
-            (source,)
+            (source, source, SCHEMA_DRIFT_ANSWERS)
         )
         rows = cursor.fetchall()
 
         if not rows:
             continue
 
-        try:
-            payload = json.loads(read_payload(connection, rows[0][0]))
-        except (LookupError, ValueError) as error:
+        problems = []
+
+        for (response_id,) in rows:
+            try:
+                payload = json.loads(read_payload(connection, response_id))
+            except (LookupError, ValueError) as error:
+                problems.append(("unreadable", str(error)))
+                continue
+
+            missing = missing_paths(payload, paths)
+
+            if not missing:
+                break
+
+            problems.append((f"{len(missing)} missing", ", ".join(missing)))
+        else:
+            # No answer of the newest run had every required field.
+            observed, details = problems[0]
             results.append(result(
-                "schema_drift", source, "fail", "unreadable",
-                "newest payload parses", str(error), SOURCE_JOBS[source]
+                "schema_drift", source, "fail", observed,
+                "0 required fields missing", details, SOURCE_JOBS[source]
             ))
             continue
 
-        missing = missing_paths(payload, paths)
         results.append(result(
-            "schema_drift", source, "fail" if missing else "pass",
-            f"{len(missing)} missing", "0 required fields missing",
-            ", ".join(missing) or None, SOURCE_JOBS[source]
+            "schema_drift", source, "pass", "0 missing",
+            "0 required fields missing",
+            f"{len(problems)} newer answer(s) of the run incomplete"
+            if problems else None,
+            SOURCE_JOBS[source]
         ))
 
     return results

@@ -47,8 +47,10 @@ pacer covers details, price batches and histograms in a run. Review
 summaries shared that pacer in v1.2.0; since v1.2.1 they have their own
 (`reviews`, 1.2 s), because a live probe showed the endpoint accepts 300 per
 5 minutes. Since v1.2.2 they come from the Web API's GetAppReviews, probed
-the same way. In a run the details and the summaries come one after the
-other, never interleaved.
+the same way. Since v1.2.4 they are fetched on a second thread while the
+main thread does the Store details and tags. The two go to different
+servers with separate limits, and each keeps its own pacer, so neither
+sees a faster pace than before.
 
 ## Notes
 

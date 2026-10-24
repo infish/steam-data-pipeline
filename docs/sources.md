@@ -197,7 +197,11 @@ Freshness: `Cache-Control: public, max-age=600` (10 minutes).
 
 Caveats: the response also contains one full user review, a paging cursor,
 `day_range_used` and `total_matching`; none is used or stored. Totals can
-decrease when Steam reclassifies reviews.
+decrease when Steam reclassifies reviews. Some removed games answer
+`{"response": {}}` with no summary at all (app 12180 on 2026-10-24, which
+had 488 reviews in the Store's appreviews a week earlier), while other
+removed games still have one (436150). Such an answer is a warning, and
+the game waits for its next turn instead of being asked every hour.
 
 **History:** until v1.2.1 the summary came from the Store's
 `https://store.steampowered.com/appreviews/<appid>?json=1` (deprecated in

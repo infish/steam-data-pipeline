@@ -1033,7 +1033,7 @@ The TrueNAS deployment runs:
 - an optional manual one-shot pipeline service
 
 The application image follows the `stable` tag, which moves to each
-published release (currently v1.2.3):
+published release (currently v1.2.4):
 
 ```text
 ghcr.io/infish/steam-data-pipeline:stable

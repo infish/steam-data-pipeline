@@ -126,6 +126,19 @@ class QualityIntegrationTests(IntegrationTestCase):
         self.assertEqual(volume["observed_value"], "9 rows (+200.0%)")
         self.assertIn("median (3)", volume["threshold"])
 
+        # The day is judged once: a later run today adds no second result.
+        later = self.run_job(
+            "players_hourly", now_fn=at(NOW + timedelta(hours=1))
+        )
+        self.assertNotIn("player_observations", self.results(later, "volume"))
+        (count,) = self.query(
+            "SELECT COUNT(*) AS n FROM data_quality_results"
+            " WHERE check_name = 'volume' AND target = 'player_observations'"
+            " AND details = %s",
+            (f"UTC day {yesterday.date().isoformat()}",)
+        )
+        self.assertEqual(count["n"], 1)
+
     def test_unchanged_steamspy_values_are_reported_as_frozen(self):
         self.run_job("catalog_daily", now_fn=at(NOW - timedelta(days=2)))
         self.run_job("catalog_daily", now_fn=at(NOW - timedelta(days=1)))
@@ -201,6 +214,20 @@ class QualityIntegrationTests(IntegrationTestCase):
         self.assertIn(
             "schema_drift failed on valve_top_concurrent",
             self.run_row(run_id)["warning_message"]
+        )
+
+    def test_one_incomplete_answer_among_complete_ones_passes(self):
+        # The run's newest Store answer lacks "success" (as an odd game's
+        # answer can); the run's other answers are complete, so the format
+        # has not changed.
+        run_id = self.run_catalog_and_refresh(
+            {"store_appdetails:427520": {"427520": {}}}, now_fn=at(NOW)
+        )
+
+        drift = self.results(run_id, "schema_drift")["store_appdetails"]
+        self.assertEqual(drift["status"], "pass")
+        self.assertEqual(
+            drift["details"], "1 newer answer(s) of the run incomplete"
         )
 
     def test_a_broken_invariant_fails_without_deleting_data(self):

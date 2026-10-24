@@ -204,6 +204,18 @@ summaries drop from about 5,040 to about 4,330 (0.79 + 0.21 ÷ 3 = 0.86,
 go in and out of quiet as their reviews come and go, so the share is
 measured after the release on TrueNAS, not assumed.
 
+**Measured on TrueNAS** (the first full days after v1.2.1, from
+`daily_pipeline_summary`: the refresh's rows minus its 31 Store details a
+run):
+
+| Day | `refresh_hourly` rows | Review summaries | Against daily for every game |
+| --- | ---: | ---: | ---: |
+| 2026-10-21 | 3,092 | about 2,350 | −53% |
+| 2026-10-22 | 3,694 | about 2,950 | −41% |
+
+Far more games are quiet than the 21% unchanged in one day's raw answers
+suggested: most of the catalog gets no new review for days at a time.
+
 **Why it is safe:** active games keep their daily series. A quiet game's
 newest review total can be up to three days old instead of one; its last
 two summaries said it was not changing, and the first changed total puts
@@ -238,3 +250,40 @@ summaries; the tag mart's query):
 through an index. The rebuilt marts are compared row for row with the old
 query in the same database, and the mart tests (keys, ranges, not empty)
 still pass.
+
+## 7. Review summaries alongside the Store work (v1.2.4)
+
+**Found:** `refresh_hourly` fetched its Store details and tags (about 31
+games, paced at 2.1 s) and then its review summaries (paced at 1.2 s), one
+after the other. Since v1.2.2 the summaries come from the Web API
+(GetAppReviews), a different server with its own limit, so nothing made
+them wait for the Store work.
+
+**Changed:** the summaries are fetched on a second thread while the main
+thread does the Store details and tags. The worker has its own HTTP
+session, its own raw-store connection and its own pacer; it loads nothing,
+and the main thread loads its summaries after joining it. If the Store
+step fails, the worker stops before its next request. Reprocessing replays
+on one thread, as before. The `review_summaries` step is timed on the
+worker and recorded under `job` next to `store_details_and_tags`, so in
+`run_steps` the two overlap.
+
+**Measured** (local stack, live APIs, the same slice: 31 Store details
+with tags and 120 review summaries; run 79 with the v1.2.3 image, run 78
+with this change):
+
+| | Before (run 79) | After (run 78) |
+| --- | --- | --- |
+| `store_details_and_tags` | 63.3 s, from 0 s | 63.3 s, from 0 s |
+| `review_summaries` | 143.1 s, from 63 s | 143.1 s, from 0 s |
+| Whole run | 206.8 s | 143.7 s (−31%) |
+| Waiting per pacer (Store / reviews) | 54.4 s / 110.7 s | 54.7 s / 111.0 s |
+| Requests | 182 | 182 |
+
+A run now takes as long as its longer part, the review summaries.
+
+**Why it is safe:** each API sees exactly the pace it saw before: the same
+pacers, the same intervals and the same waiting, only no longer in a queue
+behind the other. The worker shares no connection or session with the main
+thread, and every request is still counted once (`job` requests equal the
+run's raw rows, tested).
