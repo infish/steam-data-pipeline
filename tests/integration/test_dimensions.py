@@ -213,6 +213,22 @@ class DimensionsIntegrationTests(IntegrationTestCase):
         self.assertEqual(second_set, [730, 427520])
         self.assertEqual(self.refreshed(third), [570, 620])
 
+    @patch.dict(os.environ, {"STORE_DETAILS_PER_RUN": "1"})
+    def test_a_game_the_store_does_not_sell_waits_for_its_turn(self):
+        # One game a day; 427520 is delisted on its first refresh (day 4).
+        delisted = {"store_appdetails:427520": {"427520": {"success": False}}}
+        picked = [
+            self.refreshed(self.run_catalog_and_refresh(
+                delisted, now_fn=at(day)
+            ))
+            for day in (1, 2, 3, 4, 5)
+        ]
+
+        self.assertEqual(picked[:4], [[570], [620], [730], [427520]])
+        # Day 5 takes the oldest refresh (570), not the delisted game,
+        # which never gets a Store name (it headed the list every run).
+        self.assertEqual(picked[4], [570])
+
     @patch.dict(os.environ, {"TAG_REFRESH_DAYS": "0"})
     def test_a_failed_refresh_keeps_previous_details(self):
         # Tags are fetched with every refresh here (TAG_REFRESH_DAYS 0), so

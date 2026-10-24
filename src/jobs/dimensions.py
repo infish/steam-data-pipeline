@@ -159,8 +159,10 @@ def select_stalest(cursor, limit):
     1. games added from Valve's charts or tracked that have no details yet,
        so a new game gets its real name the next day (ADR 5);
     2. other games without details;
-    3. games whose name does not come from the Store yet (details fetched
-       before v1.2.0 stored names);
+    3. games the Store sells whose name does not come from the Store yet
+       (details fetched before v1.2.0 stored names). A game the Store does
+       not sell never gets a Store name, so it waits for its turn instead:
+       before v1.3.0 every such game was refreshed every hour;
     4. the oldest refresh; ties by appid.
     """
     if limit == 0:
@@ -176,7 +178,8 @@ def select_stalest(cursor, limit):
         ORDER BY (details.appid IS NULL
                   AND games.catalog_source <> 'steamspy') DESC,
                  details.details_fetched_at IS NOT NULL,
-                 games.name_source = 'store',
+                 NOT (details.store_available
+                      AND games.name_source <> 'store'),
                  details.details_fetched_at,
                  games.appid
         LIMIT %s
