@@ -1,22 +1,54 @@
 -- mart_review_trends
--- Grain: one row per tracked game per UTC day with a review observation.
+-- Grain: one row per game per UTC day with a review observation.
 -- Sources: review_observations (daily review summary), review_rollups (daily
 -- histogram buckets), games.
--- Refresh: rebuilt after every job.
+-- Refresh: after every job, incrementally (since v1.3.0): the days from two
+-- days before the newest observation, plus every day of the games with
+-- histogram rollups (the tracked apps), whose 30-day share can change for
+-- earlier days. Older rows of other games cannot change: a new observation
+-- always lands on the current day. Reprocessing (@mart_full_rebuild = 1)
+-- and an empty mart rebuild everything. A full rebuild of the whole history
+-- after each of about 50 runs a day grew without bound.
 -- new_reviews is the change in total reviews since the game's previous
 -- observation (it can be negative when Steam reclassifies reviews). The
 -- 30-day positive share comes from the histogram's daily buckets for the 30
 -- days ending on the observation date; sentiment drift is that share minus
 -- the lifetime share from the review summary. The two endpoints count
 -- different review sets (docs/sources.md), so compare drift, not counts.
-DELETE FROM mart_review_trends;
+SET @review_trends_from = (
+    SELECT IF(
+        @mart_full_rebuild = 1
+            OR NOT EXISTS (SELECT 1 FROM mart_review_trends),
+        DATE('1000-01-01'),
+        DATE(MAX(collected_at)) - INTERVAL 2 DAY
+    )
+    FROM review_observations
+);
+
+DELETE FROM mart_review_trends
+WHERE observation_date >= @review_trends_from;
+
+DELETE FROM mart_review_trends
+WHERE appid IN (SELECT appid FROM review_rollups);
 
 INSERT INTO mart_review_trends (
     appid, observation_date, name, total_reviews, new_reviews,
     positive_share_lifetime, positive_share_30d, reviews_30d,
     sentiment_drift_points, review_score_desc
 )
-WITH latest_per_day AS (
+WITH rebuilt AS (
+    SELECT appid, collected_at, run_id, total_reviews,
+           review_score_percent, review_score_desc
+    FROM review_observations
+    WHERE collected_at >= @review_trends_from
+    UNION ALL
+    SELECT appid, collected_at, run_id, total_reviews,
+           review_score_percent, review_score_desc
+    FROM review_observations
+    WHERE collected_at < @review_trends_from
+      AND appid IN (SELECT appid FROM review_rollups)
+),
+latest_per_day AS (
     SELECT
         appid,
         DATE(collected_at) AS observation_date,
@@ -27,17 +59,7 @@ WITH latest_per_day AS (
             PARTITION BY appid, DATE(collected_at)
             ORDER BY collected_at DESC, run_id DESC
         ) AS position
-    FROM review_observations
-),
-with_previous AS (
-    SELECT
-        latest_per_day.*,
-        LAG(total_reviews) OVER (
-            PARTITION BY appid
-            ORDER BY observation_date
-        ) AS previous_total
-    FROM latest_per_day
-    WHERE position = 1
+    FROM rebuilt
 )
 SELECT
     observed.appid,
@@ -45,14 +67,24 @@ SELECT
     games.name,
     observed.total_reviews,
     CAST(observed.total_reviews AS SIGNED)
-        - CAST(observed.previous_total AS SIGNED),
+        - CAST(previous.total_reviews AS SIGNED),
     observed.review_score_percent,
     last_30_days.positive_share,
     last_30_days.reviews,
     ROUND(last_30_days.positive_share - observed.review_score_percent, 2),
     observed.review_score_desc
-FROM with_previous AS observed
+FROM latest_per_day AS observed
 JOIN games ON games.appid = observed.appid
+-- The game's latest observation on an earlier day, through the
+-- (appid, collected_at) index.
+LEFT JOIN LATERAL (
+    SELECT earlier.total_reviews
+    FROM review_observations AS earlier
+    WHERE earlier.appid = observed.appid
+      AND earlier.collected_at < observed.observation_date
+    ORDER BY earlier.collected_at DESC, earlier.run_id DESC
+    LIMIT 1
+) AS previous ON TRUE
 LEFT JOIN LATERAL (
     SELECT
         ROUND(
@@ -68,4 +100,5 @@ LEFT JOIN LATERAL (
       AND review_rollups.period_start
           BETWEEN observed.observation_date - INTERVAL 29 DAY
               AND observed.observation_date
-) AS last_30_days ON TRUE;
+) AS last_30_days ON TRUE
+WHERE observed.position = 1;

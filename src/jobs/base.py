@@ -223,7 +223,10 @@ def set_run_warnings(cursor, run_id, warnings):
 def refresh_marts(connection, cursor, ctx):
     """Rebuild the marts after a committed load; problems become warnings."""
     try:
-        mart_warnings, results = build_and_test_marts(connection, ctx.step)
+        # Reprocessing can change any past day: rebuild everything.
+        mart_warnings, results = build_and_test_marts(
+            connection, ctx.step, full=ctx.replay
+        )
     except Exception as error:
         logging.exception("Mart build failed")
         mart_warnings, results = [f"Mart build failed: {error}"], []

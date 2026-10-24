@@ -17,11 +17,21 @@ A failed test adds a run warning, and every result is stored in
 All marts refresh **after every job**, so the hourly players job keeps them
 at most an hour old. Each transform file starts with the same notes as below.
 
+`mart_review_trends` is the one mart over ever-growing history (every game's
+daily review summary, with no retention), so since v1.3.0 it is rebuilt
+incrementally: the days from two days before the newest observation, plus
+every day of the tracked apps, whose 30-day histogram share can change for
+earlier days. Older rows of other games cannot change, because a new
+observation always lands on the current day. Reprocessing sets
+`@mart_full_rebuild` and rebuilds it completely, as does an empty mart. An
+integration test checks that six days of incremental builds equal a full
+rebuild row for row.
+
 | Mart | Grain | Sources |
 | --- | --- | --- |
 | `mart_player_trends` | game × UTC day | `player_daily`, `games` |
 | `mart_player_peak_hours` | game | `player_observations`, `games` |
-| `mart_review_trends` | tracked game × UTC day | `review_observations`, `review_rollups`, `games` |
+| `mart_review_trends` | game × UTC day | `review_observations`, `review_rollups`, `games` |
 | `mart_price_status` | game × Store country | `game_price_summary` (over `game_price_history`), `games` |
 | `mart_genre_summary` | Store genre | `game_genres`, `genres`, `game_details`, `current_game_metrics`, `player_observations`, `games` |
 | `mart_tag_summary` | SteamSpy tag | `game_tags`, `tags`, `game_details`, `current_game_metrics`, `player_observations`, `games` |
@@ -52,11 +62,12 @@ to the hourly retention window (`PLAYER_HOURLY_RETENTION_DAYS`).
 
 ## Reviews
 
-**`mart_review_trends`**: per tracked game and UTC day, total reviews, new
+**`mart_review_trends`**: per game and UTC day, total reviews, new
 reviews since the previous observation (negative when Steam reclassifies
-reviews), Steam's rating label, the lifetime positive share (review summary),
-the positive share and review count of the 30 days ending that day (from the
-review histogram's daily buckets), and **sentiment drift**: the 30-day share
+reviews), Steam's rating label and the lifetime positive share (review
+summary). For the tracked apps, which have the review histogram, also the
+positive share and review count of the 30 days ending that day (from its
+daily buckets), and **sentiment drift**: the 30-day share
 minus the lifetime share. The two endpoints count different review sets
 (`docs/sources.md`), so read drift, not count differences.
 

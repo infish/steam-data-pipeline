@@ -15,3 +15,7 @@ ALTER TABLE raw_api_responses
 -- Review rotation: the recent summaries of every game.
 ALTER TABLE review_observations
     ADD INDEX idx_review_observations_collected (collected_at);
+
+-- mart_review_trends is rebuilt incrementally from v1.3.0: the last days.
+ALTER TABLE mart_review_trends
+    ADD INDEX idx_mart_review_trends_date (observation_date);
