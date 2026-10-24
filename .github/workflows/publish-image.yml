@@ -17,6 +17,14 @@ jobs:
 
   publish:
     needs: tests
+    # One publish at a time, in the order they started: a release tagged
+    # minutes after another cannot have its `stable` move overtaken by the
+    # older release finishing later. (GitHub keeps one waiting run per
+    # group; a third run while one waits replaces it, so tag releases a few
+    # minutes apart.)
+    concurrency:
+      group: publish-image
+      cancel-in-progress: false
     runs-on: ubuntu-latest
 
     permissions:
