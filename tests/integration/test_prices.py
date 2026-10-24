@@ -210,7 +210,9 @@ class PriceHistoryIntegrationTests(IntegrationTestCase):
                 now_fn=at(3)
             )
 
-        self.assertEqual(self.query("SELECT * FROM game_price_history"), before)
+        self.assertEqual(
+            self.query("SELECT * FROM game_price_history"), before
+        )
         self.assertIn("Store price check failed for 1 batch(es)",
                       self.run_row(null_run)["warning_message"])
         self.assertIn("left out 3 game(s), prices unchanged",

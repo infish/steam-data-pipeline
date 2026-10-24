@@ -2,8 +2,9 @@
 -- Grain: one row per game per UTC day with a review observation.
 -- Sources: review_observations (daily review summary), review_rollups (daily
 -- histogram buckets), games.
--- Refresh: after every job, incrementally (since v1.3.0): the days from two
--- days before the newest observation, plus every day of the games with
+-- Refresh: after every job, incrementally (since v1.3.0): the newest day of
+-- observations and the day before (a build just after midnight), plus every
+-- day of the games with
 -- histogram rollups (the tracked apps), whose 30-day share can change for
 -- earlier days. Older rows of other games cannot change: a new observation
 -- always lands on the current day. Reprocessing (@mart_full_rebuild = 1)
@@ -20,7 +21,7 @@ SET @review_trends_from = (
         @mart_full_rebuild = 1
             OR NOT EXISTS (SELECT 1 FROM mart_review_trends),
         DATE('1000-01-01'),
-        DATE(MAX(collected_at)) - INTERVAL 2 DAY
+        DATE(MAX(collected_at)) - INTERVAL 1 DAY
     )
     FROM review_observations
 );
@@ -60,6 +61,16 @@ latest_per_day AS (
             ORDER BY collected_at DESC, run_id DESC
         ) AS position
     FROM rebuilt
+),
+with_previous AS (
+    SELECT
+        latest_per_day.*,
+        LAG(total_reviews) OVER (
+            PARTITION BY appid
+            ORDER BY observation_date
+        ) AS previous_in_window
+    FROM latest_per_day
+    WHERE position = 1
 )
 SELECT
     observed.appid,
@@ -67,24 +78,26 @@ SELECT
     games.name,
     observed.total_reviews,
     CAST(observed.total_reviews AS SIGNED)
-        - CAST(previous.total_reviews AS SIGNED),
+        - CAST(COALESCE(
+            observed.previous_in_window,
+            -- A game's first row in the window: its latest observation on
+            -- an earlier day, through the (appid, collected_at) index.
+            (
+                SELECT earlier.total_reviews
+                FROM review_observations AS earlier
+                WHERE earlier.appid = observed.appid
+                  AND earlier.collected_at < observed.observation_date
+                ORDER BY earlier.collected_at DESC, earlier.run_id DESC
+                LIMIT 1
+            )
+        ) AS SIGNED),
     observed.review_score_percent,
     last_30_days.positive_share,
     last_30_days.reviews,
     ROUND(last_30_days.positive_share - observed.review_score_percent, 2),
     observed.review_score_desc
-FROM latest_per_day AS observed
+FROM with_previous AS observed
 JOIN games ON games.appid = observed.appid
--- The game's latest observation on an earlier day, through the
--- (appid, collected_at) index.
-LEFT JOIN LATERAL (
-    SELECT earlier.total_reviews
-    FROM review_observations AS earlier
-    WHERE earlier.appid = observed.appid
-      AND earlier.collected_at < observed.observation_date
-    ORDER BY earlier.collected_at DESC, earlier.run_id DESC
-    LIMIT 1
-) AS previous ON TRUE
 LEFT JOIN LATERAL (
     SELECT
         ROUND(
@@ -100,5 +113,4 @@ LEFT JOIN LATERAL (
       AND review_rollups.period_start
           BETWEEN observed.observation_date - INTERVAL 29 DAY
               AND observed.observation_date
-) AS last_30_days ON TRUE
-WHERE observed.position = 1;
+) AS last_30_days ON TRUE;

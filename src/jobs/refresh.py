@@ -141,7 +141,9 @@ def select_review_rotation(cursor, exclude, limit, now=None,
         ),
         attempts AS (
             SELECT raw.run_id, CAST(COALESCE(
-                       JSON_UNQUOTE(JSON_EXTRACT(raw.request_params, '$.appid')),
+                       JSON_UNQUOTE(
+                           JSON_EXTRACT(raw.request_params, '$.appid')
+                       ),
                        SUBSTRING_INDEX(raw.endpoint, '/', -1)
                    ) AS UNSIGNED) AS appid
             FROM raw_api_responses AS raw
