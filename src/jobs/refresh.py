@@ -110,7 +110,9 @@ def select_review_rotation(cursor, exclude, limit, now=None,
     )
     # Failed attempts within the last active_days (matched to their run's
     # stored summaries; the app ID is a request parameter of GetAppReviews
-    # or the end of the appreviews endpoint used before v1.2.2).
+    # or the end of the appreviews endpoint used before v1.2.2). Only runs
+    # that succeeded count: a run that failed rolled its summaries back, and
+    # its games are caught up by the next runs (ADR 6).
     attempted_since = (
         datetime(9999, 1, 1) if now is None
         else due_by - timedelta(minutes=active_minutes)
@@ -138,12 +140,15 @@ def select_review_rotation(cursor, exclude, limit, now=None,
             WHERE last.position = 1
         ),
         attempts AS (
-            SELECT run_id, CAST(COALESCE(
-                       JSON_UNQUOTE(JSON_EXTRACT(request_params, '$.appid')),
-                       SUBSTRING_INDEX(endpoint, '/', -1)
+            SELECT raw.run_id, CAST(COALESCE(
+                       JSON_UNQUOTE(JSON_EXTRACT(raw.request_params, '$.appid')),
+                       SUBSTRING_INDEX(raw.endpoint, '/', -1)
                    ) AS UNSIGNED) AS appid
-            FROM raw_api_responses
-            WHERE source = 'steam_review_summary' AND fetched_at >= %s
+            FROM raw_api_responses AS raw
+            JOIN pipeline_runs AS runs ON runs.run_id = raw.run_id
+            WHERE raw.source = 'steam_review_summary'
+              AND raw.fetched_at >= %s
+              AND runs.status = 'SUCCESS'
         ),
         failed AS (
             SELECT DISTINCT attempts.appid
