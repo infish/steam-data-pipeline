@@ -142,6 +142,24 @@ class RunStepsIntegrationTests(IntegrationTestCase):
         )
         self.assertEqual(raw["n"], 0)
 
+    def test_reviews_daily_stops_every_request_loop_at_its_limit(self):
+        self.run_job("catalog_daily")
+        out_of_time = replace(JOBS["reviews_daily"], time_limit_minutes=0)
+
+        with patch.dict(JOBS, {"reviews_daily": out_of_time}):
+            run_id = self.run_job("reviews_daily")
+
+        warning = self.run_row(run_id)["warning_message"]
+
+        for what in ("review summaries", "review histograms", "news"):
+            self.assertIn(f"Stopped {what} early (run time limit)", warning)
+
+        (raw,) = self.query(
+            "SELECT COUNT(*) AS n FROM raw_api_responses WHERE run_id = %s",
+            (run_id,)
+        )
+        self.assertEqual(raw["n"], 0)
+
     def test_a_failed_run_stores_its_steps_up_to_the_failure(self):
         with patch(
             "jobs.catalog.load_company_links",
