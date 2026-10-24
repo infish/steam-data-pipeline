@@ -37,10 +37,6 @@ JOB_LETTERS = {
 GLOW_ALPHA = (0.45, 0.18)  # inner and outer glow, tuned for the dark page
 FAILED_COLOR = DARK.fall
 
-# Bubbles show running jobs and those that finished this long ago, so a
-# run shorter than the 5-second check (players_hourly takes about a second)
-# still appears, as a short fill and a check mark.
-RECENT_SECONDS = 20
 CHECK_SECONDS = 3
 DEFAULT_EXPECTED_SECONDS = 60
 
@@ -81,9 +77,9 @@ MOTION_CSS = """
   35% { filter: drop-shadow(0 0 9px var(--g)) drop-shadow(0 0 24px var(--g)); }
   100% { filter: drop-shadow(0 0 3px var(--g)) drop-shadow(0 0 8px var(--g2)); }
 }
-@keyframes m-vanish {
-  30% { transform: scale(1.08); opacity: 1; }
-  100% { transform: scale(0); opacity: 0; }
+@keyframes m-fill-up {
+  from { clip-path: inset(100% 0 0 0); }
+  to { clip-path: inset(0 0 0 0); }
 }
 @keyframes m-ripple {
   from { transform: scale(1); opacity: .9; stroke-width: 2.5; }
@@ -101,27 +97,31 @@ MOTION_CSS = """
   background: var(--c); margin-right: .45rem; vertical-align: .05rem;
 }
 
-/* Job bubbles: a fixed layer under Streamlit's top bar, right side. */
+/* The job dock: one bubble per job, always at the top right, fixed under
+   Streamlit's top bar, above the page. */
 #m-bubbles {
   position: fixed; top: 4.1rem; right: 1.1rem; z-index: 1000;
-  display: flex; flex-direction: row-reverse; align-items: center;
-  pointer-events: none;
+  display: flex; align-items: center; gap: 4px; pointer-events: none;
 }
 #m-bubbles .m-slot {
-  width: 54px; height: 50px; display: flex; justify-content: center;
-  align-items: center; transition: width .5s var(--m-ease);
+  width: 50px; height: 50px; display: flex; justify-content: center;
+  align-items: center;
 }
-#m-bubbles .m-slot.m-gone { width: 0; }
 #m-bubbles .m-bub {
   width: 42px; height: 42px; pointer-events: auto; cursor: default;
   transform-origin: 50% 50%; animation: m-spring .7s var(--m-spring) both;
 }
 #m-bubbles .m-bub svg { overflow: visible; display: block; }
 #m-bubbles .m-bub.m-done .m-glow { animation: m-flare .9s ease-out forwards; }
-#m-bubbles .m-bub.m-out { animation: m-vanish .5s cubic-bezier(.55, 0, .75, 0) forwards; }
 #m-bubbles .m-ripple {
   transform-box: fill-box; transform-origin: center;
   animation: m-ripple 1s ease-out forwards;
+}
+
+/* Charts fill from the bottom up when they appear: only the plot area,
+   so axes, labels and the legend are there at once. */
+[data-testid="stPlotlyChart"] .overplot {
+  animation: m-fill-up 1.2s var(--m-ease) both;
 }
 
 /* Liquid gauge tiles, matching st.metric(border=True). */
@@ -143,9 +143,8 @@ MOTION_CSS = """
 
 @media (prefers-reduced-motion: reduce) {
   .m-wave, .m-wave2, .m-live,
-  #m-bubbles .m-bub, #m-bubbles .m-bub.m-out, #m-bubbles .m-ripple,
-  #m-bubbles .m-bub.m-done .m-glow { animation: none; }
-  #m-bubbles .m-slot { transition: none; }
+  #m-bubbles .m-bub, #m-bubbles .m-ripple, #m-bubbles .m-bub.m-done .m-glow,
+  [data-testid="stPlotlyChart"] .overplot { animation: none; }
 }
 """
 
@@ -258,49 +257,70 @@ def expected_seconds(history):
     return expected
 
 
-def bubble_runs(runs, expected, now):
-    """The data the bubbles component draws: one entry per running or
-    recently finished run. `now` is naive UTC, like the stored times."""
+def job_states(latest, expected, now):
+    """What the dock draws: one entry per current job, in a fixed order,
+    from each job's latest run. `now` is naive UTC, like the stored times.
+    """
+    by_job = {run.job_name: run for run in latest.itertuples()}
     entries = []
 
-    for run in runs.itertuples():
-        finished = None if pd.isna(run.finished_at) else run.finished_at
-        end = finished or now
-        entries.append({
-            "id": int(run.run_id),
-            "job": run.job_name,
-            "letter": JOB_LETTERS.get(run.job_name, run.job_name[:1].upper()),
-            "style": job_style(run.job_name),
-            "color": job_color(run.job_name),
-            "status": run.status,
-            "elapsed": max(0.0, (end - run.started_at).total_seconds()),
-            "expected": expected.get(
-                run.job_name, DEFAULT_EXPECTED_SECONDS
-            ),
-        })
+    for job_name, letter in JOB_LETTERS.items():
+        entry = {
+            "job": job_name,
+            "letter": letter,
+            "style": job_style(job_name),
+            "expected": expected.get(job_name, DEFAULT_EXPECTED_SECONDS),
+            "id": None,
+            "status": None,
+            "elapsed": 0.0,
+            "since": None,
+        }
+        run = by_job.get(job_name)
+
+        if run is not None:
+            finished = None if pd.isna(run.finished_at) else run.finished_at
+            entry.update(
+                id=int(run.run_id),
+                status=run.status,
+                elapsed=max(
+                    0.0, ((finished or now) - run.started_at).total_seconds()
+                ),
+                since=(
+                    None if finished is None
+                    else max(0.0, (now - finished).total_seconds())
+                ),
+            )
+
+        entries.append(entry)
 
     return entries
 
 
 @st.cache_data(ttl=CHECK_SECONDS, show_spinner=False)
-def _active_runs():
-    # Shared by every visitor: at most one small query per check.
+def _latest_runs():
+    # Each job's latest run; shared by every visitor, so at most one small
+    # query per check however many people watch.
+    jobs = list(JOB_LETTERS)
     return read_sql(
-        """
-        SELECT run_id, job_name, status, started_at, finished_at
-        FROM pipeline_runs
-        WHERE status = 'RUNNING'
-           OR finished_at >= UTC_TIMESTAMP() - INTERVAL %s SECOND
-        ORDER BY run_id
+        f"""
+        SELECT runs.run_id, runs.job_name, runs.status, runs.started_at,
+               runs.finished_at
+        FROM pipeline_runs AS runs
+        JOIN (
+            SELECT MAX(run_id) AS run_id
+            FROM pipeline_runs
+            WHERE job_name IN ({", ".join(["%s"] * len(jobs))})
+            GROUP BY job_name
+        ) AS latest ON latest.run_id = runs.run_id
         """,
-        (RECENT_SECONDS,)
+        tuple(jobs)
     )
 
 
 def running_jobs():
-    """Jobs with a run in progress now (the bubbles' shared 3-second
-    query), for the sidebar's breathing dots."""
-    runs = _active_runs()
+    """Jobs with a run in progress now (the dock's shared 3-second query),
+    for the sidebar's breathing dots."""
+    runs = _latest_runs()
     return set(runs.loc[runs["status"] == "RUNNING", "job_name"])
 
 
@@ -338,67 +358,104 @@ function wavePath(amp) {
   return d + " L120 60 L0 60 Z";
 }
 
+function ago(seconds) {
+  if (seconds < 90) return "just now";
+  if (seconds < 5400) return Math.round(seconds / 60) + " min ago";
+  if (seconds < 129600) return Math.round(seconds / 3600) + " h ago";
+  return Math.round(seconds / 86400) + " days ago";
+}
+
+// The dock: one bubble per job, always shown at the top right. A bubble is
+// idle (empty), running (liquid rises toward the expected end, the glow
+// breathes), finishing (fills, ripples, shows a check or a cross) and then
+// draining back to idle.
 function createMotion() {
   const layer = document.createElement("div");
   layer.id = "m-bubbles";
   layer.setAttribute("aria-live", "polite");
   document.body.appendChild(layer);
   const bubbles = new Map();
-  const finished = new Set();
 
-  function make(run) {
-    const id = "mb" + run.id;
+  function make(state, index) {
+    const id = "mb-" + state.job;
     const slot = document.createElement("div");
     slot.className = "m-slot";
     slot.innerHTML =
-      '<div class="m-bub" style="' + run.style + '">' +
+      '<div class="m-bub" style="' + state.style + ';animation-delay:' +
+      (index * 90) + 'ms">' +
       '<svg width="42" height="42" viewBox="0 0 44 44">' +
       '<defs><clipPath id="' + id + 'c"><circle cx="22" cy="22" r="' + R + '"/></clipPath>' +
       '<clipPath id="' + id + 't"><rect class="m-tclip" x="0" y="50" width="44" height="44"/></clipPath></defs>' +
-      '<g class="m-glow m-live">' +
+      '<g class="m-glow">' +
       '<circle cx="22" cy="22" r="' + R + '" fill="#141414" stroke="var(--c)" stroke-opacity=".3" stroke-width="2"/>' +
       '<g clip-path="url(#' + id + 'c)"><g class="m-lv" transform="translate(0,44)">' +
       '<path class="m-wave2" d="' + wavePath(2.2) + '" fill="var(--c)" fill-opacity=".45"/>' +
       '<path class="m-wave" d="' + wavePath(1.6) + '" fill="var(--c)"/></g></g>' +
-      '<circle cx="22" cy="22" r="' + R + '" fill="none" stroke="var(--c)" stroke-width="2"/></g>' +
-      '<text class="m-l1" x="22" y="27" text-anchor="middle" font-size="14" font-weight="600" fill="var(--c)">' + run.letter + '</text>' +
-      '<text class="m-l2" x="22" y="27" text-anchor="middle" font-size="14" font-weight="600" fill="#fff" clip-path="url(#' + id + 't)">' + run.letter + '</text>' +
+      '<circle class="m-rim" cx="22" cy="22" r="' + R + '" fill="none" stroke="var(--c)" stroke-width="2"/></g>' +
+      '<text class="m-l1" x="22" y="27" text-anchor="middle" font-size="14" font-weight="600" fill="var(--c)">' + state.letter + '</text>' +
+      '<text class="m-l2" x="22" y="27" text-anchor="middle" font-size="14" font-weight="600" fill="#fff" clip-path="url(#' + id + 't)">' + state.letter + '</text>' +
+      '<g class="m-pip"><circle cx="37" cy="7" r="5.5" fill="__FAILED__"/>' +
+      '<text x="37" y="10" text-anchor="middle" font-size="8.5" font-weight="700" fill="#141414">!</text></g>' +
       '</svg></div>';
     layer.appendChild(slot);
     return {
-      slot, bub: slot.firstChild, run,
+      slot, bub: slot.firstChild, state, mode: "idle", runId: state.id,
       lv: slot.querySelector(".m-lv"), clip: slot.querySelector(".m-tclip"),
-      t0: performance.now() - run.elapsed * 1000, shown: 0, done: false,
+      glow: slot.querySelector(".m-glow"), pip: slot.querySelector(".m-pip"),
+      l1: slot.querySelector(".m-l1"), l2: slot.querySelector(".m-l2"),
+      t0: 0, shown: 0, marked: false, holdUntil: 0, failed: false,
+      updatedAt: performance.now(),
     };
   }
 
-  function finish(b) {
-    b.done = true;
-    const failed = b.run.status === "FAILED";
-    const svg = b.bub.querySelector("svg");
-    const mark = failed ? "✕" : "✓";
-    svg.querySelector(".m-l1").textContent = "";
-    svg.querySelector(".m-l2").textContent = mark;
-    svg.querySelector(".m-glow").classList.remove("m-live");
-    svg.insertAdjacentHTML("beforeend",
-      '<circle class="m-ripple" cx="22" cy="22" r="' + R + '" fill="none" stroke="' +
-      (failed ? "__FAILED__" : "var(--c)") + '"/>');
-    b.bub.classList.add("m-done");
-    b.bub.title = b.run.job + (failed ? ": failed" : ": finished");
-    setTimeout(() => {
-      b.bub.classList.add("m-out");
-      setTimeout(() => {
-        b.slot.classList.add("m-gone");
-        setTimeout(() => { b.slot.remove(); bubbles.delete(b.run.id); }, 520);
-      }, 480);
-    }, DONE_HOLD_MS);
-    finished.add(b.run.id);
+  function label(b, text) { b.l1.textContent = text; b.l2.textContent = text; }
+
+  function startRunning(b, s) {
+    b.mode = "running"; b.runId = s.id; b.marked = false;
+    b.t0 = performance.now() - s.elapsed * 1000;
+    b.glow.classList.add("m-live");
+    b.bub.classList.remove("m-done");
+    label(b, s.letter);
   }
 
-  // Animation frames pause in a hidden tab; a slower timer then keeps the
-  // state moving, so finished runs still leave instead of piling up.
+  function startFinishing(b, s) {
+    b.mode = "finishing"; b.runId = s.id; b.marked = false;
+    b.failed = s.status === "FAILED";
+  }
+
+  function mark(b) {
+    b.marked = true;
+    b.holdUntil = performance.now() + DONE_HOLD_MS;
+    b.l1.textContent = "";
+    b.l2.textContent = b.failed ? "✕" : "✓";
+    b.glow.classList.remove("m-live");
+    b.bub.classList.add("m-done");
+    const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    ring.setAttribute("class", "m-ripple");
+    ring.setAttribute("cx", "22"); ring.setAttribute("cy", "22");
+    ring.setAttribute("r", String(R)); ring.setAttribute("fill", "none");
+    ring.setAttribute("stroke", b.failed ? "__FAILED__" : "var(--c)");
+    b.bub.querySelector("svg").appendChild(ring);
+    setTimeout(() => ring.remove(), 1100);
+  }
+
+  function title(b) {
+    const s = b.state;
+    if (b.mode === "running") {
+      const sec = (performance.now() - b.t0) / 1000;
+      const left = Math.max(0, Math.round(s.expected - sec));
+      return s.job + ": running " + Math.round(sec) + " s, " +
+        (sec > s.expected ? "taking longer than usual" : "about " + left + " s left");
+    }
+    if (s.since === null || s.since === undefined) return s.job + ": no runs yet";
+    const since = s.since + (performance.now() - b.updatedAt) / 1000;
+    return s.job + ": last run " + (s.status === "FAILED" ? "failed" : "finished") +
+      " " + ago(since);
+  }
+
   // The level eases toward its target at the same speed at any tick rate
-  // (a time constant, not a fraction per frame).
+  // (a time constant, not a fraction per frame). Animation frames pause in
+  // a hidden tab; a slower timer then keeps the states moving.
   const EASE_MS = 270;
   let lastTick = performance.now();
   function tick() {
@@ -406,38 +463,47 @@ function createMotion() {
     const ease = 1 - Math.exp(-(now - lastTick) / EASE_MS);
     lastTick = now;
     for (const b of bubbles.values()) {
-      if (b.done) continue;
-      const sec = (now - b.t0) / 1000;
-      const running = b.run.status === "RUNNING";
-      const target = running ? Math.min(sec / b.run.expected, 0.93) : 1;
+      let target = 0;
+      if (b.mode === "running")
+        target = Math.min((now - b.t0) / 1000 / b.state.expected, 0.93);
+      else if (b.mode === "finishing") target = 1;
       b.shown = reduced() ? target : b.shown + (target - b.shown) * ease;
       const y = 40 - b.shown * 44;
       b.lv.setAttribute("transform", "translate(0," + y.toFixed(2) + ")");
       b.clip.setAttribute("y", (y + 6).toFixed(2));
-      const left = Math.max(0, Math.round(b.run.expected - sec));
-      b.bub.title = b.run.job + ": running " + Math.round(sec) + " s, " +
-        (running && sec > b.run.expected ? "taking longer than usual"
-                                         : "about " + left + " s left");
-      if (!running && b.shown > 0.985) finish(b);
+      if (b.mode === "finishing" && !b.marked && b.shown > 0.985) mark(b);
+      if (b.mode === "finishing" && b.marked && now > b.holdUntil) {
+        b.mode = "draining";
+        b.bub.classList.remove("m-done");
+        label(b, b.state.letter);
+      }
+      if (b.mode === "draining" && b.shown < 0.01) b.mode = "idle";
+      b.pip.style.display =
+        b.mode === "idle" && b.state.status === "FAILED" ? "" : "none";
+      b.bub.title = title(b);
     }
   }
   function frame() { tick(); requestAnimationFrame(frame); }
   requestAnimationFrame(frame);
   setInterval(() => { if (performance.now() - lastTick > 400) tick(); }, 250);
 
-  function update(runs) {
-    const seen = new Set();
-    for (const run of runs) {
-      seen.add(run.id);
-      const known = bubbles.get(run.id);
-      if (known) { known.run = Object.assign(known.run, run); continue; }
-      if (finished.has(run.id)) continue;
-      bubbles.set(run.id, make(run));
-    }
-    // A run that left the list without a final status here finished.
-    for (const b of bubbles.values())
-      if (!seen.has(b.run.id) && !b.done && b.run.status === "RUNNING")
-        b.run.status = "SUCCESS";
+  function update(states) {
+    states.forEach((s, index) => {
+      let b = bubbles.get(s.job);
+      if (!b) {
+        b = make(s, index);
+        bubbles.set(s.job, b);
+        if (s.status === "RUNNING") startRunning(b, s);
+      } else if (s.status === "RUNNING") {
+        if (b.mode !== "running" || b.runId !== s.id) startRunning(b, s);
+      } else if (s.id !== null && (b.mode === "running" || s.id !== b.runId)) {
+        // The run we watched ended, or one ran between two checks (the
+        // players job takes about a second): show its finish.
+        startFinishing(b, s);
+      }
+      b.state = s;
+      b.updatedAt = performance.now();
+    });
   }
 
   // Count-up: the dashboard's number tiles roll up to a new value.
@@ -511,16 +577,16 @@ _bubbles_component = st.components.v2.component(
 
 @st.fragment(run_every=CHECK_SECONDS)
 def job_bubbles():
-    """Check for running jobs every few seconds and hand them to the
-    browser, which animates the bubbles (top right of every page)."""
+    """Check the jobs every few seconds and hand their states to the
+    browser, which animates the dock (top right of every page)."""
     try:
-        runs = _active_runs()
-        expected = expected_seconds(_run_history()) if not runs.empty else {}
+        latest = _latest_runs()
+        expected = expected_seconds(_run_history())
     except DashboardBusy:
         return
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     _bubbles_component(
-        data={"runs": bubble_runs(runs, expected, now)},
+        data={"runs": job_states(latest, expected, now)},
         key="job_bubbles",
     )

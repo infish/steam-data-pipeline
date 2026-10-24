@@ -360,13 +360,17 @@ palette.
 Motion comes from one small kit (`src/dashboard_motion.py`), and it always
 means something:
 
-- **Job bubbles:** while a job runs, a bubble in its colour springs in at the
-  top right of every page and fills with gently moving liquid as the run
-  progresses (time so far against the median of its last 10 runs; it holds
-  just below full when a run takes longer than usual). When the run ends it
-  fills, ripples, shows a check mark (a cross if it failed) and shrinks away.
-  Several runs show side by side. The dashboard checks every 3 seconds with
-  one small query shared by all visitors.
+- **Job dock:** one bubble per job (C, P, R, V) sits at the top right of
+  every page at all times. While a job runs, its bubble fills with gently
+  moving liquid and its glow breathes (time so far against the median of its
+  last 10 runs; it holds just below full when a run takes longer than
+  usual). When the run ends it fills, ripples, shows a check mark (a cross if
+  it failed) and drains back to idle; a red mark stays while the job's last
+  run failed. Hovering shows the job, how long it has run or when it last
+  ran. The dashboard checks every 3 seconds with one small query shared by
+  all visitors.
+- **Charts** fill from the bottom up when they appear: the bars and lines
+  rise into place, while axes and labels are there at once.
 - **Sidebar:** each job's dot breathes while it runs.
 - **Gauges:** the Store-peak tile fills to the share of its limit used, and
   each source on the Freshness tab drains as its data ages and refills on

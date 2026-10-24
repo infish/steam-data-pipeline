@@ -10,9 +10,9 @@ import dashboard_common
 from dashboard_data import freshness_levels, hours
 from dashboard_motion import (
     DEFAULT_EXPECTED_SECONDS,
-    bubble_runs,
     dot,
     expected_seconds,
+    job_states,
     liquid_gauge,
 )
 
@@ -39,32 +39,53 @@ class ExpectedSecondsTests(unittest.TestCase):
         self.assertEqual(expected_seconds(history), {})
 
 
-class BubbleRunsTests(unittest.TestCase):
-    def runs(self, *rows):
+class JobStatesTests(unittest.TestCase):
+    def latest(self, *rows):
         return pd.DataFrame(rows, columns=[
             "run_id", "job_name", "status", "started_at", "finished_at"
         ])
 
+    def states(self, latest, expected=None):
+        return {
+            state["job"]: state
+            for state in job_states(latest, expected or {}, NOW)
+        }
+
+    def test_every_current_job_has_a_bubble_in_a_fixed_order(self):
+        self.assertEqual(
+            [state["letter"] for state in job_states(self.latest(), {}, NOW)],
+            ["C", "P", "R", "V"]
+        )
+
+    def test_a_job_without_runs_is_idle(self):
+        state = self.states(self.latest())["catalog_daily"]
+
+        self.assertIsNone(state["id"])
+        self.assertIsNone(state["status"])
+        self.assertIsNone(state["since"])
+        self.assertEqual(state["expected"], DEFAULT_EXPECTED_SECONDS)
+
     def test_a_running_job_measures_time_until_now(self):
-        (entry,) = bubble_runs(self.runs(
+        state = self.states(self.latest(
             (7, "refresh_hourly", "RUNNING", NOW - timedelta(seconds=90),
              None),
-        ), {"refresh_hourly": 250.0}, NOW)
+        ), {"refresh_hourly": 250.0})["refresh_hourly"]
 
-        self.assertEqual(entry["id"], 7)
-        self.assertEqual(entry["letter"], "R")
-        self.assertEqual(entry["elapsed"], 90.0)
-        self.assertEqual(entry["expected"], 250.0)
-        self.assertIn("--c:", entry["style"])
+        self.assertEqual((state["id"], state["status"]), (7, "RUNNING"))
+        self.assertEqual(state["elapsed"], 90.0)
+        self.assertEqual(state["expected"], 250.0)
+        self.assertIsNone(state["since"])
+        self.assertIn("--c:", state["style"])
 
-    def test_a_finished_job_measures_its_own_duration(self):
-        (entry,) = bubble_runs(self.runs(
-            (8, "players_hourly", "SUCCESS", NOW - timedelta(seconds=12),
+    def test_a_finished_job_reports_its_duration_and_age(self):
+        state = self.states(self.latest(
+            (8, "players_hourly", "FAILED", NOW - timedelta(seconds=12),
              NOW - timedelta(seconds=11)),
-        ), {}, NOW)
+        ))["players_hourly"]
 
-        self.assertEqual(entry["elapsed"], 1.0)
-        self.assertEqual(entry["expected"], DEFAULT_EXPECTED_SECONDS)
+        self.assertEqual(state["status"], "FAILED")
+        self.assertEqual(state["elapsed"], 1.0)
+        self.assertEqual(state["since"], 11.0)
 
 
 class FreshnessLevelTests(unittest.TestCase):
@@ -119,7 +140,7 @@ class DashboardMotionAppTests(unittest.TestCase):
         })
 
         def fake_read_sql(query, params=()):
-            if "status = 'RUNNING'" in query:
+            if "AS latest ON latest.run_id" in query:
                 return running
             raise dashboard_common.DashboardBusy("no database in this test")
 
