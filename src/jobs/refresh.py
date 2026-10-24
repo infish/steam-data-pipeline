@@ -8,13 +8,23 @@ refreshed every DETAILS_REFRESH_DAYS and its review summary every
 REVIEWS_REFRESH_DAYS, within REFRESH_MAX_REQUESTS Store requests per run.
 Games are always taken oldest first, so a missed or failed run is caught up
 by the next ones.
+
+The review summaries come from the Web API (GetAppReviews), whose limit is
+separate from the Store's, so they are fetched on a second thread while the
+main thread does the Store details and tags. Each API keeps its own pacer:
+neither sees a faster pace than when the two ran one after the other
+(docs/optimizations.md, entry 7).
 """
 
 import logging
 import math
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
-from api.steam_api import get_review_summaries
+from api.pacing import Pacer
+from api.steam_api import API_INTERVALS, get_review_summaries
 from config import (
     get_details_refresh_days,
     get_quiet_reviews_refresh_days,
@@ -24,6 +34,8 @@ from config import (
     get_store_details_per_run,
     get_tracked_appids,
 )
+from database.mysql_database import get_connection
+from ingest.raw_store import RawStore
 from jobs.base import Job
 from jobs.dimensions import refresh_details
 from jobs.reviews import load_review_observations
@@ -75,6 +87,11 @@ def select_review_rotation(cursor, exclude, limit, now=None,
     summary come first. "Due" means due before the next hourly run, so a
     game fetched a few seconds later yesterday is not pushed back an hour.
     Without `now` every game is due and only the order applies.
+
+    A failed attempt counts as the game's turn: a game asked within the
+    last active_days without a summary stored since (an error, or an empty
+    answer such as Steam gives some removed games) waits for its next turn
+    instead of heading the list, with a warning, every hour.
     """
     if limit == 0:
         return []
@@ -90,6 +107,13 @@ def select_review_rotation(cursor, exclude, limit, now=None,
     since = (
         datetime(1970, 1, 1) if now is None
         else now - timedelta(minutes=quiet_minutes + 24 * 60)
+    )
+    # Failed attempts within the last active_days (matched to their run's
+    # stored summaries; the app ID is a request parameter of GetAppReviews
+    # or the end of the appreviews endpoint used before v1.2.2).
+    attempted_since = (
+        datetime(9999, 1, 1) if now is None
+        else due_by - timedelta(minutes=active_minutes)
     )
     cursor.execute(
         f"""
@@ -112,17 +136,35 @@ def select_review_rotation(cursor, exclude, limit, now=None,
             LEFT JOIN recent AS previous
                 ON previous.appid = last.appid AND previous.position = 2
             WHERE last.position = 1
+        ),
+        attempts AS (
+            SELECT run_id, CAST(COALESCE(
+                       JSON_UNQUOTE(JSON_EXTRACT(request_params, '$.appid')),
+                       SUBSTRING_INDEX(endpoint, '/', -1)
+                   ) AS UNSIGNED) AS appid
+            FROM raw_api_responses
+            WHERE source = 'steam_review_summary' AND fetched_at >= %s
+        ),
+        failed AS (
+            SELECT DISTINCT attempts.appid
+            FROM attempts
+            LEFT JOIN review_observations AS loaded
+                ON loaded.appid = attempts.appid
+               AND loaded.run_id = attempts.run_id
+            WHERE loaded.observation_id IS NULL
         )
         SELECT games.appid
         FROM games
         LEFT JOIN state ON state.appid = games.appid
+        LEFT JOIN failed ON failed.appid = games.appid
         WHERE games.appid NOT IN ({", ".join(["%s"] * len(excluded))})
           AND (state.due_at IS NULL OR %s IS NULL OR state.due_at <= %s)
+          AND failed.appid IS NULL
         ORDER BY state.due_at IS NOT NULL, state.due_at, games.appid
         LIMIT %s
         """,
-        (since, quiet_minutes, active_minutes, *excluded, due_by, due_by,
-         limit)
+        (since, quiet_minutes, active_minutes, attempted_since, *excluded,
+         due_by, due_by, limit)
     )
     return [row[0] for row in cursor.fetchall()]
 
@@ -151,6 +193,59 @@ def rotation_in_run(cursor, run_id, exclude):
 
     return rotated
 
+class ReviewsStopped(Exception):
+    """The main thread failed; the review worker stops before its next
+    request instead of finishing the slice."""
+
+
+def fetch_summaries_on_worker(ctx, rotation, stop):
+    """Fetch review summaries on a worker thread; return them with timing.
+
+    The worker shares nothing that is not thread-safe with the main thread:
+    it has its own HTTP session, its own raw-store connection (raw rows are
+    autocommitted, as on the main thread) and its own pacer and wait count.
+    It loads nothing; the main thread loads the summaries after joining.
+    """
+    started_at = ctx.now_fn()
+    started = time.perf_counter()
+    waited = [0.0]
+
+    def sleep(seconds):
+        waited[0] += seconds
+        ctx.base_sleep_fn(seconds)
+
+    pacer = Pacer(API_INTERVALS["reviews"], sleep)
+
+    def pace():
+        if stop.is_set():
+            raise ReviewsStopped()
+
+        pacer.wait()
+
+    session = ctx.session_factory()
+    connection = get_connection()
+
+    try:
+        store = RawStore(connection, ctx.run_id, ctx.now_fn)
+        summaries, warnings = get_review_summaries(
+            session, rotation, store, pace=pace
+        )
+    finally:
+        for closeable in (session, connection):
+            try:
+                closeable.close()
+            except Exception:
+                logging.exception("Could not close %r", closeable)
+
+    timing = {
+        "started_at": started_at,
+        "duration_ms": round((time.perf_counter() - started) * 1000),
+        "wait_ms": round(waited[0] * 1000),
+        "requests": sum(store.stats.values()),
+    }
+    return summaries, warnings, store.stats, timing
+
+
 def run_refresh(ctx):
     ctx.cursor.execute("SELECT COUNT(*) FROM games")
     catalog_size = ctx.cursor.fetchall()[0][0]
@@ -163,10 +258,6 @@ def run_refresh(ctx):
         get_store_details_per_run(),
         get_review_summaries_per_run(),
     )
-
-    with ctx.step("store_details_and_tags") as step:
-        refreshed = refresh_details(ctx, details_count)
-        step["rows"] = refreshed
 
     # Tracked apps get their summary from reviews_daily every day.
     if ctx.replay:
@@ -181,13 +272,43 @@ def run_refresh(ctx):
             get_quiet_reviews_refresh_days(),
         )
 
-    with ctx.step("review_summaries"):
-        summaries, warnings = get_review_summaries(
-            ctx.session,
-            rotation,
-            ctx.store,
-            pace=lambda: ctx.pace("reviews")
+    # Reprocessing replays stored answers on one connection: one thread.
+    parallel = ctx.session_factory is not None and not ctx.replay and rotation
+    stop = threading.Event()
+
+    if parallel:
+        executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="review-summaries"
         )
+        worker = executor.submit(fetch_summaries_on_worker, ctx, rotation, stop)
+        executor.shutdown(wait=False)
+
+    try:
+        with ctx.step("store_details_and_tags") as step:
+            refreshed = refresh_details(ctx, details_count)
+            step["rows"] = refreshed
+    except BaseException:
+        if parallel:
+            stop.set()
+            worker.exception()  # wait for it; the main error is reported
+
+        raise
+
+    if parallel:
+        summaries, warnings, stats, timing = worker.result()
+        # The worker's requests count towards the run and its "job" step.
+        ctx.store.stats.update(stats)
+
+        if ctx.timer:
+            ctx.timer.add_finished("review_summaries", **timing)
+    else:
+        with ctx.step("review_summaries"):
+            summaries, warnings = get_review_summaries(
+                ctx.session,
+                rotation,
+                ctx.store,
+                pace=lambda: ctx.pace("reviews")
+            )
 
     ctx.warn(*warnings)
 

@@ -73,6 +73,11 @@ class RunContext:
     counters: dict = field(default_factory=dict)
     # One Pacer per rate-limited API, shared by every step of the run.
     pacers: dict = field(default_factory=dict)
+    # For work on a second thread (jobs/refresh.py): a new HTTP session and
+    # the sleep without the timer's wait counting. Reprocessing leaves the
+    # factory None and runs everything on one thread.
+    session_factory: Optional[Callable] = None
+    base_sleep_fn: Callable = time.sleep
 
     def pace(self, api):
         """Wait until api's minimum interval since its last request passed.
@@ -337,7 +342,9 @@ def run_job(
                 now_fn=now_fn,
                 sleep_fn=timer.wrap_sleep(sleep_fn),
                 job_name=job.name,
-                timer=timer
+                timer=timer,
+                session_factory=session_factory,
+                base_sleep_fn=sleep_fn
             )
 
         with timer.step("job"):

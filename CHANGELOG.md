@@ -2,6 +2,31 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## v1.2.4 — 2026-10-24
+
+### Changed
+
+- `refresh_hourly` fetches its review summaries on a second thread while
+  the Store details and tags run, since the two now go to different servers
+  with separate limits. Each keeps its own pacer, so neither sees a faster
+  pace. Measured live on the same slice: 206.8 s to 143.7 s (−31%);
+  docs/optimizations.md, entry 7, which also has the measured effect of
+  quiet games (−41% to −53% review summaries a day).
+
+### Fixed
+
+- The volume check judges each finished day once instead of after every
+  run, so one unusual day is one warning, not about 50. It no longer checks
+  `raw_api_responses`, whose daily count follows the request schedule by
+  design (quiet games, catch-up runs); the raw layer is checked per source
+  by freshness, schema drift and the duplicate rate.
+- A game whose review summary fails (Steam answers some removed games with
+  an empty summary) waits for its next turn instead of heading the rotation
+  and being asked, with a warning, every hour.
+- Schema drift reads the newest run's answers (up to 20) and fails only when
+  none is complete, so one odd answer no longer fails it; a format change
+  hits every answer and still does.
+
 ## v1.2.3 — 2026-10-23
 
 ### Changed

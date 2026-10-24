@@ -138,6 +138,33 @@ class QuietReviewsIntegrationTests(IntegrationTestCase):
         self.assertEqual(self.reviewed(after_three), [570])
         self.assertEqual(self.reviewed(active_again), [570])
 
+    @patch.dict(os.environ, SETTINGS)
+    def test_a_failed_summary_waits_for_its_next_turn(self):
+        # Steam answers {"response": {}} for some removed games; the game
+        # used to head the list (no summary) and was asked every hour.
+        self.run_job("catalog_daily", now_fn=at(1))
+        empty = {"steam_review_summary:570": {"response": {}}}
+
+        first = self.run_job("refresh_hourly", empty, now_fn=at(1, 10))
+        next_hour = self.run_job("refresh_hourly", empty, now_fn=at(1, 11))
+        next_day = self.run_job("refresh_hourly", empty, now_fn=at(2, 10))
+
+        self.assertEqual(self.summary_requests(first), 1)
+        self.assertIn("summary is missing for app 570",
+                      self.run_row(first)["warning_message"])
+        self.assertEqual(self.summary_requests(next_hour), 0)
+        self.assertNotIn("review lookup failed",
+                         self.run_row(next_hour)["warning_message"] or "")
+        self.assertEqual(self.summary_requests(next_day), 1)
+
+    def summary_requests(self, run_id):
+        (row,) = self.query(
+            "SELECT COUNT(*) AS n FROM raw_api_responses"
+            " WHERE run_id = %s AND source = 'steam_review_summary'",
+            (run_id,)
+        )
+        return row["n"]
+
     @patch.dict(os.environ, {**SETTINGS, "QUIET_REVIEWS_REFRESH_DAYS": "0"})
     def test_zero_treats_every_game_as_active(self):
         self.run_job("catalog_daily", now_fn=at(1))

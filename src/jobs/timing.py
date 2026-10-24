@@ -58,6 +58,23 @@ class StepTimer:
             record["wait_ms"] = round((self.waited - waited) * 1000)
             record["requests"] = self.requests_fn() - requests
 
+    def add_finished(self, name, started_at, duration_ms, wait_ms, requests,
+                     rows=None):
+        """Record a step timed elsewhere (on another thread) as a child of
+        the step open now; its waits and requests are not in this timer's
+        counters, so it brings its own."""
+        self.records.append({
+            "step": name,
+            "parent_step": self._open[-1]["step"] if self._open else None,
+            "position": len(self.records),
+            "status": "ok",
+            "started_at": started_at,
+            "rows": rows,
+            "duration_ms": duration_ms,
+            "wait_ms": wait_ms,
+            "requests": requests,
+        })
+
     def finished_records(self):
         return [record for record in self.records if "duration_ms" in record]
 

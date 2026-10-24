@@ -11,6 +11,7 @@ from jobs.registry import JOBS
 from quality.checks import (
     EXPECTED_INTERVAL_HOURS,
     INVARIANTS,
+    RAW_CHECKED_TABLES,
     REQUIRED_FIELDS,
     SOURCE_JOBS,
     VOLUME_TABLES,
@@ -192,6 +193,7 @@ class CoverageTests(unittest.TestCase):
 
         covered = (
             set(VOLUME_TABLES)
+            | RAW_CHECKED_TABLES
             | {target for _, target, _, _, _ in INVARIANTS}
             | set(MART_TESTS)
         )

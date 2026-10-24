@@ -18,7 +18,7 @@ that job: catalog and price checks after `catalog_daily`, Store details,
 tag and review-summary checks after `refresh_hourly`, player checks after
 `players_hourly`, review-history checks after `reviews_daily`. A few checks guard
 the pipeline as a whole and run after every job: volume of
-`raw_api_responses` and `data_quality_results`, and `no_stuck_runs`.
+`data_quality_results` and `run_steps`, and `no_stuck_runs`.
 
 **Freshness** is the exception. It runs after every job as a watchdog, so a
 job that stops running is noticed by the others. A stale source of another
@@ -51,13 +51,24 @@ their freshness is not checked.
 
 ## Volume
 
-For `player_observations`, `review_observations`, `raw_api_responses`,
-`data_quality_results` and `run_steps`, the row count of the last
-**complete** UTC day is compared with the median of the 7 days before it.
-Outside ±30% is a `warn`; zero rows when the baseline is not zero is a
-`fail`. Today's partial count is never used, because it would always look
-low in the morning. With fewer than 3 earlier days of data there is no
-baseline, and no result is stored.
+For `player_observations`, `review_observations`, `data_quality_results`
+and `run_steps`, the row count of the last **complete** UTC day is compared
+with the median of the 7 days before it. Outside ±30% is a `warn`; zero
+rows when the baseline is not zero is a `fail`. Today's partial count is
+never used, because it would always look low in the morning. With fewer
+than 3 earlier days of data there is no baseline, and no result is stored.
+
+A finished day's count does not change, so each day is judged **once**, by
+the first run after midnight UTC. Before v1.2.4 every run judged it again,
+so one unusual day showed up as about 50 identical warnings ("Times, 7 d").
+
+`raw_api_responses` has no volume check since v1.2.4. How many requests a
+day the pipeline makes follows its schedule, which varies by design: quiet
+games are asked less often, and a run after an outage catches up at the
+full slice. Its count also stayed normal during the one real outage, when a
+switched-off endpoint's redirect was stored as an answer (2026-10-23). The
+raw layer is checked per source instead: freshness, schema drift and the
+duplicate rate.
 
 ## Staleness
 
@@ -83,11 +94,16 @@ baseline, and no result is stored.
 
 ## Schema drift
 
-The newest stored payload of each source must contain the fields that
+The stored answers of each source must contain the fields that
 [`sources.md`](sources.md) says the pipeline relies on (for example every
-row's `concurrent_in_game` in the top-100 chart). Missing fields are a
-`fail`, listed in `details`. A unit test checks that the recorded responses
-in `tests/fixtures/sources/` satisfy the same rules.
+row's `concurrent_in_game` in the top-100 chart). The check reads the newest
+run's answers, up to 20: a change of format hits every answer, so it is a
+`fail`, with the missing fields in `details`, only when **none** of them is
+complete. One odd answer among complete ones passes, noted in `details`;
+Steam answers some removed games with an empty review summary, for
+example. For sources with one request per run this is the newest answer, as
+before. A unit test checks that the recorded responses in
+`tests/fixtures/sources/` satisfy the same rules.
 
 ## Table invariants
 
