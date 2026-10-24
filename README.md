@@ -981,7 +981,7 @@ Each published image gets these tags:
 | full commit SHA | every build |
 | `latest` | builds from `main` only |
 | `vX.Y.Z` | builds from a pushed `vX.Y.Z` git tag |
-| `stable` | moves to each `vX.Y.Z` release (since v1.2.3) |
+| `stable` | moves to a `vX.Y.Z` release when it is the highest one (since v1.2.3); never for a pre-release such as `v1.3.0-rc.1` or an older-line fix |
 
 A release tag never moves `latest`, and `main` never moves `stable`.
 `deploy/truenas-compose.yml` follows `stable`, so the app only ever runs a
