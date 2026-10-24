@@ -3,6 +3,8 @@ import unittest
 from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
+from reprocess import reprocess_run
+
 from .base import CANNED_RESPONSES, CANNED_TOP_GAMES, IntegrationTestCase
 
 
@@ -228,6 +230,28 @@ class DimensionsIntegrationTests(IntegrationTestCase):
         # Day 5 takes the oldest refresh (570), not the delisted game,
         # which never gets a Store name (it headed the list every run).
         self.assertEqual(picked[4], [570])
+
+    def test_reprocessing_an_older_refresh_keeps_the_newer_details(self):
+        older = self.run_catalog_and_refresh(now_fn=at(1))
+        renamed = {"570": {
+            "success": True,
+            "data": {
+                **CANNED_RESPONSES["store_appdetails:570"]["570"]["data"],
+                "name": "Dota 2 (renamed)",
+            },
+        }}
+        self.run_catalog_and_refresh(
+            {"store_appdetails:570": renamed}, now_fn=at(2)
+        )
+
+        reprocess_run(older)
+
+        (dota,) = self.query(
+            "SELECT games.name, details.details_fetched_at FROM games"
+            " JOIN game_details AS details USING (appid) WHERE appid = 570"
+        )
+        self.assertEqual(dota["name"], "Dota 2 (renamed)")
+        self.assertEqual(dota["details_fetched_at"], at(2)())
 
     @patch.dict(os.environ, {"TAG_REFRESH_DAYS": "0"})
     def test_a_failed_refresh_keeps_previous_details(self):

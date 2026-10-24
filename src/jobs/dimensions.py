@@ -189,6 +189,40 @@ def select_stalest(cursor, limit):
     return [row[0] for row in cursor.fetchall()]
 
 
+def not_overwritten(cursor, appids, with_tags, fetched_at):
+    """The games, and the games with tags, whose stored data is not newer
+    than fetched_at: reprocessing an older run must not let its data
+    overwrite a later refresh. A run's own rows carry its own time, so
+    reprocessing the newest run still replays everything.
+    """
+    if not appids:
+        return [], set()
+
+    placeholders = ", ".join(["%s"] * len(appids))
+    cursor.execute(
+        f"""
+        SELECT appid, details_fetched_at, tags_fetched_at
+        FROM game_details
+        WHERE appid IN ({placeholders})
+        """,
+        tuple(appids)
+    )
+    stored = {row[0]: row[1:] for row in cursor.fetchall()}
+
+    def not_newer(value):
+        return value is None or value <= fetched_at
+
+    chosen = [
+        appid for appid in appids
+        if not_newer(stored.get(appid, (None, None))[0])
+    ]
+    tags = {
+        appid for appid in with_tags
+        if not_newer(stored.get(appid, (None, None))[1])
+    }
+    return chosen, tags
+
+
 def refreshed_in_run(cursor, run_id):
     """The games a past run fetched Store details for (for reprocessing)."""
     cursor.execute(
@@ -410,8 +444,12 @@ def refresh_details(ctx, limit):
     TAG_REFRESH_DAYS.
     """
     if ctx.replay:
-        chosen = refreshed_in_run(ctx.cursor, ctx.run_id)
-        with_tags = tags_fetched_in_run(ctx.cursor, ctx.run_id)
+        chosen, with_tags = not_overwritten(
+            ctx.cursor,
+            refreshed_in_run(ctx.cursor, ctx.run_id),
+            tags_fetched_in_run(ctx.cursor, ctx.run_id),
+            ctx.load_time()
+        )
     else:
         chosen = select_stalest(ctx.cursor, limit)
         with_tags = tags_due(
