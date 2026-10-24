@@ -12,6 +12,13 @@ from dashboard_common import (
     current_check_results,
     latest_runs,
 )
+from dashboard_motion import (
+    CHECK_SECONDS,
+    dot,
+    inject_motion_css,
+    job_bubbles,
+    running_jobs,
+)
 from dashboard_style import run_badge, time_ago
 
 
@@ -38,11 +45,28 @@ navigation = st.navigation({
     ],
 })
 
+BUSY_NOTE = (
+    "Many people are looking at the dashboard right now; try again in a "
+    "minute."
+)
+
+
+@st.fragment(run_every=CHECK_SECONDS)
 def data_status():
-    """The sidebar's latest run per job and failing checks."""
+    """The sidebar's latest run per job and failing checks. It refreshes
+    with the job bubbles, so a running job's dot breathes while it runs.
+    A fragment re-runs on its own, so it handles a busy database itself."""
     st.markdown("**Data status**")
 
+    try:
+        show_data_status()
+    except DashboardBusy:
+        st.caption(BUSY_NOTE)
+
+
+def show_data_status():
     runs = latest_runs()
+    running = running_jobs()
 
     if runs.empty:
         st.caption("No runs yet.")
@@ -59,6 +83,7 @@ def data_status():
                 run["started_at"] if pd.isna(finished) else finished
             )
             st.markdown(
+                f"{dot(run['job_name'], live=run['job_name'] in running)}"
                 f"{badge} `{run['job_name']}`  \n"
                 f"<span style='font-size:0.8rem;opacity:0.7'>"
                 f"last run {when}</span>",
@@ -76,19 +101,16 @@ def data_status():
         )
 
 
-BUSY_NOTE = (
-    "Many people are looking at the dashboard right now; try again in a "
-    "minute."
-)
+inject_motion_css()
 
 with st.sidebar:
     st.markdown("### :orange[λ] Steam Data Pipeline")
     st.caption("SteamSpy catalog, Valve players, Steam Store and reviews.")
 
-    try:
-        data_status()
-    except DashboardBusy:
-        st.caption(BUSY_NOTE)
+    data_status()
+
+    # Checks every few seconds; the bubbles float at the top right.
+    job_bubbles()
 
 try:
     navigation.run()

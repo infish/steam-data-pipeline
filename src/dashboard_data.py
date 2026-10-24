@@ -1,5 +1,7 @@
 """Pure data shaping for dashboard charts (no Streamlit or database access)."""
 
+import re
+
 import pandas as pd
 
 
@@ -150,3 +152,32 @@ def latest_values_identical(values, count=3):
     """
     recent = pd.Series(values).dropna().tail(count)
     return len(recent) == count and recent.nunique() == 1
+
+
+def hours(text):
+    """The first number in a freshness value such as '1.33 h' or 'newest
+    success younger than 1.5 h'; None when there is none."""
+    match = re.search(r"(\d+(?:\.\d+)?)", str(text or ""))
+    return float(match.group(1)) if match else None
+
+
+def freshness_levels(freshness):
+    """Per source, how much of its allowed age is left (1 = just fetched,
+    0 = at the limit or older), for the freshness gauges."""
+    levels = []
+
+    for row in freshness.itertuples():
+        age, limit = hours(row.age), hours(row.threshold)
+        left = (
+            None if age is None or not limit
+            else max(0.0, min(1.0, 1 - age / limit))
+        )
+        levels.append({
+            "source": row.source,
+            "status": row.status,
+            "age_hours": age,
+            "limit_hours": limit,
+            "left": left,
+        })
+
+    return levels

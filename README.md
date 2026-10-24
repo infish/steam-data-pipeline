@@ -357,6 +357,24 @@ for rise/fall, and status always shown with an icon and a label. The theme
 is black and orange, in `.streamlit/config.toml`; orange leads the chart
 palette.
 
+Motion comes from one small kit (`src/dashboard_motion.py`), and it always
+means something:
+
+- **Job bubbles:** while a job runs, a bubble in its colour springs in at the
+  top right of every page and fills with gently moving liquid as the run
+  progresses (time so far against the median of its last 10 runs; it holds
+  just below full when a run takes longer than usual). When the run ends it
+  fills, ripples, shows a check mark (a cross if it failed) and shrinks away.
+  Several runs show side by side. The dashboard checks every 3 seconds with
+  one small query shared by all visitors.
+- **Sidebar:** each job's dot breathes while it runs.
+- **Gauges:** the Store-peak tile fills to the share of its limit used, and
+  each source on the Freshness tab drains as its data ages and refills on
+  every fetch.
+- **Numbers** count up to their value when a page opens or a value changes.
+
+Everything stops for visitors whose system asks for reduced motion.
+
 | Page | Shows |
 | --- | --- |
 | Overview | players right now (Valve) with the change since the previous hour, games in the catalog, sources fresh; most played now; biggest week-over-week moves; links to the other pages |

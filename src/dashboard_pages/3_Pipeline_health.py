@@ -15,7 +15,8 @@ from dashboard_common import (
     show_run_warnings,
     to_prague,
 )
-from dashboard_data import request_budget_usage
+from dashboard_data import freshness_levels, request_budget_usage
+from dashboard_motion import gauge_tile, liquid_gauge
 from dashboard_style import (
     JOB_SYMBOLS,
     card,
@@ -27,6 +28,7 @@ from dashboard_style import (
     style,
     tokens,
 )
+from quality.checks import SOURCE_JOBS
 
 
 page_header(
@@ -95,15 +97,16 @@ checks.metric(
          "after the job that produces its data; freshness runs after every "
          "job.",
 )
-budget.metric(
+budget.html(gauge_tile(
     "Store peak, 5 min",
     f"{store_peak} / 150",
-    border=True,
-    help="Steam Store requests (details, prices, histograms) in the "
-         "busiest 5 minutes of the last 24 hours; the Store allows about "
-         "150 per 5 minutes. Review summaries come from the Web API, with "
-         "their own limit (Request budget tab).",
-)
+    store_peak / 150,
+    tokens().fall if store_peak > 150 else job_color("catalog_daily"),
+    help_text="Steam Store requests (details, prices, histograms) in the "
+              "busiest 5 minutes of the last 24 hours; the Store allows "
+              "about 150 per 5 minutes. Review summaries come from the Web "
+              "API, with their own limit (Request budget tab).",
+))
 
 (
     runs_tab, steps_tab, fresh_tab, quality_tab, stale_tab, budget_tab
@@ -412,6 +415,24 @@ with fresh_tab:
         if freshness.empty:
             st.info("No freshness results yet.")
         else:
+            # Each source's liquid drains as its data ages and refills on
+            # every successful fetch; red when it is past its limit.
+            st.html(
+                "<div class='m-gauges'>" + "".join(
+                    "<div class='m-item'>"
+                    + liquid_gauge(
+                        level["left"],
+                        tokens().fall if level["status"] == "fail"
+                        else job_color(SOURCE_JOBS.get(level["source"])),
+                        size=36,
+                    )
+                    + f"<div><div class='m-name'>{level['source']}</div>"
+                    f"<div class='m-age'>{level['age_hours']:g} h of"
+                    f" {level['limit_hours']:g} h</div></div></div>"
+                    for level in freshness_levels(freshness)
+                    if level["left"] is not None
+                ) + "</div>"
+            )
             shown = freshness.copy()
             shown["status"] = shown["status"].map(status_label)
             shown["checked_at"] = to_prague(shown["checked_at"])
