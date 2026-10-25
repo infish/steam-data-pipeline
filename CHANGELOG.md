@@ -2,6 +2,25 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## v1.4.1 — 2026-10-25
+
+### Changed
+
+- The job dock shows only running jobs again (a bubble appears when a job
+  starts and pops away after its finish), and hovering shows a card with
+  the job's name, what it does, a progress bar, the time against its usual
+  time and when it started, instead of a plain tooltip.
+
+### Fixed
+
+- The dock vanished when the sidebar was collapsed (phones, narrow
+  windows): it was mounted in the sidebar, which then renders nothing. It is
+  now mounted in the page.
+- The tooltip flickered while hovered (it was rewritten on every frame).
+- A run cut off by an app restart (still marked RUNNING) showed as running
+  for ever: past its job's time limit plus 10 minutes it is now treated as
+  interrupted (no bubble; "interrupted" in the sidebar).
+
 ## v1.4.0 — 2026-10-25
 
 ### Added

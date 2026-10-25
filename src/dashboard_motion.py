@@ -25,6 +25,7 @@ import streamlit as st
 
 from dashboard_common import DashboardBusy, read_sql
 from dashboard_style import DARK, job_color
+from jobs.registry import JOBS
 
 
 # Each job's colour (dashboard_style's palette) and the letter in its bubble.
@@ -34,6 +35,33 @@ JOB_LETTERS = {
     "refresh_hourly": "R",
     "reviews_daily": "V",
 }
+# What the hover card says about each job.
+JOB_INFO = {
+    "catalog_daily": (
+        "Daily catalog",
+        "SteamSpy reference pages (weekly) and Store prices for every game.",
+    ),
+    "players_hourly": (
+        "Hourly player counts",
+        "Valve's top-100 and most-played charts, plus the tracked games.",
+    ),
+    "refresh_hourly": (
+        "Hourly refresh",
+        "Store details, tags and review summaries for a slice of the "
+        "catalog.",
+    ),
+    "reviews_daily": (
+        "Daily reviews",
+        "Review summaries, histograms and news for the tracked games.",
+    ),
+}
+
+# A run still marked RUNNING after its job's time limit plus this margin
+# (marts and checks run after the limit) is not running: the process ended
+# without finishing it, for example when the app was restarted for an
+# update. Its row stays RUNNING until the job's next run reaps it.
+INTERRUPTED_MARGIN_MINUTES = 10
+DEFAULT_LIMIT_MINUTES = 10  # jobs without a time limit (players_hourly)
 GLOW_ALPHA = (0.45, 0.18)  # inner and outer glow, tuned for the dark page
 FAILED_COLOR = DARK.fall
 
@@ -77,6 +105,10 @@ MOTION_CSS = """
   35% { filter: drop-shadow(0 0 9px var(--g)) drop-shadow(0 0 24px var(--g)); }
   100% { filter: drop-shadow(0 0 3px var(--g)) drop-shadow(0 0 8px var(--g2)); }
 }
+@keyframes m-vanish {
+  30% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(0); opacity: 0; }
+}
 @keyframes m-ripple {
   from { transform: scale(1); opacity: .9; stroke-width: 2.5; }
   to { transform: scale(1.9); opacity: 0; stroke-width: .5; }
@@ -93,16 +125,57 @@ MOTION_CSS = """
   background: var(--c); margin-right: .45rem; vertical-align: .05rem;
 }
 
-/* The job dock: one bubble per job, always at the top right, fixed under
-   Streamlit's top bar, above the page. */
+/* The job dock: a bubble per running job at the top right of every page,
+   fixed under Streamlit's top bar, above the page. */
 #m-bubbles {
   position: fixed; top: 4.1rem; right: 1.1rem; z-index: 1000;
-  display: flex; align-items: center; gap: 4px; pointer-events: none;
+  display: flex; align-items: center; pointer-events: none;
 }
 #m-bubbles .m-slot {
-  width: 50px; height: 50px; display: flex; justify-content: center;
-  align-items: center;
+  width: 54px; height: 50px; display: flex; justify-content: center;
+  align-items: center; transition: width .5s var(--m-ease);
 }
+#m-bubbles .m-slot.m-gone { width: 0; }
+#m-bubbles .m-bub.m-out {
+  animation: m-vanish .5s cubic-bezier(.55, 0, .75, 0) forwards;
+}
+
+/* The hover card of a bubble. */
+#m-tip {
+  position: fixed; z-index: 1001; width: 250px; box-sizing: border-box;
+  padding: 11px 13px 10px; border-radius: 8px; pointer-events: none;
+  background: #1a1a1a; border: 1px solid #2e2a26; color: #ededed;
+  font-size: 13px; line-height: 1.45;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 0 18px var(--g2);
+  opacity: 0; transform: translateY(-4px);
+  transition: opacity .15s ease-out, transform .15s ease-out;
+}
+#m-tip.m-show { opacity: 1; transform: none; }
+#m-tip .m-tip-head { display: flex; align-items: center; gap: 7px; }
+#m-tip .m-tip-dot {
+  width: 9px; height: 9px; border-radius: 50%; flex: none;
+  box-shadow: 0 0 6px var(--g);
+}
+#m-tip .m-tip-title { font-weight: 600; }
+#m-tip .m-tip-code {
+  margin-left: auto; font-family: "Source Code Pro", monospace;
+  font-size: 11px; color: #8c867e;
+}
+#m-tip .m-tip-about { color: #c8c3bc; font-size: 12px; margin: 5px 0 9px; }
+#m-tip .m-tip-bar {
+  height: 4px; border-radius: 2px; background: #2e2a26; overflow: hidden;
+}
+#m-tip .m-tip-bar span {
+  display: block; height: 100%; width: 0; background: var(--c);
+  border-radius: 2px; box-shadow: 0 0 6px var(--g);
+}
+#m-tip .m-tip-row {
+  display: flex; justify-content: space-between; gap: 8px; margin-top: 7px;
+}
+#m-tip .m-tip-state { font-weight: 600; }
+#m-tip .m-tip-state.m-tip-failed { color: __FAILED__; }
+#m-tip .m-tip-time, #m-tip .m-tip-meta { color: #8c867e; font-size: 12px; }
+#m-tip .m-tip-meta { margin-top: 2px; }
 #m-bubbles .m-bub {
   width: 42px; height: 42px; pointer-events: auto; cursor: default;
   transform-origin: 50% 50%; animation: m-spring .7s var(--m-spring) both;
@@ -133,14 +206,16 @@ MOTION_CSS = """
 
 @media (prefers-reduced-motion: reduce) {
   .m-wave, .m-wave2, .m-live,
-  #m-bubbles .m-bub, #m-bubbles .m-ripple,
+  #m-bubbles .m-bub, #m-bubbles .m-bub.m-out, #m-bubbles .m-ripple,
   #m-bubbles .m-bub.m-done .m-glow { animation: none; }
+  #m-bubbles .m-slot, #m-tip { transition: none; }
 }
 """
 
 
 def inject_motion_css():
-    st.html(f"<style>{MOTION_CSS}</style>")
+    css = MOTION_CSS.replace("__FAILED__", FAILED_COLOR)
+    st.html(f"<style>{css}</style>")
 
 
 def dot(job_name, live=False):
@@ -247,6 +322,22 @@ def expected_seconds(history):
     return expected
 
 
+def is_interrupted(job_name, status, started_at, now):
+    """Whether a run marked RUNNING has outlived any possible run."""
+    if status != "RUNNING" or started_at is None or pd.isna(started_at):
+        return False
+
+    job = JOBS.get(job_name)
+    limit = (
+        job.time_limit_minutes
+        if job is not None and job.time_limit_minutes is not None
+        else DEFAULT_LIMIT_MINUTES
+    )
+    return (now - started_at).total_seconds() > (
+        limit + INTERRUPTED_MARGIN_MINUTES
+    ) * 60
+
+
 def job_states(latest, expected, now):
     """What the dock draws: one entry per current job, in a fixed order,
     from each job's latest run. `now` is naive UTC, like the stored times.
@@ -255,8 +346,11 @@ def job_states(latest, expected, now):
     entries = []
 
     for job_name, letter in JOB_LETTERS.items():
+        title, about = JOB_INFO.get(job_name, (job_name, ""))
         entry = {
             "job": job_name,
+            "title": title,
+            "about": about,
             "letter": letter,
             "style": job_style(job_name),
             "expected": expected.get(job_name, DEFAULT_EXPECTED_SECONDS),
@@ -271,7 +365,12 @@ def job_states(latest, expected, now):
             finished = None if pd.isna(run.finished_at) else run.finished_at
             entry.update(
                 id=int(run.run_id),
-                status=run.status,
+                status=(
+                    "INTERRUPTED"
+                    if is_interrupted(job_name, run.status, run.started_at,
+                                      now)
+                    else run.status
+                ),
                 elapsed=max(
                     0.0, ((finished or now) - run.started_at).total_seconds()
                 ),
@@ -307,11 +406,15 @@ def _latest_runs():
     )
 
 
-def running_jobs():
+def running_jobs(now=None):
     """Jobs with a run in progress now (the dock's shared 3-second query),
-    for the sidebar's breathing dots."""
-    runs = _latest_runs()
-    return set(runs.loc[runs["status"] == "RUNNING", "job_name"])
+    for the sidebar's breathing dots; an interrupted run is not one."""
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    return {
+        run.job_name for run in _latest_runs().itertuples()
+        if run.status == "RUNNING"
+        and not is_interrupted(run.job_name, run.status, run.started_at, now)
+    }
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -338,6 +441,7 @@ def _run_history():
 BUBBLES_JS = r"""
 const R = 18.5;
 const DONE_HOLD_MS = 1500;
+const SHORT_RUN_SECONDS = 20;
 const reduced = () =>
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -348,69 +452,133 @@ function wavePath(amp) {
   return d + " L120 60 L0 60 Z";
 }
 
-function ago(seconds) {
-  if (seconds < 90) return "just now";
-  if (seconds < 5400) return Math.round(seconds / 60) + " min ago";
-  if (seconds < 129600) return Math.round(seconds / 3600) + " h ago";
-  return Math.round(seconds / 86400) + " days ago";
+function duration(seconds) {
+  seconds = Math.max(0, Math.round(seconds));
+  if (seconds < 60) return seconds + " s";
+  if (seconds < 3600) {
+    const s = seconds % 60;
+    return Math.floor(seconds / 60) + " min" + (s ? " " + s + " s" : "");
+  }
+  return Math.floor(seconds / 3600) + " h " + Math.round(seconds % 3600 / 60) + " min";
 }
 
-// The dock: one bubble per job, always shown at the top right. A bubble is
-// idle (empty), running (liquid rises toward the expected end, the glow
-// breathes), finishing (fills, ripples, shows a check or a cross) and then
-// draining back to idle.
+function setText(el, text) { if (el.textContent !== text) el.textContent = text; }
+
+// The dock: a bubble for each running job, at the top right of every page.
+// It springs in, fills with liquid toward the expected end, and when the
+// run ends fills, ripples, shows a check or a cross and pops away. A run
+// shorter than the check between two checks still shows its finish.
 function createMotion() {
   const layer = document.createElement("div");
   layer.id = "m-bubbles";
-  layer.setAttribute("aria-live", "polite");
   document.body.appendChild(layer);
-  const bubbles = new Map();
+  const bubbles = new Map();   // job -> bubble
+  const lastRun = new Map();   // job -> latest run id seen
+  let first = true;
 
-  function make(state, index) {
-    const id = "mb-" + state.job;
+  // One hover card, shared by the bubbles; only its text changes while it
+  // is shown, so it never flickers.
+  const card = document.createElement("div");
+  card.id = "m-tip";
+  card.setAttribute("role", "tooltip");
+  card.innerHTML =
+    '<div class="m-tip-head"><span class="m-tip-dot"></span>' +
+    '<span class="m-tip-title"></span><span class="m-tip-code"></span></div>' +
+    '<div class="m-tip-about"></div>' +
+    '<div class="m-tip-bar"><span></span></div>' +
+    '<div class="m-tip-row"><span class="m-tip-state"></span>' +
+    '<span class="m-tip-time"></span></div>' +
+    '<div class="m-tip-meta"></div>';
+  document.body.appendChild(card);
+  const tip = {
+    dot: card.querySelector(".m-tip-dot"), title: card.querySelector(".m-tip-title"),
+    code: card.querySelector(".m-tip-code"), about: card.querySelector(".m-tip-about"),
+    bar: card.querySelector(".m-tip-bar span"), state: card.querySelector(".m-tip-state"),
+    time: card.querySelector(".m-tip-time"), meta: card.querySelector(".m-tip-meta"),
+  };
+  let hovered = null;
+
+  function showCard(b) {
+    hovered = b;
+    const s = b.state;
+    tip.dot.style.background = "var(--c)";
+    card.setAttribute("style", s.style);
+    setText(tip.title, s.title);
+    setText(tip.code, s.job);
+    setText(tip.about, s.about);
+    const box = b.bub.getBoundingClientRect();
+    card.style.top = (box.bottom + 10) + "px";
+    card.style.right = Math.max(8, window.innerWidth - box.right - 6) + "px";
+    fillCard(b);
+    card.classList.add("m-show");
+  }
+  function hideCard(b) { if (hovered === b) { hovered = null; card.classList.remove("m-show"); } }
+
+  function fillCard(b) {
+    const s = b.state;
+    const sec = b.endSec !== null ? b.endSec : (performance.now() - b.t0) / 1000;
+    let state, time;
+    if (b.mode === "running" && sec > s.expected) {
+      // Past the usual time a percentage would be a guess.
+      state = "Running, longer than usual";
+      time = duration(sec) + " · usually ~" + duration(s.expected);
+    } else if (b.mode === "running") {
+      state = "Running · " + Math.round(sec / s.expected * 100) + "%";
+      time = duration(sec) + " of ~" + duration(s.expected);
+    } else {
+      state = b.failed ? "Failed" : "Finished";
+      time = "in " + duration(sec);
+    }
+    setText(tip.state, state);
+    setText(tip.time, time);
+    tip.bar.style.width = Math.round(b.shown * 100) + "%";
+    tip.state.className = "m-tip-state" + (b.failed ? " m-tip-failed" : "");
+    setText(tip.meta, "Started " + b.startedAt);
+  }
+
+  function clock(ms) {
+    return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function make(s) {
+    const id = "mb-" + s.job;
     const slot = document.createElement("div");
     slot.className = "m-slot";
     slot.innerHTML =
-      '<div class="m-bub" style="' + state.style + ';animation-delay:' +
-      (index * 90) + 'ms">' +
+      '<div class="m-bub" style="' + s.style + '" aria-label="' + s.title + ' running">' +
       '<svg width="42" height="42" viewBox="0 0 44 44">' +
       '<defs><clipPath id="' + id + 'c"><circle cx="22" cy="22" r="' + R + '"/></clipPath>' +
       '<clipPath id="' + id + 't"><rect class="m-tclip" x="0" y="50" width="44" height="44"/></clipPath></defs>' +
-      '<g class="m-glow">' +
+      '<g class="m-glow m-live">' +
       '<circle cx="22" cy="22" r="' + R + '" fill="#141414" stroke="var(--c)" stroke-opacity=".3" stroke-width="2"/>' +
       '<g clip-path="url(#' + id + 'c)"><g class="m-lv" transform="translate(0,44)">' +
       '<path class="m-wave2" d="' + wavePath(2.2) + '" fill="var(--c)" fill-opacity=".45"/>' +
       '<path class="m-wave" d="' + wavePath(1.6) + '" fill="var(--c)"/></g></g>' +
-      '<circle class="m-rim" cx="22" cy="22" r="' + R + '" fill="none" stroke="var(--c)" stroke-width="2"/></g>' +
-      '<text class="m-l1" x="22" y="27" text-anchor="middle" font-size="14" font-weight="600" fill="var(--c)">' + state.letter + '</text>' +
-      '<text class="m-l2" x="22" y="27" text-anchor="middle" font-size="14" font-weight="600" fill="#fff" clip-path="url(#' + id + 't)">' + state.letter + '</text>' +
-      '<g class="m-pip"><circle cx="37" cy="7" r="5.5" fill="__FAILED__"/>' +
-      '<text x="37" y="10" text-anchor="middle" font-size="8.5" font-weight="700" fill="#141414">!</text></g>' +
+      '<circle cx="22" cy="22" r="' + R + '" fill="none" stroke="var(--c)" stroke-width="2"/></g>' +
+      '<text class="m-l1" x="22" y="27" text-anchor="middle" font-size="14" font-weight="600" fill="var(--c)">' + s.letter + '</text>' +
+      '<text class="m-l2" x="22" y="27" text-anchor="middle" font-size="14" font-weight="600" fill="#fff" clip-path="url(#' + id + 't)">' + s.letter + '</text>' +
       '</svg></div>';
     layer.appendChild(slot);
-    return {
-      slot, bub: slot.firstChild, state, mode: "idle", runId: state.id,
+    const b = {
+      slot, bub: slot.firstChild, state: s, mode: "running", runId: s.id,
       lv: slot.querySelector(".m-lv"), clip: slot.querySelector(".m-tclip"),
-      glow: slot.querySelector(".m-glow"), pip: slot.querySelector(".m-pip"),
+      glow: slot.querySelector(".m-glow"),
       l1: slot.querySelector(".m-l1"), l2: slot.querySelector(".m-l2"),
-      t0: 0, shown: 0, marked: false, holdUntil: 0, failed: false,
+      t0: performance.now() - s.elapsed * 1000, endSec: null,
+      startedAt: clock(Date.now() - s.elapsed * 1000),
+      shown: 0, marked: false, holdUntil: 0, failed: false,
       updatedAt: performance.now(),
     };
+    b.bub.addEventListener("mouseenter", () => showCard(b));
+    b.bub.addEventListener("mouseleave", () => hideCard(b));
+    return b;
   }
 
-  function label(b, text) { b.l1.textContent = text; b.l2.textContent = text; }
-
-  function startRunning(b, s) {
-    b.mode = "running"; b.runId = s.id; b.marked = false;
-    b.t0 = performance.now() - s.elapsed * 1000;
-    b.glow.classList.add("m-live");
-    b.bub.classList.remove("m-done");
-    label(b, s.letter);
-  }
-
-  function startFinishing(b, s) {
-    b.mode = "finishing"; b.runId = s.id; b.marked = false;
+  function finish(b, s) {
+    b.mode = "finishing";
     b.failed = s.status === "FAILED";
+    b.endSec = s.elapsed;
+    b.state = s;
   }
 
   function mark(b) {
@@ -426,21 +594,19 @@ function createMotion() {
     ring.setAttribute("r", String(R)); ring.setAttribute("fill", "none");
     ring.setAttribute("stroke", b.failed ? "__FAILED__" : "var(--c)");
     b.bub.querySelector("svg").appendChild(ring);
-    setTimeout(() => ring.remove(), 1100);
   }
 
-  function title(b) {
-    const s = b.state;
-    if (b.mode === "running") {
-      const sec = (performance.now() - b.t0) / 1000;
-      const left = Math.max(0, Math.round(s.expected - sec));
-      return s.job + ": running " + Math.round(sec) + " s, " +
-        (sec > s.expected ? "taking longer than usual" : "about " + left + " s left");
-    }
-    if (s.since === null || s.since === undefined) return s.job + ": no runs yet";
-    const since = s.since + (performance.now() - b.updatedAt) / 1000;
-    return s.job + ": last run " + (s.status === "FAILED" ? "failed" : "finished") +
-      " " + ago(since);
+  function leave(b) {
+    b.mode = "leaving";
+    hideCard(b);
+    b.bub.classList.add("m-out");
+    setTimeout(() => {
+      b.slot.classList.add("m-gone");
+      setTimeout(() => {
+        b.slot.remove();
+        if (bubbles.get(b.state.job) === b) bubbles.delete(b.state.job);
+      }, 520);
+    }, 480);
   }
 
   // The level eases toward its target at the same speed at any tick rate
@@ -453,24 +619,16 @@ function createMotion() {
     const ease = 1 - Math.exp(-(now - lastTick) / EASE_MS);
     lastTick = now;
     for (const b of bubbles.values()) {
-      let target = 0;
-      if (b.mode === "running")
-        target = Math.min((now - b.t0) / 1000 / b.state.expected, 0.93);
-      else if (b.mode === "finishing") target = 1;
+      if (b.mode === "leaving") continue;
+      const target = b.mode === "running"
+        ? Math.min((now - b.t0) / 1000 / b.state.expected, 0.93) : 1;
       b.shown = reduced() ? target : b.shown + (target - b.shown) * ease;
       const y = 40 - b.shown * 44;
       b.lv.setAttribute("transform", "translate(0," + y.toFixed(2) + ")");
       b.clip.setAttribute("y", (y + 6).toFixed(2));
       if (b.mode === "finishing" && !b.marked && b.shown > 0.985) mark(b);
-      if (b.mode === "finishing" && b.marked && now > b.holdUntil) {
-        b.mode = "draining";
-        b.bub.classList.remove("m-done");
-        label(b, b.state.letter);
-      }
-      if (b.mode === "draining" && b.shown < 0.01) b.mode = "idle";
-      b.pip.style.display =
-        b.mode === "idle" && b.state.status === "FAILED" ? "" : "none";
-      b.bub.title = title(b);
+      if (b.mode === "finishing" && b.marked && now > b.holdUntil) leave(b);
+      if (hovered === b) fillCard(b);
     }
   }
   function frame() { tick(); requestAnimationFrame(frame); }
@@ -478,22 +636,25 @@ function createMotion() {
   setInterval(() => { if (performance.now() - lastTick > 400) tick(); }, 250);
 
   function update(states) {
-    states.forEach((s, index) => {
-      let b = bubbles.get(s.job);
-      if (!b) {
-        b = make(s, index);
-        bubbles.set(s.job, b);
-        if (s.status === "RUNNING") startRunning(b, s);
-      } else if (s.status === "RUNNING") {
-        if (b.mode !== "running" || b.runId !== s.id) startRunning(b, s);
-      } else if (s.id !== null && (b.mode === "running" || s.id !== b.runId)) {
-        // The run we watched ended, or one ran between two checks (the
-        // players job takes about a second): show its finish.
-        startFinishing(b, s);
+    for (const s of states) {
+      const b = bubbles.get(s.job);
+      const isNew = s.id !== null && s.id !== lastRun.get(s.job);
+      if (s.status === "RUNNING") {
+        if (!b || b.mode === "leaving") bubbles.set(s.job, make(s));
+        else if (b.runId !== s.id) { b.runId = s.id; b.t0 = performance.now() - s.elapsed * 1000; }
+        else b.state = s;
+      } else if (b && b.mode === "running") {
+        finish(b, s);
+      } else if (!first && isNew && (s.status === "SUCCESS" || s.status === "FAILED")
+                 && s.since !== null && s.since < SHORT_RUN_SECONDS) {
+        // Started and ended between two checks (players takes ~1 s).
+        const quick = make(s);
+        bubbles.set(s.job, quick);
+        finish(quick, s);
       }
-      b.state = s;
-      b.updatedAt = performance.now();
-    });
+      if (s.id !== null) lastRun.set(s.job, s.id);
+    }
+    first = false;
   }
 
   // Count-up: the dashboard's number tiles roll up to a new value.

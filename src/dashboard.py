@@ -4,6 +4,8 @@ The pages themselves are in src/dashboard_pages/ (not pages/, which
 Streamlit would also pick up on its own).
 """
 
+from datetime import datetime, timezone
+
 import pandas as pd
 import streamlit as st
 
@@ -16,6 +18,7 @@ from dashboard_motion import (
     CHECK_SECONDS,
     dot,
     inject_motion_css,
+    is_interrupted,
     job_bubbles,
     running_jobs,
 )
@@ -71,6 +74,8 @@ def show_data_status():
     if runs.empty:
         st.caption("No runs yet.")
     else:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+
         for _, run in runs.sort_values("job_name").iterrows():
             finished = run["finished_at"]
             badge = run_badge(
@@ -79,6 +84,12 @@ def show_data_status():
                 None if pd.isna(finished) else finished,
                 run["job_name"],
             )
+
+            if is_interrupted(run["job_name"], run["status"],
+                              run["started_at"], now):
+                # Still marked RUNNING, but past any possible run time: the
+                # process ended (an app restart); the next run tidies it.
+                badge = ":orange-badge[:material/pause_circle: interrupted]"
             when = time_ago(
                 run["started_at"] if pd.isna(finished) else finished
             )
@@ -109,10 +120,12 @@ with st.sidebar:
 
     data_status()
 
-    # Checks every few seconds; the bubbles float at the top right.
-    job_bubbles()
-
 try:
     navigation.run()
 except DashboardBusy:
     st.info(BUSY_NOTE, icon=":material/hourglass_top:")
+
+# The job dock checks every few seconds; its bubbles float at the top right.
+# It is mounted in the page, not the sidebar: a collapsed sidebar (phones,
+# narrow windows) renders nothing, so the dock would vanish with it.
+job_bubbles()

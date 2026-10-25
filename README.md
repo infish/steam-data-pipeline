@@ -360,15 +360,18 @@ palette.
 Motion comes from one small kit (`src/dashboard_motion.py`), and it always
 means something:
 
-- **Job dock:** one bubble per job (C, P, R, V) sits at the top right of
-  every page at all times. While a job runs, its bubble fills with gently
-  moving liquid and its glow breathes (time so far against the median of its
-  last 10 runs; it holds just below full when a run takes longer than
-  usual). When the run ends it fills, ripples, shows a check mark (a cross if
-  it failed) and drains back to idle; a red mark stays while the job's last
-  run failed. Hovering shows the job, how long it has run or when it last
-  ran. The dashboard checks every 3 seconds with one small query shared by
-  all visitors.
+- **Job dock:** while a job runs, a bubble in its colour sits at the top
+  right of every page (also on phones, where the sidebar is collapsed) and
+  fills with gently moving liquid as the run progresses (time so far against
+  the median of its last 10 runs; it holds just below full when a run takes
+  longer than usual). When the run ends it fills, ripples, shows a check
+  mark (a cross if it failed) and pops away; a run shorter than a check
+  still shows its finish. Hovering shows a card with the job, what it does,
+  its progress and when it started. The dashboard checks every 3 seconds
+  with one small query shared by all visitors. A run still marked running
+  after its job's time limit plus 10 minutes was cut off (for example by an
+  app restart during an update): it gets no bubble, and the sidebar calls it
+  interrupted until the job's next run tidies it up.
 - **Charts** draw themselves when they appear: each bar grows from its base
   (left to right, bottom to top, or outward from zero for a negative value),
   lines draw from left to right and points pop in, while axes and labels are
@@ -1066,7 +1069,7 @@ The TrueNAS deployment runs:
 - an optional manual one-shot pipeline service
 
 The application image follows the `stable` tag, which moves to each
-published release (currently v1.4.0):
+published release (currently v1.4.1):
 
 ```text
 ghcr.io/infish/steam-data-pipeline:stable
