@@ -12,6 +12,7 @@ from dashboard_motion import (
     DEFAULT_EXPECTED_SECONDS,
     dot,
     expected_seconds,
+    is_interrupted,
     job_states,
     liquid_gauge,
 )
@@ -86,6 +87,40 @@ class JobStatesTests(unittest.TestCase):
         self.assertEqual(state["status"], "FAILED")
         self.assertEqual(state["elapsed"], 1.0)
         self.assertEqual(state["since"], 11.0)
+
+
+class InterruptedTests(unittest.TestCase):
+    def test_a_run_past_its_limit_and_margin_is_interrupted(self):
+        # refresh_hourly: 20-minute limit plus a 10-minute margin.
+        started = NOW - timedelta(minutes=37)
+        self.assertTrue(
+            is_interrupted("refresh_hourly", "RUNNING", started, NOW)
+        )
+        self.assertFalse(is_interrupted(
+            "refresh_hourly", "RUNNING", NOW - timedelta(minutes=29), NOW
+        ))
+
+    def test_a_job_without_a_limit_uses_the_default(self):
+        self.assertTrue(is_interrupted(
+            "players_hourly", "RUNNING", NOW - timedelta(minutes=21), NOW
+        ))
+
+    def test_only_running_rows_can_be_interrupted(self):
+        self.assertFalse(is_interrupted(
+            "refresh_hourly", "SUCCESS", NOW - timedelta(hours=5), NOW
+        ))
+
+    def test_an_interrupted_run_is_reported_as_such(self):
+        latest = pd.DataFrame([(9, "refresh_hourly", "RUNNING",
+                                NOW - timedelta(minutes=37), None)],
+                              columns=["run_id", "job_name", "status",
+                                       "started_at", "finished_at"])
+        (state,) = [s for s in job_states(latest, {}, NOW)
+                    if s["job"] == "refresh_hourly"]
+
+        self.assertEqual(state["status"], "INTERRUPTED")
+        self.assertEqual(state["title"], "Hourly refresh")
+        self.assertTrue(state["about"])
 
 
 class FreshnessLevelTests(unittest.TestCase):
