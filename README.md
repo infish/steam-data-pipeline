@@ -357,6 +357,30 @@ for rise/fall, and status always shown with an icon and a label. The theme
 is black and orange, in `.streamlit/config.toml`; orange leads the chart
 palette.
 
+Motion comes from one small kit (`src/dashboard_motion.py`), and it always
+means something:
+
+- **Job dock:** one bubble per job (C, P, R, V) sits at the top right of
+  every page at all times. While a job runs, its bubble fills with gently
+  moving liquid and its glow breathes (time so far against the median of its
+  last 10 runs; it holds just below full when a run takes longer than
+  usual). When the run ends it fills, ripples, shows a check mark (a cross if
+  it failed) and drains back to idle; a red mark stays while the job's last
+  run failed. Hovering shows the job, how long it has run or when it last
+  ran. The dashboard checks every 3 seconds with one small query shared by
+  all visitors.
+- **Charts** draw themselves when they appear: each bar grows from its base
+  (left to right, bottom to top, or outward from zero for a negative value),
+  lines draw from left to right and points pop in, while axes and labels are
+  there at once.
+- **Sidebar:** each job's dot breathes while it runs.
+- **Gauges:** the Store-peak tile fills to the share of its limit used, and
+  each source on the Freshness tab drains as its data ages and refills on
+  every fetch.
+- **Numbers** count up to their value when a page opens or a value changes.
+
+Everything stops for visitors whose system asks for reduced motion.
+
 | Page | Shows |
 | --- | --- |
 | Overview | players right now (Valve) with the change since the previous hour, games in the catalog, sources fresh; most played now; biggest week-over-week moves; links to the other pages |
@@ -1042,7 +1066,7 @@ The TrueNAS deployment runs:
 - an optional manual one-shot pipeline service
 
 The application image follows the `stable` tag, which moves to each
-published release (currently v1.3.1):
+published release (currently v1.4.0):
 
 ```text
 ghcr.io/infish/steam-data-pipeline:stable

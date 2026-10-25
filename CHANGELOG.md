@@ -2,6 +2,23 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## v1.4.0 — 2026-10-25
+
+### Added
+
+- **Motion on the dashboard**, from one small kit (`src/dashboard_motion.py`)
+  where motion always means something (README, "Dashboard"):
+  - A job dock at the top right of every page: one bubble per job, always
+    shown. A running job's bubble fills with moving liquid and its glow
+    breathes; at the end it ripples, shows a check (a cross if it failed)
+    and drains back to idle. One small query every 3 seconds, shared by all
+    visitors.
+  - Sidebar dots that breathe while their job runs.
+  - Liquid gauges for the Store-peak tile and each source's freshness.
+  - Headline numbers that count up, chart bars that grow from their base,
+    lines that draw from left to right and points that pop in.
+  - Everything stays still for visitors who ask for reduced motion.
+
 ## v1.3.1 — 2026-10-24
 
 Fixes from a review of v1.3.0, each checked against the code and fixed in
