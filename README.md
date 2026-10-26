@@ -361,8 +361,8 @@ Motion comes from one small kit (`src/dashboard_motion.py`), and it always
 means something:
 
 - **Job dock:** while a job runs, a bubble in its colour sits at the top
-  right of every page (also on phones, where the sidebar is collapsed) and
-  fills with gently moving liquid as the run progresses (time so far against
+  right of every page (also on phones, where the sidebar is collapsed; there
+  it sits at the top of the page and scrolls away with it) and fills with gently moving liquid as the run progresses (time so far against
   the median of its last 10 runs; it holds just below full when a run takes
   longer than usual). When the run ends it fills, ripples, shows a check
   mark (a cross if it failed) and pops away; a run shorter than a check
@@ -375,8 +375,11 @@ means something:
 - **Charts** draw themselves when they appear: each bar grows from its base
   (left to right, bottom to top, or outward from zero for a negative value),
   lines draw from left to right and points pop in, while axes and labels are
-  there at once.
-- **Sidebar:** each job's dot breathes while it runs.
+  there at once. Charts are for reading: a tap, drag or scroll shows values
+  but never zooms or pans, so a stray tap on a phone cannot trap the reader
+  in a zoomed chart.
+- **Sidebar:** each job's dot breathes while it runs, and its badge reads the
+  same 3-second check as the dock.
 - **Gauges:** the Store-peak tile fills to the share of its limit used, and
   each source on the Freshness tab drains as its data ages and refills on
   every fetch.
@@ -695,7 +698,10 @@ docker compose run --rm pipeline python src/main.py players_hourly
 ```
 
 The scheduler does not collect on container startup, which avoids duplicate
-observations during app restarts. Manual runs remain available for focused
+observations during app restarts. It does catch up one missed slot: a job
+whose scheduled time passed in the last 15 minutes with no successful run
+since (the container was restarting during an update) runs right away.
+Older slots are skipped, so a long outage never ends in a burst of runs. Manual runs remain available for focused
 validation.
 
 ### Local test stack
@@ -1069,7 +1075,7 @@ The TrueNAS deployment runs:
 - an optional manual one-shot pipeline service
 
 The application image follows the `stable` tag, which moves to each
-published release (currently v1.4.1):
+published release (currently v1.4.2):
 
 ```text
 ghcr.io/infish/steam-data-pipeline:stable

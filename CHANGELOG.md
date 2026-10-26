@@ -2,6 +2,26 @@
 
 This file records user-visible changes to the Steam data pipeline.
 
+## v1.4.2 — 2026-10-26
+
+### Fixed
+
+- A job slot that fell during a container restart (an app update) was
+  skipped until the next one. On start, the scheduler now runs a slot missed
+  in the last 15 minutes when that job has no successful run since.
+- A job started while another job was loading its data waited 50 seconds
+  for a database lock and failed. Tidying up abandoned runs now locks only
+  those runs, and the mart rebuild no longer takes locks that block the
+  other job's load.
+- The sidebar run badges could lag minutes behind the dock: they now read
+  the same 3-second check.
+- On a phone, the job dock now sits at the top of the page and scrolls away
+  with it, instead of staying fixed over the content.
+- On a phone, a stray tap on a chart zoomed into it with no way back. Charts
+  no longer zoom or pan; hover values still work.
+- Replaced Streamlit's deprecated `use_container_width` with
+  `width="stretch"`.
+
 ## v1.4.1 — 2026-10-25
 
 ### Changed
