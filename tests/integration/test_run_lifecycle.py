@@ -1,9 +1,11 @@
 import time
 import unittest
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from database.mysql_database import get_connection
 from jobs.base import ABANDONED_RUN_MESSAGE
+from scheduler import latest_successes
 
 from .base import IntegrationTestCase
 
@@ -41,6 +43,25 @@ class RunLifecycleIntegrationTests(IntegrationTestCase):
             holder.close()
 
         self.assertTrue(self.run_lock_is_free("catalog_daily"))
+
+    def test_scheduler_catch_up_reads_the_newest_successful_start(self):
+        for job_name, started_at, status in (
+            ("players_hourly", datetime(2026, 10, 26, 16, 7), "SUCCESS"),
+            ("players_hourly", datetime(2026, 10, 26, 17, 7), "FAILED"),
+            ("refresh_hourly", datetime(2026, 10, 26, 16, 37), "RUNNING"),
+        ):
+            self.execute(
+                "INSERT INTO pipeline_runs (job_name, started_at, status)"
+                " VALUES (%s, %s, %s)",
+                (job_name, started_at, status)
+            )
+
+        prague = ZoneInfo("Europe/Prague")
+
+        self.assertEqual(
+            latest_successes(prague),
+            {"players_hourly": datetime(2026, 10, 26, 17, 7, tzinfo=prague)}
+        )
 
     def insert_running(self, job_name):
         return self.execute(
