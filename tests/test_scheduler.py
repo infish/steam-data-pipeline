@@ -12,6 +12,7 @@ from scheduler import (
     get_next_run,
     get_schedule_config,
     hourly_at,
+    missed_slot,
     wait_until,
 )
 
@@ -251,6 +252,70 @@ class MultiJobSchedulerTests(unittest.TestCase):
             clock.now.timestamp() - start.timestamp(),
             23 * 3600 - 1
         )
+
+
+class CatchUpTests(unittest.TestCase):
+    """A restart during an update must not lose the slot it landed on."""
+
+    def setUp(self):
+        self.timezone = ZoneInfo("Europe/Prague")
+        self.players = ScheduledJob("players_hourly", hourly_at(7))
+        self.catalog = ScheduledJob("catalog_daily", daily_at(20, 0))
+
+    def at(self, hour, minute, day=26):
+        return datetime(2026, 10, day, hour, minute, tzinfo=self.timezone)
+
+    def test_a_slot_missed_minutes_ago_is_returned(self):
+        self.assertEqual(
+            missed_slot(self.players, self.at(18, 10), self.at(17, 7)),
+            self.at(18, 7)
+        )
+
+    def test_a_slot_with_a_successful_run_is_not_missed(self):
+        self.assertIsNone(
+            missed_slot(self.players, self.at(18, 10), self.at(18, 7))
+        )
+
+    def test_a_job_that_never_ran_catches_up_too(self):
+        self.assertEqual(
+            missed_slot(self.players, self.at(18, 10), None),
+            self.at(18, 7)
+        )
+
+    def test_slots_older_than_the_window_are_skipped(self):
+        self.assertIsNone(
+            missed_slot(self.players, self.at(18, 30), self.at(17, 7))
+        )
+        self.assertIsNone(
+            missed_slot(self.catalog, self.at(23, 0), self.at(20, 0, day=25))
+        )
+
+    def test_scheduler_runs_the_missed_job_first_then_keeps_the_schedule(self):
+        clock = FakeClock(self.at(18, 10))
+        ran = []
+        scheduler = Scheduler(
+            [self.catalog, self.players],
+            clock,
+            ran.extend,
+            clock.sleep,
+            last_success_fn=lambda: {
+                "catalog_daily": self.at(20, 0, day=25),
+                "players_hourly": self.at(17, 7),
+            }
+        )
+
+        self.assertEqual(scheduler.step(), ["players_hourly"])
+        self.assertEqual(clock.now, self.at(18, 10))
+        self.assertEqual(scheduler.next_runs["players_hourly"], self.at(19, 7))
+        self.assertEqual(scheduler.step(), ["players_hourly"])
+        self.assertEqual(clock.now, self.at(19, 7))
+
+    def test_without_history_the_schedule_is_unchanged(self):
+        clock = FakeClock(self.at(18, 10))
+        scheduler = Scheduler([self.players], clock, lambda names: None,
+                              clock.sleep)
+
+        self.assertEqual(scheduler.next_runs["players_hourly"], self.at(19, 7))
 
 
 class ScheduleConfigTests(unittest.TestCase):

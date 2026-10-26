@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from database.mysql_database import get_connection
 from main import run_pipeline
 
 
@@ -24,6 +25,10 @@ DEFAULT_PLAYERS_MINUTE = 7
 DEFAULT_REFRESH_MINUTE = 37
 DEFAULT_CATALOG_TIME = "20:00"
 DEFAULT_REVIEWS_TIME = "20:30"
+# A slot missed this recently (the container was restarting during an
+# update) still runs when the scheduler starts. Older slots are skipped, so
+# a long outage does not end in a burst of stale runs.
+CATCH_UP_WINDOW = timedelta(minutes=15)
 
 
 def get_next_run(now, run_hour, run_minute):
@@ -169,14 +174,48 @@ def wait_until(target, now_fn=None, sleep_fn=time.sleep):
         sleep_fn(remaining_seconds)
 
 
+def missed_slot(job, now, last_success, window=CATCH_UP_WINDOW):
+    """The job's slot in the last `window` that has no successful run since.
+
+    last_success is when the job's newest successful run started (aware),
+    or None. Returns that slot, or None when nothing was missed.
+    """
+    slot = job.next_run(now - window)
+
+    if slot > now:
+        return None
+    if last_success is not None and last_success >= slot:
+        return None
+
+    return slot
+
+
 class Scheduler:
-    def __init__(self, jobs, now_fn, run_fn=run_pipeline, sleep_fn=time.sleep):
+    def __init__(
+        self, jobs, now_fn, run_fn=run_pipeline, sleep_fn=time.sleep,
+        last_success_fn=None
+    ):
         self.jobs = jobs
         self.now_fn = now_fn
         self.run_fn = run_fn
         self.sleep_fn = sleep_fn
         now = now_fn()
         self.next_runs = {job.name: job.next_run(now) for job in jobs}
+
+        if last_success_fn is not None:
+            last_success = last_success_fn()
+
+            for job in jobs:
+                slot = missed_slot(job, now, last_success.get(job.name))
+
+                if slot is not None:
+                    logging.info(
+                        "Catching up %s: the %s run was missed",
+                        job.name,
+                        slot.isoformat()
+                    )
+                    # A due time in the past makes the first step run it.
+                    self.next_runs[job.name] = slot
 
     def step(self):
         """Wait for the earliest due job, run every job that is due."""
@@ -204,6 +243,38 @@ class Scheduler:
         return [job.name for job in due]
 
 
+def latest_successes(timezone):
+    """When each job's newest successful run started, as aware datetimes."""
+    connection = get_connection()
+
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT job_name, MAX(started_at)
+            FROM pipeline_runs
+            WHERE status = 'SUCCESS'
+            GROUP BY job_name
+            """)
+        # started_at is stored as naive UTC.
+        return {
+            name: started_at.replace(tzinfo=dt_timezone.utc)
+            .astimezone(timezone)
+            for name, started_at in cursor.fetchall()
+        }
+    finally:
+        connection.close()
+
+
+def last_success_or_nothing(timezone):
+    # Catching up is a nicety: if the database is not reachable yet, start
+    # on the normal schedule instead of failing to start at all.
+    try:
+        return latest_successes(timezone)
+    except Exception:
+        logging.exception("Could not check for missed runs; skipping catch-up")
+        return {}
+
+
 def run_scheduler():
     timezone, jobs = get_schedule_config()
     now_fn = lambda: datetime.now(timezone)
@@ -221,7 +292,11 @@ def run_scheduler():
         for job in jobs:
             execute_job(job.name)
 
-    scheduler = Scheduler(jobs, now_fn)
+    scheduler = Scheduler(
+        jobs,
+        now_fn,
+        last_success_fn=lambda: last_success_or_nothing(timezone)
+    )
 
     while True:
         scheduler.step()

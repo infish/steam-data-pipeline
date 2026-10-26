@@ -131,6 +131,7 @@ MOTION_CSS = """
   position: fixed; top: 4.1rem; right: 1.1rem; z-index: 1000;
   display: flex; align-items: center; pointer-events: none;
 }
+#m-bubbles.m-inpage { position: absolute; top: 4.1rem; right: .6rem; }
 #m-bubbles .m-slot {
   width: 54px; height: 50px; display: flex; justify-content: center;
   align-items: center; transition: width .5s var(--m-ease);
@@ -386,14 +387,18 @@ def job_states(latest, expected, now):
 
 
 @st.cache_data(ttl=CHECK_SECONDS, show_spinner=False)
-def _latest_runs():
-    # Each job's latest run; shared by every visitor, so at most one small
-    # query per check however many people watch.
+def latest_runs_now():
+    """Each job's latest run, at most CHECK_SECONDS old.
+
+    Shared by every visitor, so at most one small query per check however
+    many people watch. The dock and the sidebar's run badges both read it,
+    so a badge never lags behind the bubble beside it.
+    """
     jobs = list(JOB_LETTERS)
     return read_sql(
         f"""
         SELECT runs.run_id, runs.job_name, runs.status, runs.started_at,
-               runs.finished_at
+               runs.finished_at, runs.warning_message
         FROM pipeline_runs AS runs
         JOIN (
             SELECT MAX(run_id) AS run_id
@@ -411,7 +416,7 @@ def running_jobs(now=None):
     for the sidebar's breathing dots; an interrupted run is not one."""
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     return {
-        run.job_name for run in _latest_runs().itertuples()
+        run.job_name for run in latest_runs_now().itertuples()
         if run.status == "RUNNING"
         and not is_interrupted(run.job_name, run.status, run.started_at, now)
     }
@@ -471,7 +476,18 @@ function setText(el, text) { if (el.textContent !== text) el.textContent = text;
 function createMotion() {
   const layer = document.createElement("div");
   layer.id = "m-bubbles";
-  document.body.appendChild(layer);
+  // On a phone the dock belongs to the top of the page and scrolls away
+  // with it, instead of covering the content under a thumb. The page
+  // scrolls inside Streamlit's main block, so the layer moves in there.
+  const phone = window.matchMedia("(max-width: 640px)");
+  function place() {
+    const main = phone.matches && document.querySelector('[data-testid="stMain"]');
+    const home = main || document.body;
+    if (layer.parentNode !== home) home.appendChild(layer);
+    layer.classList.toggle("m-inpage", !!main);
+  }
+  place();
+  phone.addEventListener("change", place);
   const bubbles = new Map();   // job -> bubble
   const lastRun = new Map();   // job -> latest run id seen
   let first = true;
@@ -513,6 +529,9 @@ function createMotion() {
     card.classList.add("m-show");
   }
   function hideCard(b) { if (hovered === b) { hovered = null; card.classList.remove("m-show"); } }
+  // The card is placed once, under its bubble; scrolling would leave it
+  // floating over the wrong spot.
+  document.addEventListener("scroll", () => hideCard(hovered), true);
 
   function fillCard(b) {
     const s = b.state;
@@ -636,6 +655,7 @@ function createMotion() {
   setInterval(() => { if (performance.now() - lastTick > 400) tick(); }, 250);
 
   function update(states) {
+    place();   // Streamlit may have rebuilt the main block
     for (const s of states) {
       const b = bubbles.get(s.job);
       const isNew = s.id !== null && s.id !== lastRun.get(s.job);
@@ -793,7 +813,7 @@ def job_bubbles():
     """Check the jobs every few seconds and hand their states to the
     browser, which animates the dock (top right of every page)."""
     try:
-        latest = _latest_runs()
+        latest = latest_runs_now()
         expected = expected_seconds(_run_history())
     except DashboardBusy:
         return

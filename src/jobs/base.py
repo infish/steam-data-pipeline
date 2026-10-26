@@ -134,15 +134,32 @@ def release_lock(cursor, lock_name):
 def reap_abandoned_runs(cursor, job_names):
     # Only safe for jobs whose lock we hold: no run of theirs can be live.
     # Other jobs have their own locks and may legitimately be running.
+    #
+    # Find the runs with a plain (non-locking) read, then update them by
+    # primary key. An UPDATE ... WHERE status/job_name scans and locks rows
+    # of other jobs too, and waited (then failed) on a row another running
+    # job's open transaction holds through its loads.
     placeholders = ", ".join(["%s"] * len(job_names))
+    cursor.execute(
+        f"""
+        SELECT run_id FROM pipeline_runs
+        WHERE status = 'RUNNING' AND job_name IN ({placeholders})
+        """,
+        tuple(job_names)
+    )
+    run_ids = [row[0] for row in cursor.fetchall()]
+
+    if not run_ids:
+        return 0
+
     cursor.execute(
         f"""
         UPDATE pipeline_runs
         SET status = 'FAILED', error_message = %s
         WHERE status = 'RUNNING'
-          AND job_name IN ({placeholders})
+          AND run_id IN ({", ".join(["%s"] * len(run_ids))})
         """,
-        (ABANDONED_RUN_MESSAGE, *job_names)
+        (ABANDONED_RUN_MESSAGE, *run_ids)
     )
     return cursor.rowcount
 

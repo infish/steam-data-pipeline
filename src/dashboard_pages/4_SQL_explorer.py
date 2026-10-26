@@ -130,7 +130,7 @@ with browser:
         columns = cached_read_sql(f"SHOW COLUMNS FROM `{selected}`")
         st.dataframe(
             columns[["Field", "Type", "Null", "Key"]],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
         st.caption(
@@ -151,6 +151,6 @@ with examples:
                      icon=":material/play_arrow:"):
             st.dataframe(
                 run_example(query),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )

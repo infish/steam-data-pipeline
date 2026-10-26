@@ -141,11 +141,22 @@ def style(figure, height=340, legend=True, y_title=None, x_title=None):
 
 
 def show(figure):
+    # Charts are read, not explored. Fixed ranges and no drag mode mean a
+    # drag or a stray tap on a phone never zooms into a chart the reader
+    # then cannot leave, and a swipe over a chart scrolls the page. Hover
+    # labels still work.
+    figure.update_layout(dragmode=False)
+    figure.update_xaxes(fixedrange=True)
+    figure.update_yaxes(fixedrange=True)
     st.plotly_chart(
         figure,
         theme=None,
-        use_container_width=True,
-        config={"displayModeBar": False},
+        width="stretch",
+        config={
+            "displayModeBar": False,
+            "scrollZoom": False,
+            "doubleClick": False,
+        },
     )
 
 

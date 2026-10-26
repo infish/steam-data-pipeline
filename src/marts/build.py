@@ -62,6 +62,13 @@ def build_marts(connection, directory=TRANSFORM_DIR, step=no_step,
     """
     failures = []
     cursor = connection.cursor()
+    # READ COMMITTED: the transforms read committed rows without locking
+    # them. Under the default REPEATABLE READ, INSERT ... SELECT takes shared
+    # locks on its source rows, so a rebuild waited (50 s, then failed) on
+    # rows another job was still loading. Restored afterwards.
+    cursor.execute("SELECT @@SESSION.transaction_isolation")
+    isolation = cursor.fetchall()[0][0]
+    cursor.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
 
     try:
         cursor.execute("SET @mart_full_rebuild = %s", (1 if full else 0,))
@@ -78,6 +85,9 @@ def build_marts(connection, directory=TRANSFORM_DIR, step=no_step,
                 logging.exception("Mart transform %s failed", path.name)
                 failures.append((path.stem, error))
     finally:
+        cursor.execute(
+            "SET SESSION transaction_isolation = %s", (isolation,)
+        )
         cursor.close()
 
     return failures
