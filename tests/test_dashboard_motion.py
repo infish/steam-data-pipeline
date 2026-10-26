@@ -172,6 +172,7 @@ class DashboardMotionAppTests(unittest.TestCase):
         running = pd.DataFrame({
             "run_id": [1], "job_name": ["refresh_hourly"],
             "status": ["RUNNING"], "started_at": [NOW], "finished_at": [None],
+            "warning_message": [None],
         })
 
         def fake_read_sql(query, params=()):
@@ -185,6 +186,11 @@ class DashboardMotionAppTests(unittest.TestCase):
             app.run()
 
         self.assertEqual(len(app.exception), 0)
+        # The sidebar badge reads the same 3-second query as the dock.
+        self.assertIn(
+            "refresh_hourly",
+            "".join(block.value for block in app.sidebar.markdown)
+        )
 
 
 if __name__ == "__main__":

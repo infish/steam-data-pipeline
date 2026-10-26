@@ -12,7 +12,6 @@ import streamlit as st
 from dashboard_common import (
     DashboardBusy,
     current_check_results,
-    latest_runs,
 )
 from dashboard_motion import (
     CHECK_SECONDS,
@@ -20,6 +19,7 @@ from dashboard_motion import (
     inject_motion_css,
     is_interrupted,
     job_bubbles,
+    latest_runs_now,
     running_jobs,
 )
 from dashboard_style import run_badge, time_ago
@@ -68,7 +68,7 @@ def data_status():
 
 
 def show_data_status():
-    runs = latest_runs()
+    runs = latest_runs_now()
     running = running_jobs()
 
     if runs.empty:

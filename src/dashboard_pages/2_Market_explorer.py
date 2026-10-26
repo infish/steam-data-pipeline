@@ -109,7 +109,7 @@ with genre_tab:
                     "windows_games", "mac_games", "linux_games",
                 ]],
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "genre": "Genre",
                     "game_count": "Games",
@@ -158,7 +158,7 @@ with tag_tab:
                     "top100_games", "top100_current_players",
                 ]],
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "tag": "Tag",
                     "game_count": "Games",
@@ -244,7 +244,7 @@ with price_tab:
         st.dataframe(
             models,
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "model": "Pricing",
                 "games": st.column_config.ProgressColumn(

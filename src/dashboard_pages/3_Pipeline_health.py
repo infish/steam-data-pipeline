@@ -187,7 +187,7 @@ with runs_tab:
                     "rows_rejected", "warning_message", "error_message",
                 ]],
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "run_id": "Run",
                     "job_name": "Job",
@@ -390,7 +390,7 @@ with steps_tab:
                     "rows_affected", "status",
                 ]],
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "step": "Step",
                     "seconds": st.column_config.NumberColumn(
@@ -439,7 +439,7 @@ with fresh_tab:
             st.dataframe(
                 shown,
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "source": "Source",
                     "status": "Status",
@@ -471,7 +471,7 @@ with quality_tab:
             st.dataframe(
                 shown,
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "checked_at": st.column_config.DatetimeColumn(
                         "Checked", format="YYYY-MM-DD HH:mm"),
@@ -554,7 +554,7 @@ with stale_tab:
             st.dataframe(
                 duplicates,
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "source": "Source",
                     "rate": "Repeated",
@@ -595,7 +595,7 @@ with budget_tab:
         st.dataframe(
             shown,
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "budget": "API",
                 "requests_last_24h": "Requests (24 h)",

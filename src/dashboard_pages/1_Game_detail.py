@@ -455,7 +455,7 @@ with price_tab:
             st.dataframe(
                 country_versions.drop(columns=["country_code"]),
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "initial_price": st.column_config.NumberColumn(
                         "Initial (cents)", format="%d"),
@@ -482,7 +482,7 @@ with updates_tab:
             st.dataframe(
                 shown,
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "event_time": st.column_config.DatetimeColumn(
                         "Published", format="YYYY-MM-DD HH:mm"),
@@ -546,7 +546,7 @@ with about_tab:
                     st.dataframe(
                         tags,
                         hide_index=True,
-                        use_container_width=True,
+                        width="stretch",
                         column_config={
                             "votes": st.column_config.ProgressColumn(
                                 "Votes",
