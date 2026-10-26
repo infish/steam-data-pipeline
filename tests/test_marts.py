@@ -48,7 +48,8 @@ class TransformFileTests(unittest.TestCase):
                     # Window, conditional deletes, the insert, then the name
                     # refresh; a full rebuild when the builder asks for one.
                     self.assertIn("@mart_full_rebuild", statements[0])
-                    self.assertTrue(statements[0].startswith("SET @"))
+                    self.assertTrue(statements[0].startswith("SELECT "))
+                    self.assertIn("INTO @", statements[0])
                     self.assertTrue(all(
                         statement.startswith(f"DELETE FROM {mart}\nWHERE")
                         for statement in statements[1:-2]

@@ -18,15 +18,17 @@
 -- days ending on the observation date; sentiment drift is that share minus
 -- the lifetime share from the review summary. The two endpoints count
 -- different review sets (docs/sources.md), so compare drift, not counts.
-SET @review_trends_from = (
-    SELECT IF(
-        @mart_full_rebuild = 1
-            OR NOT EXISTS (SELECT 1 FROM mart_review_trends),
-        DATE('1000-01-01'),
-        DATE(MAX(collected_at)) - INTERVAL 1 DAY
-    )
-    FROM review_observations
-);
+-- A plain SELECT ... INTO, not SET @x = (SELECT ...): MySQL makes the
+-- subquery of a SET a locking read, which waited on rows another job was
+-- still loading.
+SELECT IF(
+    @mart_full_rebuild = 1
+        OR NOT EXISTS (SELECT 1 FROM mart_review_trends),
+    DATE('1000-01-01'),
+    DATE(MAX(collected_at)) - INTERVAL 1 DAY
+)
+INTO @review_trends_from
+FROM review_observations;
 
 DELETE FROM mart_review_trends
 WHERE observation_date >= @review_trends_from;
